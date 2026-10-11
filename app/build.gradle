@@ -25,7 +25,10 @@ android {
   }
  }
  buildTypes { debug { applicationIdSuffix ".preview" }
- release { minifyEnabled false; signingConfig signingConfigs.release } }
+ release {
+  minifyEnabled false
+  if (System.getenv('ROBBY_ANDROID_SIGNING_DIR')) { signingConfig signingConfigs.release }
+ } }
  compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
  testOptions { unitTests.returnDefaultValues = true }
  lint { abortOnError true }
