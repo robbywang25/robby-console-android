@@ -1,0 +1,16 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'wang.robby.console.billinglab'
+ compileSdk 36
+ defaultConfig { applicationId 'wang.robby.console.android.billinglab'; minSdk 30; targetSdk 36; versionCode 1; versionName '0.1.0' }
+ signingConfigs {
+  release {
+   def dir = System.getenv('ROBBY_ANDROID_SIGNING_DIR')
+   if (dir) { storeFile file(dir+'/release.jks'); storePassword file(dir+'/store-password').text.trim(); keyAlias 'robby-console-android'; keyPassword file(dir+'/store-password').text.trim() }
+  }
+ }
+ buildTypes { release { if(System.getenv('ROBBY_ANDROID_SIGNING_DIR')) signingConfig signingConfigs.release } }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+ lint { abortOnError true }
+}
+dependencies { implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22'); implementation 'com.android.billingclient:billing:9.1.0'; testImplementation 'junit:junit:4.13.2' }

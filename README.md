@@ -71,3 +71,7 @@ ROBBY_ANDROID_SIGNING_DIR=/absolute/private/signing ./gradlew assembleRelease
 ## 许可
 
 [MIT License](LICENSE)。
+
+## 付费技术实验
+
+独立的 [`billing-lab`](billing-lab/README.md) 用于未来Android产品的买断和分档付费技术储备。它不是God收费功能，不改变工作台权限；本地模拟与官方SDK环境检测明确分开。[方案调研](docs/ANDROID-BILLING-RESEARCH.md)。

@@ -1,0 +1,22 @@
+package wang.robby.console.billinglab;
+import org.junit.Test;
+import static org.junit.Assert.*;
+import java.util.*;
+import wang.robby.console.billinglab.ScenarioEngine.*;
+public class ScenarioEngineTest {
+ private ScenarioEngine.Record r(String id,String owner,Product p,State s,long version,long until){return new ScenarioEngine.Record(id,owner,p,s,version,until);}
+ @Test public void pendingAndUnverifiedNeverGrant(){for(State s:List.of(State.PENDING,State.UNVERIFIED)){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-one","A",Product.PRO,s,1,100));assertEquals(Tier.FREE,e.tier("A",1));}}
+ @Test public void lifetimeDoesNotExpire(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-one","A",Product.LIFETIME,State.ACTIVE,1,0));assertEquals(Tier.BASIC,e.tier("A",Long.MAX_VALUE));}
+ @Test public void canceledSubscriptionKeepsAccessUntilPaidBoundary(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-one","A",Product.PLUS,State.CANCELED,1,100));assertEquals(Tier.PLUS,e.tier("A",99));assertEquals(Tier.FREE,e.tier("A",100));}
+ @Test public void graceIsBoundedAndHoldHasNoAccess(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-one","A",Product.PRO,State.GRACE,1,100));assertEquals(Tier.PRO,e.tier("A",99));assertEquals(Tier.FREE,e.tier("A",100));e.apply(r("sim-one","A",Product.PRO,State.HOLD,2,200));assertEquals(Tier.FREE,e.tier("A",99));}
+ @Test public void expiredSubscriptionFallsBackToLifetime(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-life","A",Product.LIFETIME,State.ACTIVE,1,0));e.apply(r("sim-pro","A",Product.PRO,State.ACTIVE,1,100));assertEquals(Tier.PRO,e.tier("A",99));assertEquals(Tier.BASIC,e.tier("A",100));}
+ @Test public void higherActiveTierWinsWithoutAddingDurations(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-plus","A",Product.PLUS,State.ACTIVE,1,200));e.apply(r("sim-pro","A",Product.PRO,State.ACTIVE,1,100));assertEquals(Tier.PRO,e.tier("A",99));assertEquals(Tier.PLUS,e.tier("A",100));assertEquals(Tier.FREE,e.tier("A",200));}
+ @Test public void duplicateAndOlderEventsDoNotResurrectRefund(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-one","A",Product.LIFETIME,State.ACTIVE,1,0));e.apply(r("sim-one","A",Product.LIFETIME,State.REFUNDED,3,0));assertFalse(e.apply(r("sim-one","A",Product.LIFETIME,State.ACTIVE,2,0)));assertFalse(e.apply(r("sim-one","A",Product.LIFETIME,State.ACTIVE,3,0)));assertFalse(e.apply(r("sim-one","A",Product.LIFETIME,State.ACTIVE,4,0)));assertEquals(Tier.FREE,e.tier("A",1));}
+ @Test public void oneRefundDoesNotRemoveAnotherReceipt(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-first","A",Product.PLUS,State.REFUNDED,2,100));e.apply(r("sim-second","A",Product.PLUS,State.ACTIVE,1,100));assertEquals(Tier.PLUS,e.tier("A",1));}
+ @Test public void accountSwitchCannotTransferEntitlements(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-one","A",Product.PRO,State.ACTIVE,1,100));assertEquals(Tier.FREE,e.tier("B",1));try{e.apply(r("sim-one","B",Product.PRO,State.ACTIVE,2,100));fail();}catch(IllegalArgumentException expected){}}
+ @Test public void receiptProductCannotChange(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-one","A",Product.PLUS,State.ACTIVE,1,100));try{e.apply(r("sim-one","A",Product.PRO,State.ACTIVE,2,100));fail();}catch(IllegalArgumentException expected){}}
+ @Test public void restoreReplacesCacheAndKeepsBinding(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-local","B",Product.PRO,State.ACTIVE,1,100));e.restore(List.of(r("sim-remote","A",Product.LIFETIME,State.ACTIVE,1,0)));assertEquals(Tier.FREE,e.tier("B",1));assertEquals(Tier.BASIC,e.tier("A",1));}
+ @Test public void invalidRestoreCannotDestroyPreviousState(){ScenarioEngine e=new ScenarioEngine();e.apply(r("sim-good","A",Product.LIFETIME,State.ACTIVE,1,0));try{e.restore(List.of(r("sim-conflict","A",Product.PRO,State.ACTIVE,1,100),r("sim-conflict","B",Product.PRO,State.ACTIVE,2,100)));fail();}catch(IllegalArgumentException expected){}assertEquals(Tier.BASIC,e.tier("A",1));}
+ @Test public void simulatedStateIsBounded(){ScenarioEngine e=new ScenarioEngine();for(int i=0;i<64;i++)e.apply(r("sim-"+i,"A",Product.PLUS,State.EXPIRED,1,1));try{e.apply(r("sim-overflow","A",Product.PLUS,State.ACTIVE,1,100));fail();}catch(IllegalStateException expected){}}
+ @Test public void lifetimeRejectsRecurringOnlyStates(){try{r("sim-one","A",Product.LIFETIME,State.GRACE,1,0);fail();}catch(IllegalArgumentException expected){}}
+}
