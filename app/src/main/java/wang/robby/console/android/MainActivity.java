@@ -29,7 +29,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
     @Override public void onCreate(Bundle state) {
         PreviewMode.configure(this,getIntent());
         super.onCreate(state);
-        theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accentStrong;BG=theme.canvas;
+        theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;
         try { coordinator=AuthCoordinator.get(this);auth=coordinator.session(); api=new MobileApi(auth);ledger=new LedgerActions(this,new LedgerActions.Transport(){public JSONObject get(String path)throws Exception{return read(path);}public JSONObject post(String path,JSONObject body)throws Exception{if(PreviewMode.isBuild())throw new IllegalStateException("界面预览不执行写入");return api.post(path,body);}},()->{ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature f=find("travel-ledger");if(f!=null)showFeature(f,true);}); }
         catch(Exception e) { new AlertDialog.Builder(this).setMessage("无法打开设备安全存储，请检查屏幕锁定设置").setPositiveButton("关闭",(d,w)->finish()).show(); return; }
         if(state!=null) { group=state.getString("group","总览"); selectedId=state.getString("feature"); project=state.getString("project"); }
@@ -74,15 +74,15 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(20),0,dp(20),dp(8));body.addView(toolbar);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(14),dp(8),dp(14),dp(20));scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        nav=new LinearLayout(this);nav.setBackgroundColor(theme.canvas);nav.setPadding(0,dp(8),0,dp(8));nav.setGravity(Gravity.CENTER_VERTICAL);
+        nav=new LinearLayout(this);nav.setBackgroundColor(theme.canvas);nav.setPadding(0,dp(2),0,dp(2));nav.setGravity(Gravity.CENTER_VERTICAL);
         for(String label:List.of("总览","洞察","资产","工具","设置")) {
             boolean selected=group.equals(label);LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);tab.setPadding(0,0,0,0);
             tab.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,0)));tab.setSelected(selected);tab.setFocusable(true);tab.setContentDescription(label+(selected?"，已选中":""));
             tab.addView(theme.tabIcon(ConsoleTheme.symbol(label),selected,24));tab.setTooltipText(label);
-            tab.setOnClickListener(v->{++generation;group=label;selectedId=null;project=null;build();});LinearLayout.LayoutParams tabParams=new LinearLayout.LayoutParams(0,dp(56),1);nav.addView(tab,tabParams);
+            tab.setOnClickListener(v->{++generation;group=label;selectedId=null;project=null;build();});LinearLayout.LayoutParams tabParams=new LinearLayout.LayoutParams(0,dp(48),1);nav.addView(tab,tabParams);
         }
         View divider=new View(this);divider.setBackgroundColor(theme.line);body.addView(divider,new LinearLayout.LayoutParams(-1,dp(.5f)));body.addView(nav,new LinearLayout.LayoutParams(-1,-2));
-        root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());body.setPadding(bars.left,bars.top,bars.right,0);nav.setPadding(0,dp(8),0,bars.bottom+dp(8));return insets;});root.requestApplyInsets();
+        root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());body.setPadding(bars.left,bars.top,bars.right,0);nav.setPadding(0,dp(2),0,bars.bottom+dp(2));return insets;});root.requestApplyInsets();
         if(device!=null){nav.setVisibility(View.GONE);showDeviceAuthorization(device);return;}
         if(selectedId!=null){FeatureCatalog.Feature f=find(selectedId);if(f!=null){showFeature(f,false);return;}selectedId=null;}
         if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else catalog(group);
@@ -171,7 +171,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         section("账号");row(loggedIn()?"已登录":"尚未登录","Passkey · 设备加密存储",this::account);
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");row("隐私与数据","无第三方统计 · 不保存网页 Cookie",()->new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null).show());
-        row("God 工作台","Android 0.3.4",()->{});
+        row("God 工作台","Android 0.3.5",()->{});
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){

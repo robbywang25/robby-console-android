@@ -58,3 +58,9 @@ v0.3.1：Release/Debug 编译、49 项 JVM 测试、lintRelease 通过。Find �
 `artwork/god-halo-source.svg` 来自 God 网页 `src/god-halo.svg`，原光环和人物路径用于 Android 启动图标及总览Tab的黑白适配。洞察柱状图复用Ledger SVG的三柱轮廓；资产、工具、设置保持各自语义并以本项目的独立矢量资源表达，不把五个功能都替换成同一个Logo。图标在 `res/drawable/tab_*` 中，后续可逐个替换，不再依赖Canvas手绘Tab。
 
 此轮不修改认证、接口、会话或业务写入。
+
+## v0.3.5：腾讯蓝强调与紧凑底栏
+
+白/黑背景和黑白图标保持。主按钮使用腾讯TDesign标准蓝 `#0052D9` 与白字；浅色链接/焦点同色，深色链接/焦点使用TDesign对应 `#4582E6`。Tab和功能符号仍黑白，选中只填充图标，不染蓝、不加背景。
+
+Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20dp；系统手势安全区另计。控件触控高度不低于48dp。

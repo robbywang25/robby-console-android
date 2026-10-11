@@ -24,7 +24,7 @@ public final class ConsoleTheme {
         effects=!contrast&&android.animation.ValueAnimator.areAnimatorsEnabled()&&(power==null||!power.isPowerSaveMode());
         canvas=dark?Color.BLACK:Color.WHITE; surface=dark?0xff111111:Color.WHITE;
         ink=dark?Color.WHITE:Color.BLACK; muted=dark?0xffaaaaaa:0xff666666;
-        accent=ink;accentStrong=ink;line=dark?0xff292929:0xffe8e8e8;
+        accent=dark?0xff4582e6:0xff0052d9;accentStrong=0xff0052d9;line=dark?0xff292929:0xffe8e8e8;
         soft=dark?0xff1a1a1a:0xfff5f5f5;danger=dark?0xffffb4ab:0xffa0443e;
     }
     public int dp(float n){return Math.round(n*context.getResources().getDisplayMetrics().density);}
@@ -38,12 +38,12 @@ public final class ConsoleTheme {
         b.setTextSize(14);b.setAllCaps(false);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         b.setMinHeight(dp(48));b.setMinimumHeight(dp(48));b.setMinWidth(0);b.setMinimumWidth(0);
         b.setPadding(dp(18),dp(10),dp(18),dp(10));b.setStateListAnimator(null);b.setElevation(0);
-        b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{muted,prominent?(dark?Color.BLACK:Color.WHITE):accentStrong}));
+        b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{muted,prominent?Color.WHITE:accent}));
         b.setBackground(ripple(prominent?shape(accentStrong,12):shape(soft,12)));
     }
     public Button button(String label,Runnable action){Button b=new Button(context);b.setText(label);button(b,false);b.setOnClickListener(v->action.run());return b;}
     public LinearLayout card(LinearLayout root){LinearLayout c=new LinearLayout(context);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(16),dp(16),dp(16),dp(16));c.setBackground(card());c.setElevation(0);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);root.addView(c,p);return c;}
-    public ImageView icon(String name,int color,int size){if("grid".equals(name))return tabIcon(name,true,size);ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,color));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
+    public ImageView icon(String name,int color,int size){if("grid".equals(name))return tabIcon(name,true,size);ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,ink));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     public ImageView tabIcon(String name,boolean selected,int size){
         int asset=switch(name){
             case "grid"->selected?R.drawable.tab_home_solid:R.drawable.tab_home_outline;
