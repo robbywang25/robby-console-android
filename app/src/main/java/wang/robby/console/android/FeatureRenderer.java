@@ -381,7 +381,7 @@ public final class FeatureRenderer {
         }
         void amount(LinearLayout c,String label,String value){
             TextView k=text(label,12,false);k.setPadding(0,dp(8),0,dp(3));c.addView(k);
-            TextView v=text(value,26,true);v.setTextColor(theme.accentStrong);v.setPadding(0,0,0,dp(12));c.addView(v);
+            TextView v=text(value,26,true);v.setTextColor(theme.ink);v.setPadding(0,0,0,dp(12));c.addView(v);
         }
         void fields(LinearLayout c, JSONObject p, String... pairs) { for (int i = 0; i + 1 < pairs.length; i += 2) row(c, pairs[i + 1], s(p, pairs[i])); }
         void paragraph(LinearLayout c, String value) { if (value.isEmpty() || value.equals(UNKNOWN)) return; TextView t = text(value, 14, false); t.setPadding(0, dp(2), 0, dp(8)); c.addView(t); }
