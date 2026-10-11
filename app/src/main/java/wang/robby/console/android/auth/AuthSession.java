@@ -15,6 +15,8 @@ import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.function.LongSupplier;
 import javax.net.ssl.HttpsURLConnection;
 
@@ -218,7 +220,7 @@ public final class AuthSession {
                     expected = generation;
                 }
                 discovery = discovery();
-                updated = token(request(discovery.token, OAuthRequests.refresh(string(current, "refresh_token")), false));
+                updated = token(request(discovery.token, OAuthRequests.refresh(string(current, "refresh_token")), false), current);
                 String access = updated.access;
                 synchronized (STATE_LOCK) {
                     OAuthGuards.require(expected == generation);
@@ -290,13 +292,59 @@ public final class AuthSession {
                 && SCOPES.equals(string(token, "scope")) && token.getLong("expires_at") > 0);
     }
     private static Token token(JSONObject body) throws Exception {
-        String access = string(body, "access_token"), refresh = string(body, "refresh_token");
-        Object expiry = body.opt("expires_in");
-        long seconds = OAuthGuards.tokenLifetime(access, refresh, string(body, "token_type"),
-                string(body, "scope"), expiry, SCOPES);
-        JSONObject saved = new JSONObject().put("access_token", access).put("refresh_token", refresh)
-                .put("scope", SCOPES).put("expires_at", System.currentTimeMillis() + seconds * 1000L);
-        return new Token(saved, access, refresh);
+        return token(body, null);
+    }
+    private static Token token(JSONObject body, JSONObject previous) throws Exception {
+        try {
+            String access = TokenResponsePolicy.field(body.has("access_token"), body.opt("access_token"), null, "access_token");
+            TokenResponsePolicy.require(OAuthGuards.safeToken(access, 32768), "access_token");
+            String refresh = TokenResponsePolicy.field(body.has("refresh_token"), body.opt("refresh_token"),
+                    previous == null ? null : string(previous, "refresh_token"), "refresh_token");
+            TokenResponsePolicy.require(OAuthGuards.safeToken(refresh, 32768), "refresh_token");
+            TokenResponsePolicy.require(body.opt("token_type") instanceof String && "Bearer".equalsIgnoreCase((String) body.opt("token_type")), "token_type");
+            String scope = TokenResponsePolicy.field(body.has("scope"), body.opt("scope"),
+                    previous == null ? null : string(previous, "scope"), "scope");
+            TokenResponsePolicy.require(OAuthGuards.exactScopes(scope, SCOPES), "scope");
+            Object expiry = body.opt("expires_in");
+            TokenResponsePolicy.require(expiry instanceof Integer || expiry instanceof Long, "expires_in");
+            long seconds = ((Number) expiry).longValue();
+            TokenResponsePolicy.require(seconds >= 60 && seconds <= 86400, "expires_in");
+            validateTokenClaims(access);
+            JSONObject saved = new JSONObject().put("access_token", access).put("refresh_token", refresh)
+                    .put("scope", SCOPES).put("expires_at", System.currentTimeMillis() + seconds * 1000L);
+            return new Token(saved, access, refresh);
+        } catch (TokenResponsePolicy.Invalid failure) {
+            Log.w("GodAuth", TokenResponsePolicy.diagnostic(failure.reason));
+            throw failure("登录响应校验失败，请重新登录或稍后重试。");
+        } catch (Exception ignored) {
+            Log.w("GodAuth", TokenResponsePolicy.diagnostic(null));
+            throw failure("登录响应校验失败，请重新登录或稍后重试。");
+        }
+    }
+    private static void validateTokenClaims(String access) throws TokenResponsePolicy.Invalid {
+        final JSONObject claims;
+        try {
+            String[] parts = access.split("\\.", -1);
+            TokenResponsePolicy.require(parts.length == 3, "jwt_format");
+            byte[][] decoded = new byte[3][];
+            for (int i = 0; i < 3; i++) {
+                TokenResponsePolicy.require(parts[i].matches("[A-Za-z0-9_-]+"), "jwt_format");
+                decoded[i] = Base64.getUrlDecoder().decode(parts[i]);
+                TokenResponsePolicy.require(Base64.getUrlEncoder().withoutPadding().encodeToString(decoded[i]).equals(parts[i]), "jwt_format");
+            }
+            JSONObject header = new JSONObject(new String(decoded[0], StandardCharsets.UTF_8));
+            TokenResponsePolicy.require("RS256".equals(header.opt("alg"))
+                    && ("at+jwt".equals(header.opt("typ")) || "application/at+jwt".equals(header.opt("typ"))), "jwt_format");
+            claims = new JSONObject(new String(decoded[1], StandardCharsets.UTF_8));
+        } catch (Exception ignored) { throw new TokenResponsePolicy.Invalid("jwt_format"); }
+        Object audience = claims.opt("aud");
+        if (audience instanceof JSONArray) {
+            JSONArray array = (JSONArray) audience;
+            ArrayList<Object> values = new ArrayList<>();
+            for (int i = 0; i < array.length(); i++) values.add(array.opt(i));
+            audience = values;
+        }
+        TokenResponsePolicy.claims(claims.opt("iss"), claims.opt("client_id"), audience);
     }
     private Discovery discovery() throws Exception {
         Discovery cached = cachedDiscovery;

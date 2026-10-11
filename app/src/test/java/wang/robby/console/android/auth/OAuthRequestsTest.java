@@ -6,11 +6,12 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class OAuthRequestsTest {
-    @Test public void allFlowsUseRfc8707ResourceWithoutClientSecret() throws Exception {
+    @Test public void allFlowsUseExplicitAudienceWithoutResourceOrClientSecret() throws Exception {
         for (Map<String, String> request : List.of(OAuthRequests.authorization("verifier", "state"),
-                OAuthRequests.code("code", "verifier"), OAuthRequests.refresh("refresh"))) {
-            assertEquals("https://god.robby.wang/api/mobile/v1", request.get("resource"));
-            assertFalse(request.containsKey("audience"));
+                OAuthRequests.code("code", "verifier"), OAuthRequests.refresh("refresh"),
+                OAuthRequests.deviceAuthorization(), OAuthRequests.deviceToken("synthetic-device-code"))) {
+            assertEquals("https://god.robby.wang/api/mobile/v1", request.get("audience"));
+            assertFalse(request.containsKey("resource"));
             assertFalse(request.containsKey("client_secret"));
             assertEquals("robby-console-android", request.get("client_id"));
         }

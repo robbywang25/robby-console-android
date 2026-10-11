@@ -18,7 +18,7 @@ import javax.crypto.spec.GCMParameterSpec;
 /** Callers serialize all accesses. Key material never leaves AndroidKeyStore. */
 final class EncryptedStore {
     private static final String ALIAS = "wang.robby.console.android.oidc.v1";
-    private static final byte[] AAD = (ALIAS + ":robby-console-android:ledger-v2").getBytes(StandardCharsets.UTF_8);
+    private static final byte[] AAD = (ALIAS + ":robby-console-android:ledger-audience-v3").getBytes(StandardCharsets.UTF_8);
     private final AtomicFile file;
     EncryptedStore(Context context) {
         file = new AtomicFile(new File(context.getNoBackupFilesDir(), "oidc-session-v1.enc"));

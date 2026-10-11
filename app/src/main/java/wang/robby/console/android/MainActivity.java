@@ -129,7 +129,7 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
         section("账号");row(auth.hasSession()?"已登录":"尚未登录","Passkey · 设备加密存储",this::account);
         section("管理");for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f);
         section("关于");row("隐私与数据","无第三方统计 · 不保存网页 Cookie",()->new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n当前版本包含原生只读功能；写入功能正在按 iOS 合同逐项迁移。").setPositiveButton("知道了",null).show());
-        row("God 工作台","Android 0.2.1 · 原生版本",()->{});
+        row("God 工作台","Android 0.2.2 · 原生版本",()->{});
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){

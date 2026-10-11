@@ -46,11 +46,11 @@ public class DevicePollPolicyTest {
                 expected.replace("https:", "http:"), expected.replace("auth.god.robby.wang", "evil.example"), AuthSession.ISSUER + "/other"})
             assertThrows(Exception.class, () -> DevicePollPolicy.verificationUri(value));
     }
-    @Test public void deviceRequestsUseResourceAndNeverPutCodeIntoVerificationUrl() {
-        assertEquals(AuthSession.AUDIENCE, OAuthRequests.deviceAuthorization().get("resource"));
+    @Test public void deviceRequestsUseAudienceAndNeverPutCodeIntoVerificationUrl() {
+        assertEquals(AuthSession.AUDIENCE, OAuthRequests.deviceAuthorization().get("audience"));
         assertEquals(AuthSession.SCOPES, OAuthRequests.deviceAuthorization().get("scope"));
         assertEquals(DevicePollPolicy.GRANT, OAuthRequests.deviceToken("synthetic-code").get("grant_type"));
-        assertEquals(AuthSession.AUDIENCE, OAuthRequests.deviceToken("synthetic-code").get("resource"));
+        assertEquals(AuthSession.AUDIENCE, OAuthRequests.deviceToken("synthetic-code").get("audience"));
         assertFalse(OAuthRequests.deviceToken("synthetic-code").containsKey("client_secret"));
         DeviceAuthorization info = new DeviceAuthorization("https://auth.example/verify", "TEST-CODE", 1000, 5);
         assertFalse(info.toString().contains(info.userCode));
