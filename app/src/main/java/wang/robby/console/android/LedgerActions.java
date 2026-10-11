@@ -36,6 +36,7 @@ public final class LedgerActions {
     private static final String ENTRY = "entry", PEOPLE = "people";
     private static final Set<String> COLORS = Set.of("gold","ocean","fern","alpine","coral","violet","slate","sky");
     private final Activity activity;
+    private final ConsoleTheme theme;
     private final Transport transport;
     private final Runnable onVerifiedWrite;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -50,7 +51,7 @@ public final class LedgerActions {
     private final List<EditText> sensitiveInputs = new ArrayList<>();
 
     public LedgerActions(Activity activity, Transport transport, Runnable onVerifiedWrite) {
-        this.activity = activity; this.transport = transport; this.onVerifiedWrite = onVerifiedWrite;
+        this.activity = activity; this.theme = new ConsoleTheme(activity); this.transport = transport; this.onVerifiedWrite = onVerifiedWrite;
         journal = new Journal(activity.getApplicationContext());
     }
     /** Call on backgrounding, logout and destruction. Financial form content never enters saved state. */
@@ -85,7 +86,7 @@ public final class LedgerActions {
         body = new LinearLayout(activity); body.setOrientation(LinearLayout.VERTICAL); body.setPadding(dp(20),dp(8),dp(20),dp(16));
         ScrollView scroll = new ScrollView(activity); scroll.addView(body);
         dialog = new AlertDialog.Builder(activity).setTitle(title).setView(scroll).setNegativeButton("关闭", (d,w) -> close()).create();
-        dialog.setOnCancelListener(d -> close()); dialog.show();
+        dialog.setOnCancelListener(d -> close()); dialog.show(); theme.dialog(dialog);
         if (dialog.getWindow() != null) dialog.getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE);
     }
     private void loadContext(boolean ignored) {
@@ -122,7 +123,7 @@ public final class LedgerActions {
             if (draft!=null && p.getString("id").equals(draft.optString("payerPersonId"))) selectedPayer=i+1; }
         Spinner payer = picker("付款人",personLabels,selectedPayer);
         title("参与分摊的人"); List<CheckBox> selected = new ArrayList<>(); Set<String> oldParticipants = draft==null ? Set.of() : new HashSet<>(strings(draft.getJSONArray("participantPersonIds")));
-        for (JSONObject p : people) { CheckBox box=new CheckBox(activity);box.setMinHeight(dp(44));box.setText(p.getString("displayName"));box.setChecked(oldParticipants.contains(p.getString("id")));body.addView(box);selected.add(box); }
+        for (JSONObject p : people) { CheckBox box=new CheckBox(activity);box.setMinHeight(dp(48));box.setText(p.getString("displayName"));box.setChecked(oldParticipants.contains(p.getString("id")));body.addView(box);selected.add(box); }
         String zone = draft == null ? ZoneId.systemDefault().getId() : draft.getString("paymentTimeZone");
         String wall = "";
         try { Instant instant=draft==null ? Instant.now() : Instant.parse(draft.getString("occurredAtUtc")); wall=DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.of(zone)).format(instant); } catch (RuntimeException ignored) { }
@@ -179,8 +180,8 @@ public final class LedgerActions {
     private void ordering(List<JSONObject> ordered) throws Exception {
         clear();title("人员顺序");
         for(int i=0;i<ordered.size();i++){final int index=i; JSONObject person=ordered.get(i); LinearLayout row=new LinearLayout(activity);row.setOrientation(LinearLayout.HORIZONTAL);
-            TextView label=new TextView(activity);label.setText((i+1)+". "+person.getString("displayName"));label.setTextSize(16);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));
-            Button up=new Button(activity);up.setText("上移");up.setMinHeight(dp(48));up.setEnabled(i>0);up.setOnClickListener(v->tap(()->{Collections.swap(ordered,index,index-1);ordering(ordered);}));row.addView(up);body.addView(row);}
+            TextView label=new TextView(activity);label.setText((i+1)+". "+person.getString("displayName"));label.setTextSize(16);label.setTextColor(theme.ink);row.addView(label,new LinearLayout.LayoutParams(0,-2,1));
+            Button up=new Button(activity);up.setText("上移");theme.button(up,false);up.setMinHeight(dp(48));up.setEnabled(i>0);up.setOnClickListener(v->tap(()->{Collections.swap(ordered,index,index-1);ordering(ordered);}));row.addView(up);body.addView(row);}
         action("预览排序",()->{JSONArray ids=new JSONArray();for(JSONObject p:ordered)ids.put(p.getString("id"));preview(peopleRequest("reorder",null,null,ids));},true);
         action("返回名单",this::roster,true);
     }
@@ -304,11 +305,11 @@ public final class LedgerActions {
     }
     private void failure(String message){new AlertDialog.Builder(activity).setMessage(message).setPositiveButton("知道了",null).show();}
     private void clear(){if(body!=null)body.removeAllViews();sensitiveInputs.clear();}
-    private void title(String text){TextView v=new TextView(activity);v.setText(text);v.setTextSize(18);v.setTypeface(null,Typeface.BOLD);v.setTextColor(0xff172642);v.setPadding(0,dp(18),0,dp(10));v.setAccessibilityHeading(true);body.addView(v);}
-    private void text(String text){if(body==null)return;TextView v=new TextView(activity);v.setText(text);v.setTextSize(15);v.setTextColor(0xff51617b);v.setPadding(0,dp(7),0,dp(7));body.addView(v);}
-    private EditText input(String label,String value,int type){text(label);EditText e=new EditText(activity);e.setText(value);e.setHint(label);e.setContentDescription(label);e.setInputType(type);e.setMinHeight(dp(48));e.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);e.setSaveEnabled(false);body.addView(e);sensitiveInputs.add(e);return e;}
+    private void title(String text){TextView v=new TextView(activity);v.setText(text);v.setTextSize(18);v.setTypeface(null,Typeface.BOLD);v.setTextColor(theme.ink);v.setPadding(0,dp(18),0,dp(10));v.setAccessibilityHeading(true);body.addView(v);}
+    private void text(String text){if(body==null)return;TextView v=new TextView(activity);v.setText(text);v.setTextSize(15);v.setTextColor(theme.muted);v.setPadding(0,dp(7),0,dp(7));body.addView(v);}
+    private EditText input(String label,String value,int type){text(label);EditText e=new EditText(activity);e.setText(value);e.setHint(label);e.setContentDescription(label);e.setInputType(type);e.setMinHeight(dp(48));e.setImportantForAutofill(View.IMPORTANT_FOR_AUTOFILL_NO);e.setSaveEnabled(false);theme.input(e);body.addView(e);sensitiveInputs.add(e);return e;}
     private Spinner picker(String label,List<String> values,int selected){text(label);Spinner s=new Spinner(activity);s.setContentDescription(label);s.setMinimumHeight(dp(48));s.setAdapter(new ArrayAdapter<>(activity,android.R.layout.simple_spinner_dropdown_item,values));if(!values.isEmpty())s.setSelection(Math.max(0,selected));body.addView(s);return s;}
-    private void action(String label,Tap action,boolean enabled){Button b=new Button(activity);b.setText(label);b.setAllCaps(false);b.setMinHeight(dp(48));b.setEnabled(enabled);b.setTag(Boolean.valueOf(enabled));b.setOnClickListener(v->tap(action));body.addView(b);}
+    private void action(String label,Tap action,boolean enabled){Button b=new Button(activity);b.setText(label);b.setAllCaps(false);theme.button(b,false);b.setMinHeight(dp(48));b.setEnabled(enabled);b.setTag(Boolean.valueOf(enabled));b.setOnClickListener(v->tap(action));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(8);body.addView(b,lp);}
     private void tap(Tap action){if(busy||closed)return;try{action.run();}catch(Exception e){showError(e);}}
     private void setEnabled(View v,boolean enabled){if(v==null)return;v.setEnabled(enabled&&(!Boolean.FALSE.equals(v.getTag())));if(v instanceof android.view.ViewGroup){android.view.ViewGroup g=(android.view.ViewGroup)v;for(int i=0;i<g.getChildCount();i++)setEnabled(g.getChildAt(i),enabled);}}
     private int dp(int n){return Math.round(n*activity.getResources().getDisplayMetrics().density);}

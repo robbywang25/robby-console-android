@@ -91,9 +91,18 @@ public final class FeatureRenderer {
         Object value = p.opt("schemaVersion"); return value instanceof Number && ((Number) value).doubleValue() == n;
     }
     private static void overview(UI u, JSONObject p) {
-        LinearLayout c = u.card("今日概览"); JSONObject s = obj(p, "summary");
-        u.fields(c, s, "servicesOnline", "在线服务", "servicesKnown", "已知服务", "servicesTotal", "服务总数",
-            "infrastructureInstances", "云实例", "domainAssets", "域名资产");
+        JSONObject s = obj(p, "summary");
+        boolean wide=u.context.getResources().getConfiguration().screenWidthDp>=360&&u.context.getResources().getConfiguration().fontScale<1.3f;
+        String[][] metrics={{"在线服务",number(s,"servicesOnline"),"已知 "+number(s,"servicesKnown")+" / 总计 "+number(s,"servicesTotal"),"pulse"},{"云实例",number(s,"infrastructureInstances"),"基础设施","server"},{"域名资产",number(s,"domainAssets"),"已登记域名","globe"}};
+        LinearLayout band=null;
+        for(int i=0;i<metrics.length;i++){
+            if(i==0||i==1||!wide){band=new LinearLayout(u.context);band.setOrientation(LinearLayout.HORIZONTAL);u.root.addView(band,new LinearLayout.LayoutParams(-1,-2));}
+            LinearLayout tile=new LinearLayout(u.context);tile.setOrientation(LinearLayout.VERTICAL);tile.setPadding(u.dp(18),u.dp(16),u.dp(18),u.dp(16));tile.setBackground(u.theme.card());
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.bottomMargin=u.dp(12);if(i==1&&wide)lp.rightMargin=u.dp(10);band.addView(tile,lp);
+            LinearLayout line=new LinearLayout(u.context);line.setGravity(Gravity.CENTER_VERTICAL);TextView label=u.text(metrics[i][0],14,false);line.addView(label,new LinearLayout.LayoutParams(0,-2,1));line.addView(u.theme.icon(metrics[i][3],u.theme.accent,20));tile.addView(line);
+            TextView value=u.text(metrics[i][1],i==0?38:30,true);value.setPadding(0,u.dp(6),0,u.dp(2));tile.addView(value);tile.addView(u.text(metrics[i][2],12,false));
+        }
+        LinearLayout c;
         JSONArray notices = arr(p, "notices");
         if (notices.length() == 0) u.message("待办提醒", "暂无提醒");
         for (int i = 0; i < limit(u, notices); i++) { JSONObject n = notices.optJSONObject(i); if (n == null) continue;
@@ -359,22 +368,17 @@ public final class FeatureRenderer {
         }
     }
     private static final class UI {
-        final Context context; final LinearLayout root; final int ink, muted, background, border;
-        UI(Context c, LinearLayout r) { context = c; root = r;
-            // Match the Activity's explicit light theme; switch the whole app together later.
-            boolean dark = false;
-            ink = Color.parseColor(dark ? "#E7EEF9" : "#172B4D"); muted = Color.parseColor(dark ? "#ADBBD0" : "#63748C");
-            background = Color.parseColor(dark ? "#1B293C" : "#FFFFFF"); border = Color.parseColor(dark ? "#304059" : "#E3E9F1"); }
+        final Context context; final LinearLayout root; final int ink, muted, background, border; final ConsoleTheme theme;
+        UI(Context c, LinearLayout r) { context=c;root=r;theme=new ConsoleTheme(c);ink=theme.ink;muted=theme.muted;background=theme.surface;border=theme.line; }
         int dp(float n) { return Math.round(n * context.getResources().getDisplayMetrics().density); }
-        TextView text(String value, int size, boolean bold) { TextView v = new TextView(context); v.setText(value); v.setTextSize(size); v.setTextColor(bold ? ink : muted);
-            v.setLineSpacing(dp(2), 1f); if (bold) v.setTypeface(Typeface.DEFAULT, Typeface.BOLD); return v; }
-        LinearLayout card(String title) { LinearLayout c = new LinearLayout(context); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(dp(18), dp(16), dp(18), dp(14));
-            GradientDrawable bg = new GradientDrawable(); bg.setColor(background); bg.setCornerRadius(dp(18)); bg.setStroke(dp(1), border); c.setBackground(bg);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = dp(12); root.addView(c, lp);
-            TextView heading = text(title, 17, true); heading.setAccessibilityHeading(true); heading.setPadding(0, 0, 0, dp(9)); c.addView(heading); return c; }
-        void row(LinearLayout c, String label, String value) { LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setMinimumHeight(dp(44)); r.setPadding(0, dp(5), 0, dp(5));
-            TextView k = text(label, 14, false); TextView v = text(value, 15, true); v.setGravity(Gravity.END); v.setPadding(dp(10), 0, 0, 0);
-            r.addView(k, new LinearLayout.LayoutParams(0, -2, 1f)); r.addView(v, new LinearLayout.LayoutParams(0, -2, 1.3f)); c.addView(r); }
+        TextView text(String value, int size, boolean bold) {return theme.text(value,size,bold);}
+        LinearLayout card(String title) {LinearLayout c=theme.card(root);TextView heading=text(title,17,true);heading.setAccessibilityHeading(true);heading.setPadding(0,0,0,dp(10));c.addView(heading);return c;}
+        void row(LinearLayout c, String label, String value) {
+            boolean stack=context.getResources().getConfiguration().fontScale>=1.3f||context.getResources().getConfiguration().screenWidthDp<350||value.length()>36;
+            LinearLayout r=new LinearLayout(context);r.setOrientation(stack?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);r.setGravity(Gravity.CENTER_VERTICAL);r.setMinimumHeight(dp(44));r.setPadding(0,dp(7),0,dp(7));
+            TextView k=text(label,13,false),v=text(value,15,true);v.setTextDirection(android.view.View.TEXT_DIRECTION_FIRST_STRONG);v.setGravity(stack?Gravity.START:Gravity.END);v.setPadding(stack?0:dp(12),stack?dp(4):0,0,0);
+            if(stack){r.addView(k);r.addView(v);}else{r.addView(k,new LinearLayout.LayoutParams(0,-2,1));r.addView(v,new LinearLayout.LayoutParams(0,-2,1.4f));}c.addView(r);
+        }
         void fields(LinearLayout c, JSONObject p, String... pairs) { for (int i = 0; i + 1 < pairs.length; i += 2) row(c, pairs[i + 1], s(p, pairs[i])); }
         void paragraph(LinearLayout c, String value) { if (value.isEmpty() || value.equals(UNKNOWN)) return; TextView t = text(value, 14, false); t.setPadding(0, dp(2), 0, dp(8)); c.addView(t); }
         void message(String title, String value) { paragraph(card(title), value); }

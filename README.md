@@ -17,7 +17,7 @@ God 私人工作台的原生 Android 客户端，也称 **Robby Console**。使�
 
 ## 功能
 
-五个导航区：总览、洞察、资产、工具、设置。原生入口覆盖访问统计、Visit Observer、PostHog、市场、OKX 只读概览、OpenAI 用量、基础设施、域名、服务健康、工程记录、云剪贴板元数据、多账本、图片库存、微信卡片、公众号、目录、Prompt 与凭据配置状态。
+界面随系统切换浅色与深色，以悬浮玻璃导航和清晰的数据卡片组织内容。首页直接展示真实总览，大字体下自动调整数值排版。五个导航区：总览、洞察、资产、工具、设置。原生入口覆盖访问统计、Visit Observer、PostHog、市场、OKX 只读概览、OpenAI 用量、基础设施、域名、服务健康、工程记录、云剪贴板元数据、多账本、图片库存、微信卡片、公众号、目录、Prompt 与凭据配置状态。
 
 空值显示「未知」，数据过期、部分可用、未配置和需要重新认证分别呈现。财务金额保留服务端十进制值；人民币换算是参考值。UI 不直接展示后台 JSON 或凭据。
 
@@ -48,6 +48,8 @@ printf 'sdk.dir=%s\n' "$ANDROID_HOME" > local.properties
 
 构建依赖使用 Google Maven、Maven Central 和官方 Gradle 分发。Gradle wrapper 包含下载校验。
 
+Debug 包是独立的离线界面预览，只使用合成数据，不连接真实账号。真实服务联调使用签名 Release；预览入口及主题检查命令见 [原生界面说明](docs/NATIVE-APPEARANCE.md)。
+
 正式签名材料放在仓库外的私有目录：`release.jks`（PKCS12）、`store-password`（单行密码）。alias 为 `robby-console-android`，两个文件不得提交。指定该目录后构建：
 
 ```sh
@@ -60,6 +62,7 @@ ROBBY_ANDROID_SIGNING_DIR=/absolute/private/signing ./gradlew assembleRelease
 
 - `app/`：原生 Activity、功能卡片、固定 API 传输、认证与测试。
 - `docs/FEATURE-PARITY.md`：与既有工作台能力的对应关系和限制。
+- `docs/NATIVE-APPEARANCE.md`：原生视觉组件、平台降级和独立界面预览。
 - `.github/workflows/`：编译、静态检查和单元测试。
 
 服务端运维、私人数据、签名密钥和内部系统配置不在此仓库。正式 APK 由维护者签名后上传 GitHub Release。
