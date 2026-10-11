@@ -20,4 +20,4 @@ jobs:
       - name: Install SDK components
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
       - name: Unit tests, lint and APK
-        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug lintRelease assembleDebug assembleRelease
