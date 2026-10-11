@@ -2,6 +2,7 @@ package wang.robby.console.android.auth;
 
 import android.content.Context;
 import android.net.Uri;
+import android.os.SystemClock;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
@@ -9,9 +10,11 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
+import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.LongSupplier;
 import javax.net.ssl.HttpsURLConnection;
 
 /**
@@ -45,6 +48,99 @@ public final class AuthSession {
     // authorization tasks which have not started executing yet.
     long beginAuthorization() {
         synchronized (STATE_LOCK) { return ++generation; }
+    }
+
+    void cancelAuthorization() {
+        synchronized (STATE_LOCK) {
+            generation++;
+            try {
+                JSONObject saved = readOrReset();
+                if (saved.has("pending")) { saved.remove("pending"); store.write(saved); }
+            } catch (Exception ignored) { /* readOrReset has already invalidated unreadable storage. */ }
+        }
+    }
+
+    Runnable cancelDeviceAuthorization(DeviceGrant grant) {
+        synchronized (STATE_LOCK) {
+            // Cancellation can race between the token's durable commit and the
+            // coordinator's success notification. Remove only this flow's session.
+            if (grant != null && grant.committed && generation == grant.reservation + 1) return clearLocal();
+            cancelAuthorization();
+            return () -> { };
+        }
+    }
+
+    DeviceGrant startDeviceAuthorization(long expected) throws Exception {
+        try {
+            synchronized (STATE_LOCK) {
+                OAuthGuards.require(generation == expected);
+                JSONObject saved = readOrReset();
+                if (saved.has("pending")) { saved.remove("pending"); store.write(saved); }
+            }
+            Discovery discovery = discovery();
+            OAuthGuards.require(discovery.deviceAuthorization != null);
+            JSONObject response = request(discovery.deviceAuthorization, OAuthRequests.deviceAuthorization(), false);
+            String code = string(response, "device_code"), user = string(response, "user_code");
+            OAuthGuards.require(OAuthGuards.safeToken(code, 4096) && user.matches("[A-Za-z0-9][A-Za-z0-9-]{3,63}"));
+            String verification = DevicePollPolicy.verificationUri(string(response, "verification_uri"));
+            int seconds = DevicePollPolicy.lifetime(response.opt("expires_in"));
+            int interval = DevicePollPolicy.interval(response.has("interval") ? response.get("interval") : null);
+            synchronized (STATE_LOCK) { OAuthGuards.require(generation == expected); }
+            DeviceAuthorization info = new DeviceAuthorization(verification, user, System.currentTimeMillis() + seconds * 1000L, interval);
+            return new DeviceGrant(info, code, expected, discovery, new DevicePollPolicy(seconds, interval, monotonicNow()));
+        } catch (Exception ignored) { throw failure("无法准备设备登录，请检查网络或稍后重试。"); }
+    }
+
+    boolean pollDeviceAuthorization(DeviceGrant grant) throws Exception {
+        Token result = null;
+        try {
+            synchronized (STATE_LOCK) { OAuthGuards.require(generation == grant.reservation && grant.code != null); }
+            OAuthGuards.require(grant.policy.delay(monotonicNow()) == 0);
+            JSONObject response;
+            try {
+                response = request(grant.discovery.token, OAuthRequests.deviceToken(grant.code), false, true);
+            } catch (DeviceOAuthFailure pending) {
+                grant.policy.response(pending.code, monotonicNow());
+                return false;
+            } catch (SocketTimeoutException timeout) {
+                grant.policy.timeout(monotonicNow());
+                return false;
+            }
+            result = token(response);
+            grant.policy.delay(monotonicNow()); // Reject success arriving after the device-code deadline.
+            synchronized (STATE_LOCK) {
+                OAuthGuards.require(generation == grant.reservation && grant.code != null);
+                store.write(new JSONObject().put("session", result.json));
+                generation++;
+                grant.committed = true;
+            }
+            result = null;
+            return true;
+        } finally {
+            if (result != null) revoke(grant.discovery, result.refresh, result.access);
+        }
+    }
+
+    static long monotonicNow() { return SystemClock.elapsedRealtime(); }
+
+    static final class DeviceGrant {
+        final DeviceAuthorization info;
+        final long reservation;
+        final Discovery discovery;
+        final DevicePollPolicy policy;
+        private final LongSupplier clock;
+        private volatile String code;
+        private boolean committed;
+        DeviceGrant(DeviceAuthorization info, String code, long reservation, Discovery discovery, DevicePollPolicy policy) {
+            this(info, code, reservation, discovery, policy, AuthSession::monotonicNow);
+        }
+        DeviceGrant(DeviceAuthorization info, String code, long reservation, Discovery discovery, DevicePollPolicy policy, LongSupplier clock) {
+            this.info = info; this.code = code; this.reservation = reservation; this.discovery = discovery; this.policy = policy;
+            this.clock = clock;
+        }
+        long delay() throws Exception { return policy.delay(clock.getAsLong()); }
+        void clear() { code = null; }
+        @Override public String toString() { return "DeviceGrant{redacted}"; }
     }
 
     String authorizationUrl(long expected) throws Exception {
@@ -212,7 +308,12 @@ public final class AuthSession {
         URI token = OAuthGuards.endpoint(string(body, "token_endpoint"), ISSUER);
         URI revocation = body.has("revocation_endpoint")
                 ? OAuthGuards.endpoint(string(body, "revocation_endpoint"), ISSUER) : null;
-        cachedDiscovery = new Discovery(authorization, token, revocation);
+        URI device = null;
+        if (body.has("device_authorization_endpoint") && contains(body, "grant_types_supported", DevicePollPolicy.GRANT)) {
+            device = OAuthGuards.endpoint(string(body, "device_authorization_endpoint"), ISSUER);
+            OAuthGuards.require(device.toString().equals(ISSUER + "/api/oidc/device-authorization"));
+        }
+        cachedDiscovery = new Discovery(authorization, token, revocation, device);
         return cachedDiscovery;
     }
     private static boolean contains(JSONObject body, String key, String value) throws Exception {
@@ -235,6 +336,9 @@ public final class AuthSession {
         }
     }
     private static JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse) throws Exception {
+        return request(endpoint, form, emptyResponse, false);
+    }
+    private static JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse, boolean deviceErrors) throws Exception {
         OAuthGuards.endpoint(endpoint.toString(), ISSUER);
         HttpsURLConnection connection = (HttpsURLConnection) endpoint.toURL().openConnection();
         connection.setInstanceFollowRedirects(false);
@@ -251,7 +355,8 @@ public final class AuthSession {
                 try (OutputStream output = connection.getOutputStream()) { output.write(bytes); }
             }
             int status = connection.getResponseCode();
-            if (status < 200 || status >= 300) {
+            boolean deviceError = deviceErrors && status == 400;
+            if ((status < 200 || status >= 300) && !deviceError) {
                 // Server error text and credential-bearing URLs are never surfaced or logged.
                 throw new HttpFailure(status == 400 || status == 401 || status == 403);
             }
@@ -259,13 +364,21 @@ public final class AuthSession {
             String contentType = connection.getContentType();
             OAuthGuards.require(contentType != null && contentType.split(";", 2)[0].trim().equalsIgnoreCase("application/json"));
             OAuthGuards.require(connection.getContentLengthLong() <= 131072L);
-            try (InputStream stream = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            try (InputStream stream = deviceError ? connection.getErrorStream() : connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                OAuthGuards.require(stream != null);
                 byte[] buffer = new byte[4096]; int count;
                 while ((count = stream.read(buffer)) != -1) {
                     OAuthGuards.require(output.size() + count <= 131072);
                     output.write(buffer, 0, count);
                 }
-                return new JSONObject(output.toString("UTF-8"));
+                JSONObject body = new JSONObject(output.toString("UTF-8"));
+                if (deviceError) {
+                    OAuthGuards.require(!body.has("access_token") && !body.has("refresh_token"));
+                    String code = string(body, "error");
+                    throw new DeviceOAuthFailure(code);
+                }
+                if (deviceErrors) OAuthGuards.require(status == 200 && !body.has("error"));
+                return body;
             }
         } finally { connection.disconnect(); }
     }
@@ -288,11 +401,19 @@ public final class AuthSession {
         final boolean invalidSession;
         HttpFailure(boolean invalidSession) { super("身份服务请求失败。"); this.invalidSession = invalidSession; }
     }
+    private static final class DeviceOAuthFailure extends Exception {
+        final String code;
+        DeviceOAuthFailure(String code) {
+            super("设备授权尚未完成。");
+            this.code = ("authorization_pending".equals(code) || "slow_down".equals(code)
+                    || "access_denied".equals(code) || "expired_token".equals(code)) ? code : "unsupported_error";
+        }
+    }
     private static final class Discovery {
-        final URI authorization, token, revocation;
+        final URI authorization, token, revocation, deviceAuthorization;
         final long created = System.currentTimeMillis();
-        Discovery(URI authorization, URI token, URI revocation) {
-            this.authorization = authorization; this.token = token; this.revocation = revocation;
+        Discovery(URI authorization, URI token, URI revocation, URI deviceAuthorization) {
+            this.authorization = authorization; this.token = token; this.revocation = revocation; this.deviceAuthorization = deviceAuthorization;
         }
     }
     private static final class Token {

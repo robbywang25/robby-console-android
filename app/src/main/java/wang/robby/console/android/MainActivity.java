@@ -14,6 +14,7 @@ import java.util.*;
 import java.util.concurrent.*;
 import wang.robby.console.android.auth.AuthSession;
 import wang.robby.console.android.auth.AuthCoordinator;
+import wang.robby.console.android.auth.DeviceAuthorization;
 
 /** Native client. No embedded web content, demo balances, or service credentials. */
 public final class MainActivity extends Activity implements AuthCoordinator.Listener {
@@ -51,7 +52,8 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
     @Override public void onAuthError(String message){if(resumed&&!isDestroyed()){build();error("登录未完成",message);}}
     private void build() {
         boolean logged=auth.hasSession();
-        if(logged) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE); else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+        DeviceAuthorization device=coordinator.deviceAuthorization();
+        if(logged||device!=null||coordinator.busy()) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE); else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
         root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(BG);setContentView(root);
         root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});
         root.requestApplyInsets();
@@ -64,14 +66,15 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(20),dp(8),dp(20),dp(20));scroll.addView(content);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         nav=new LinearLayout(this);nav.setPadding(dp(6),dp(5),dp(6),dp(5));nav.setBackgroundColor(Color.WHITE);
         for(String label:List.of("总览","洞察","资产","工具","设置")) {Button b=button(label,()->{++generation;group=label;selectedId=null;project=null;build();});b.setTextSize(13);b.setPadding(0,dp(12),0,dp(12));b.setTextColor(group.equals(label)?BLUE:MUTED);b.setBackground(round(group.equals(label)?0xffeaf0ff:Color.WHITE,10));nav.addView(b,new LinearLayout.LayoutParams(0,dp(52),1));}root.addView(nav);
+        if(device!=null){nav.setVisibility(View.GONE);showDeviceAuthorization(device);return;}
         if(selectedId!=null){FeatureCatalog.Feature f=find(selectedId);if(f!=null){showFeature(f,false);return;}selectedId=null;}
         if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else catalog(group);
     }
     private void home() {
         LinearLayout hero=card();hero.setPadding(dp(22),dp(22),dp(22),dp(22));hero.setBackground(round(INK,22));
         hero.addView(text("你的私人工作台",24,Color.WHITE,true));TextView sub=text("数据、资产与常用工具，随身查看。",14,0xffc5d0e6,false);sub.setPadding(0,dp(10),0,dp(18));hero.addView(sub);
-        Button b=button(auth.hasSession()?"刷新工作台":"使用 Passkey 登录",()->{if(auth.hasSession()){FeatureCatalog.Feature f=find("overview");if(f==null)f=FeatureCatalog.all().get(0);open(f);}else login();});b.setBackground(round(BLUE,12));b.setTextColor(Color.WHITE);hero.addView(b);
-        if(!auth.hasSession()){TextView hint=text("登录后读取真实数据",12,0xffb7c5df,false);hint.setPadding(0,dp(12),0,0);hero.addView(hint);}
+        Button b=button(auth.hasSession()?"刷新工作台":"通过电脑授权",()->{if(auth.hasSession()){FeatureCatalog.Feature f=find("overview");if(f==null)f=FeatureCatalog.all().get(0);open(f);}else deviceLogin();});b.setBackground(round(BLUE,12));b.setTextColor(Color.WHITE);hero.addView(b);
+        if(!auth.hasSession()){Button passkey=button("使用此设备或附近设备的 Passkey",this::login);hero.addView(passkey);TextView hint=text("登录后读取真实数据",12,0xffb7c5df,false);hint.setPadding(0,dp(12),0,0);hero.addView(hint);}
         section("常用功能");
         for(String needle:List.of("旅行","剪贴板","OpenAI","域名")){FeatureCatalog.Feature f=FeatureCatalog.all().stream().filter(x->x.title.contains(needle)).findFirst().orElse(null);if(f!=null)featureRow(f);}
         section("全部功能");
@@ -83,7 +86,7 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
     private void showFeature(FeatureCatalog.Feature f,boolean refresh) {
         content.removeAllViews();heading.setText(f.title);
         LinearLayout controls=new LinearLayout(this);controls.addView(button("‹ 返回",this::goBack));controls.addView(button("刷新",()->showFeature(f,true)));content.addView(controls);
-        if(!auth.hasSession()){section(f.title);TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(20),0,dp(20));content.addView(t);content.addView(button("使用 Passkey 登录",this::login));return;}
+        if(!auth.hasSession()){section(f.title);TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(20),0,dp(20));content.addView(t);content.addView(button("通过电脑授权",this::deviceLogin));content.addView(button("使用 Passkey 登录",this::login));return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
         String key=path; JSONObject cached=key.startsWith("travel-ledger/")?null:snapshots.get(key);
@@ -126,11 +129,25 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
         section("账号");row(auth.hasSession()?"已登录":"尚未登录","Passkey · 设备加密存储",this::account);
         section("管理");for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f);
         section("关于");row("隐私与数据","无第三方统计 · 不保存网页 Cookie",()->new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n当前版本包含原生只读功能；写入功能正在按 iOS 合同逐项迁移。").setPositiveButton("知道了",null).show());
-        row("God 工作台","Android 0.1.0 · 原生版本",()->{});
+        row("God 工作台","Android 0.2.0 · 原生版本",()->{});
     }
+    @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
+    private void showDeviceAuthorization(DeviceAuthorization info){
+        heading.setText("在电脑上授权");session.setText("等待本人确认");
+        LinearLayout c=card();c.addView(text("1  打开安全验证页",19,INK,true));
+        TextView url=text(info.verificationUri.toString(),15,BLUE,false);url.setPadding(0,dp(14),0,dp(22));c.addView(url);
+        c.addView(text("使用已经能登录 God 的电脑或其他设备。",14,MUTED,false));
+        c=card();c.addView(text("2  输入这组一次性代码",19,INK,true));
+        TextView code=text(info.userCode,30,INK,true);code.setLetterSpacing(0.12f);code.setPadding(0,dp(22),0,dp(22));code.setGravity(Gravity.CENTER);c.addView(code);
+        c.addView(text("核对应用为 God 工作台 Android，再确认授权。不要把代码发给其他人。",14,MUTED,false));
+        c=card();c.addView(text("3  完成后自动进入工作台",19,INK,true));
+        c.addView(text("代码仅在本次验证有效；请保持两台设备联网。",14,MUTED,false));
+        content.addView(button("取消验证",()->{coordinator.cancelDeviceLogin();build();}));
+    }
+    private void deviceLogin(){if(coordinator.busy())return;coordinator.loginWithDevice();}
     private void login(){if(coordinator.busy())return;session.setText("正在准备安全登录…");coordinator.login();}
-    private void account(){if(!auth.hasSession()){login();return;}new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->{++generation;snapshots.clear();selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}).show();}
-    private void goBack(){if(selectedId!=null){++generation;selectedId=null;project=null;build();}else if(!group.equals("总览")){group="总览";build();}else moveTaskToBack(true);}
+    private void account(){if(!auth.hasSession()){new AlertDialog.Builder(this).setTitle("登录 God 工作台").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录"},(d,w)->{if(w==0)deviceLogin();else login();}).setNegativeButton("取消",null).show();return;}new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->{++generation;snapshots.clear();selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}).show();}
+    private void goBack(){if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){++generation;selectedId=null;project=null;build();}else if(!group.equals("总览")){group="总览";build();}else moveTaskToBack(true);}
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}

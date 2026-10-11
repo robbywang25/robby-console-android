@@ -11,7 +11,8 @@ God 私人工作台的原生 Android 客户端，也称 **Robby Console**。使�
 - Android 11（API 30）及以上；目标 Android 16（API 36）。
 - Release APK 使用独立持久签名；每个 Release 附 SHA-256 校验文件。
 - 不需要 root、Google 账号或应用商店；Passkey 可用性取决于浏览器、设备与已登记凭据。
-- 安装后使用 **Passkey 登录**。系统浏览器完成认证后，通过已验证的 HTTPS App Link 返回应用。
+- **没有本机 Passkey：**选择「通过电脑授权」，在已经能登录 God 的电脑或另一台手机打开验证页，输入 Find 显示的一次性代码，并亲自核对应用名和确认。代码不需要发给维护者。
+- **已有本机 Passkey：**也可直接使用 Passkey 登录。系统浏览器完成认证后，通过 HTTPS App Link 返回应用。
 - 如果登录后没有返回，请在系统「应用 → God 工作台 → 默认打开」允许打开支持的链接，再重试登录。
 
 ## 功能
@@ -25,7 +26,8 @@ God 私人工作台的原生 Android 客户端，也称 **Robby Console**。使�
 ## 隐私与认证
 
 - 原生 UI，无 WebView、广告或第三方统计 SDK。
-- Authorization Code + PKCE S256；独立 public client，无 client secret。
+- Authorization Code + PKCE S256，以及 RFC 8628 设备授权；独立 public client，无 client secret。
+- 设备授权仅由用户主动发起，轮询有间隔和截止时间；短码与 device code 只在内存中，取消和退出阻止迟到授权复活。
 - 固定 HTTPS API，拒绝重定向；服务端继续执行账户、scope、资源与 owner 校验。
 - 登录交由系统浏览器处理，应用不读取密码、Passkey 私钥或浏览器 Cookie。
 - 会话使用 Android Keystore AES-GCM 加密，禁止云备份和设备迁移。

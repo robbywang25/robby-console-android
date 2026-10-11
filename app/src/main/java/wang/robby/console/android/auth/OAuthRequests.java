@@ -20,6 +20,13 @@ final class OAuthRequests {
         return parameters("grant_type", "refresh_token", "refresh_token", refresh,
                 "client_id", AuthSession.CLIENT_ID, "resource", AuthSession.AUDIENCE);
     }
+    static Map<String, String> deviceAuthorization() {
+        return parameters("client_id", AuthSession.CLIENT_ID, "scope", AuthSession.SCOPES, "resource", AuthSession.AUDIENCE);
+    }
+    static Map<String, String> deviceToken(String deviceCode) {
+        return parameters("grant_type", DevicePollPolicy.GRANT, "device_code", deviceCode,
+                "client_id", AuthSession.CLIENT_ID, "resource", AuthSession.AUDIENCE);
+    }
     private static Map<String, String> parameters(String... pairs) {
         Map<String, String> result = new LinkedHashMap<>();
         for (int i = 0; i < pairs.length; i += 2) result.put(pairs[i], pairs[i + 1]);
