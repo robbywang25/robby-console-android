@@ -13,8 +13,9 @@ import wang.robby.console.android.auth.AuthSession;
  * Results contain fixed booleans/status codes, never tokens, identities or business data.
  */
 public final class LiveReadAcceptance extends Instrumentation {
-    private boolean approved;
-    @Override public void onCreate(Bundle args) {super.onCreate(args);approved=args!=null&&"true".equals(args.getString("live_read_check"));start();}
+    private boolean approved, allFeatures;
+    private String featureFilter="";
+    @Override public void onCreate(Bundle args) {super.onCreate(args);approved=args!=null&&"true".equals(args.getString("live_read_check"));allFeatures=args!=null&&"true".equals(args.getString("all_features"));featureFilter=args==null?"":args.getString("feature_filter","");start();}
     @Override public void onStart() {
         Bundle out=new Bundle();
         if(!approved){out.putString("result","explicit_live_read_check_required");finish(Activity.RESULT_CANCELED,out);return;}
@@ -33,7 +34,7 @@ public final class LiveReadAcceptance extends Instrumentation {
             }
             MobileApi api=new MobileApi(auth);
             try{JSONObject p=api.get("overview");out.putBoolean("overview_contract",FeatureRenderer.isCompatible(FeatureCatalog.find("overview"),p));}
-            catch(MobileApi.ApiError error){out.putInt("overview_http_error",error.status);}
+            catch(MobileApi.ApiError error){out.putInt("overview_http_error",error.status);out.putString("overview_error_kind",java.util.Set.of("invalid_token","unauthorized","mobile_auth_required","insufficient_scope","invalid_request","authentication_required").contains(error.code)?error.code:"other");}
             catch(Exception ignored){out.putBoolean("overview_contract",false);}
             try {
                 JSONObject projects=api.get("travel-ledger/current/projects");JSONArray all=projects.getJSONArray("projects");
@@ -46,6 +47,16 @@ public final class LiveReadAcceptance extends Instrumentation {
             }catch(MobileApi.ApiError error){out.putInt("ledger_http_error",error.status);}
             catch(Exception ignored){out.putBoolean("ledger_projects_contract",false);}
             try{auth.accessToken(true);out.putBoolean("refresh_succeeded",true);}catch(Exception ignored){out.putBoolean("refresh_succeeded",false);}
+            if(allFeatures){
+                for(FeatureCatalog.Feature f:FeatureCatalog.all()){
+                    if(!featureFilter.isEmpty()&&!java.util.Arrays.asList(featureFilter.split(",")).contains(f.id))continue;
+                    android.os.SystemClock.sleep(2200);
+                    try { JSONObject data=api.get(f.path);boolean compatible=FeatureRenderer.isCompatible(f,data);out.putBoolean("read_"+f.id,compatible);
+                        if(!compatible){java.util.List<String> shape=new java.util.ArrayList<>();java.util.Iterator<String> keys=data.keys();while(keys.hasNext()){String k=keys.next();if(k.matches("[A-Za-z][A-Za-z0-9]{0,50}")){Object v=data.opt(k);shape.add(k+":"+(v instanceof JSONObject?"object":v instanceof JSONArray?"array":v instanceof String?"string":v instanceof Number?"number":v instanceof Boolean?"bool":"null"));}}java.util.Collections.sort(shape);out.putString("shape_"+f.id,String.join(",",shape));out.putInt("schema_"+f.id,data.optInt("schemaVersion",-1));} }
+                    catch(MobileApi.ApiError e){out.putInt("http_"+f.id,e.status);}
+                    catch(Exception e){out.putBoolean("read_"+f.id,false);}
+                }
+            }
             out.putBoolean("business_writes_performed",false);finish(Activity.RESULT_OK,out);
         } catch(Exception ignored){out.putString("result","acceptance_unavailable");finish(Activity.RESULT_CANCELED,out);}
     }

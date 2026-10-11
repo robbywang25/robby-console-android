@@ -35,7 +35,7 @@
 - `openai/usage` 为 `apiVersion=2026-08-01`、`schemaVersion=4`。
 - PostHog 为 `apiVersion=2026-07-01`、`schemaVersion=1`。
 - Observer、Umami、行情、工程、剪贴板、凭据状态为 `apiVersion=2026-07-01`。
-- 其他上述独立 portal 视图与 current ledger 为 `schemaVersion=1`。
+- 公众号发布、小程序目录和 Prompt 元数据已支持线上 `schemaVersion=2`，保留字段相同的 v1 兼容；未知后继版本拒绝展示。其他上述独立 portal 视图与 current ledger 为 `schemaVersion=1`。
 - `FeatureRenderer.isCompatible` 检查这些版本和必要容器，拒绝不兼容响应。它不是完整移植 iOS 严格解码器：尚未实现每个字段的 exact-key、全部一致性、来源与计数数学关系验证。
 - 原生视图只读取显式列出的域字段；不递归遍历 JSON，不显示任意对象，也不把后台错误正文作为 UI 内容。
 - 缺失、`null`、类型不匹配的数值显示“未知”；不会转换为零。`stale`、`partial`、不可用、未配置、需要认证保持不同状态。快照生成时间与来源状态独立呈现，当前账本 30 秒、其他概览 10 分钟后标记快照陈旧，不把 HTTP 成功当成来源实时。

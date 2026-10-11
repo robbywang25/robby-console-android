@@ -77,10 +77,10 @@ public final class FeatureRenderer {
             case "okx": return version(p, 1) && p.optJSONArray("assets") != null;
             case "site-maintenance": return version(p, 1) && p.optJSONArray("sites") != null;
             case "wechat-cards": return version(p, 1) && p.optJSONArray("cards") != null;
-            case "wechat-publishing": return version(p, 1) && p.optJSONArray("articles") != null;
-            case "miniprogram-catalog": return version(p, 1) && p.optJSONArray("tools") != null;
+            case "wechat-publishing": return (version(p, 1) || version(p, 2)) && p.optJSONArray("articles") != null;
+            case "miniprogram-catalog": return (version(p, 1) || version(p, 2)) && p.optJSONArray("tools") != null;
             case "wechat-login-audit": return version(p, 1) && p.optJSONObject("binding") != null && p.optJSONArray("events") != null;
-            case "prompts": return version(p, 1) && p.opt("version") instanceof String && p.opt("model") instanceof String;
+            case "prompts": return (version(p, 1) || version(p, 2)) && p.opt("version") instanceof String && p.opt("model") instanceof String;
             case "image-workshop": return version(p, 1) && p.optJSONObject("inventory") != null;
             case "visit-insight-reports": return version(p, 1) && p.optJSONArray("reports") != null;
             default: return false;

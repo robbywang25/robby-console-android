@@ -76,5 +76,21 @@ public final class LedgerContractTest extends InstrumentationTestCase {
         assertTrue(text.toString().contains("暂不可用"));assertTrue(text.toString().contains("未知"));assertFalse(text.toString().contains("0 USD"));
         response.put("schemaVersion",5);assertFalse(FeatureRenderer.isCompatible(FeatureCatalog.find("openai"),response));
     }
+    public void testReleasedMetadataSchemasAndPromptPrivacy()throws Exception{
+        for(int schema:new int[]{1,2}){
+            JSONObject prompt=j("schemaVersion",schema,"version","synthetic-version","model","synthetic-model","template","NEVER_RENDER_TEMPLATE");
+            JSONObject catalog=j("schemaVersion",schema,"tools",new JSONArray());
+            JSONObject publishing=j("schemaVersion",schema,"articles",new JSONArray());
+            assertTrue(FeatureRenderer.isCompatible(FeatureCatalog.find("prompts"),prompt));
+            assertTrue(FeatureRenderer.isCompatible(FeatureCatalog.find("miniprogram-catalog"),catalog));
+            assertTrue(FeatureRenderer.isCompatible(FeatureCatalog.find("wechat-publishing"),publishing));
+            final StringBuilder text=new StringBuilder();getInstrumentation().runOnMainSync(()->{LinearLayout root=new LinearLayout(getInstrumentation().getTargetContext());FeatureRenderer.render(getInstrumentation().getTargetContext(),root,FeatureCatalog.find("prompts"),prompt);collect(root,text);});
+            assertFalse(text.toString().contains("NEVER_RENDER_TEMPLATE"));
+            prompt.put("schemaVersion",3);catalog.put("schemaVersion",3);publishing.put("schemaVersion",3);
+            assertFalse(FeatureRenderer.isCompatible(FeatureCatalog.find("prompts"),prompt));
+            assertFalse(FeatureRenderer.isCompatible(FeatureCatalog.find("miniprogram-catalog"),catalog));
+            assertFalse(FeatureRenderer.isCompatible(FeatureCatalog.find("wechat-publishing"),publishing));
+        }
+    }
     private static void collect(View view,StringBuilder out){if(view instanceof TextView)out.append(((TextView)view).getText()).append('\n');if(view instanceof ViewGroup){ViewGroup g=(ViewGroup)view;for(int i=0;i<g.getChildCount();i++)collect(g.getChildAt(i),out);}}
 }
