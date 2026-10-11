@@ -3,6 +3,7 @@ package wang.robby.console.android.auth;
 import android.content.Context;
 import android.net.Uri;
 import android.os.SystemClock;
+import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
@@ -196,6 +197,11 @@ public final class AuthSession {
     }
 
     public String accessToken() throws Exception {
+        return accessToken(false);
+    }
+
+    /** Internal native caller may explicitly test refresh without waiting for access-token expiry. */
+    public String accessToken(boolean forceRefresh) throws Exception {
         // One refresh at a time, shared by all Activity/helper instances.
         synchronized (REFRESH_LOCK) {
             Token updated = null;
@@ -207,7 +213,7 @@ public final class AuthSession {
                     current = readOrReset().optJSONObject("session");
                     OAuthGuards.require(current != null);
                     validateStored(current);
-                    if (current.getLong("expires_at") > System.currentTimeMillis() + 60_000L)
+                    if (!forceRefresh && current.getLong("expires_at") > System.currentTimeMillis() + 60_000L)
                         return string(current, "access_token");
                     expected = generation;
                 }
@@ -229,7 +235,7 @@ public final class AuthSession {
                     }
                     throw failure("登录已失效，请重新登录。");
                 }
-                throw failure("暂时无法刷新登录，请检查网络后重试。");
+                throw failure("暂时无法刷新登录，会话已保留，请稍后重试。");
             } catch (Exception ignored) {
                 throw failure("无法读取有效登录，请重新登录或稍后重试。");
             } finally {
@@ -357,8 +363,14 @@ public final class AuthSession {
             int status = connection.getResponseCode();
             boolean deviceError = deviceErrors && status == 400;
             if ((status < 200 || status >= 300) && !deviceError) {
-                // Server error text and credential-bearing URLs are never surfaced or logged.
-                throw new HttpFailure(status == 400 || status == 401 || status == 403);
+                String phase = RefreshFailurePolicy.phase(endpoint.toString());
+                String protocolError = protocolError(connection);
+                // Fixed phase enum, numeric status and allowlisted code only.
+                // Never pass an exception, URL, body, token or user identifier.
+                Log.w("GodAuth", RefreshFailurePolicy.diagnostic(phase, status, protocolError));
+                boolean refresh = form != null && "refresh_token".equals(form.get("grant_type"));
+                // Discovery and every non-refresh request can never erase a session.
+                throw new HttpFailure(refresh && RefreshFailurePolicy.invalidatesSession(phase, status, protocolError));
             }
             if (emptyResponse) return new JSONObject();
             String contentType = connection.getContentType();
@@ -375,12 +387,35 @@ public final class AuthSession {
                 if (deviceError) {
                     OAuthGuards.require(!body.has("access_token") && !body.has("refresh_token"));
                     String code = string(body, "error");
+                    if (!"authorization_pending".equals(code) && !"slow_down".equals(code))
+                        Log.w("GodAuth", RefreshFailurePolicy.diagnostic(RefreshFailurePolicy.phase(endpoint.toString()), status, code));
                     throw new DeviceOAuthFailure(code);
                 }
                 if (deviceErrors) OAuthGuards.require(status == 200 && !body.has("error"));
                 return body;
             }
         } finally { connection.disconnect(); }
+    }
+    private static String protocolError(HttpsURLConnection connection) {
+        try {
+            String type = connection.getContentType();
+            if (type == null || !"application/json".equalsIgnoreCase(type.split(";", 2)[0].trim())
+                    || connection.getContentLengthLong() > 16384) return "unrecognized_error";
+            try (InputStream stream = connection.getErrorStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                if (stream == null) return "unrecognized_error";
+                byte[] buffer = new byte[2048]; int count;
+                while ((count = stream.read(buffer)) != -1) {
+                    if (output.size() + count > 16384) return "unrecognized_error";
+                    output.write(buffer, 0, count);
+                }
+                org.json.JSONTokener parser = new org.json.JSONTokener(output.toString("UTF-8"));
+                Object value = parser.nextValue();
+                if (!(value instanceof JSONObject) || parser.nextClean() != 0) return "unrecognized_error";
+                JSONObject body = (JSONObject) value;
+                if (body.has("access_token") || body.has("refresh_token")) return "unrecognized_error";
+                return RefreshFailurePolicy.safeCode(body.opt("error"));
+            }
+        } catch (Exception ignored) { return "unrecognized_error"; }
     }
     private static Map<String, String> parameters(String... pairs) {
         Map<String, String> result = new LinkedHashMap<>();
