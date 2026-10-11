@@ -18,7 +18,7 @@ import wang.robby.console.android.auth.DeviceAuthorization;
 
 /** Native client. No embedded web content, demo balances, or service credentials. */
 public class MainActivity extends Activity implements AuthCoordinator.Listener {
-    private int INK, MUTED, BLUE, BG; private ConsoleTheme theme;
+    private int INK, MUTED, ACCENT, BG; private ConsoleTheme theme;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private AuthSession auth; private AuthCoordinator coordinator; private MobileApi api; private LedgerActions ledger;
     private String ledgerCursor=null; private final Deque<String> ledgerPages=new ArrayDeque<>();
@@ -29,7 +29,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
     @Override public void onCreate(Bundle state) {
         PreviewMode.configure(this,getIntent());
         super.onCreate(state);
-        theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;BLUE=theme.accent;BG=theme.canvas;
+        theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accentStrong;BG=theme.canvas;
         try { coordinator=AuthCoordinator.get(this);auth=coordinator.session(); api=new MobileApi(auth);ledger=new LedgerActions(this,new LedgerActions.Transport(){public JSONObject get(String path)throws Exception{return read(path);}public JSONObject post(String path,JSONObject body)throws Exception{if(PreviewMode.isBuild())throw new IllegalStateException("界面预览不执行写入");return api.post(path,body);}},()->{ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature f=find("travel-ledger");if(f!=null)showFeature(f,true);}); }
         catch(Exception e) { new AlertDialog.Builder(this).setMessage("无法打开设备安全存储，请检查屏幕锁定设置").setPositiveButton("关闭",(d,w)->finish()).show(); return; }
         if(state!=null) { group=state.getString("group","总览"); selectedId=state.getString("feature"); project=state.getString("project"); }
@@ -64,25 +64,25 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         WindowInsetsController insetController=getWindow().getInsetsController();
         if(insetController!=null)insetController.setSystemBarsAppearance(theme.dark?0:WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setBackground(theme.backdrop());root.addView(body,new FrameLayout.LayoutParams(-1,-1));
-        LinearLayout header=new LinearLayout(this);header.setPadding(dp(24),dp(12),dp(20),dp(12));header.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout header=new LinearLayout(this);header.setPadding(dp(18),dp(12),dp(16),dp(12));header.setGravity(Gravity.CENTER_VERTICAL);
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
         session=text(PreviewMode.isBuild()?"界面预览 · 合成数据":"God 工作台",12,MUTED,false);titles.addView(session);
-        heading=text(selectedId==null?group:"God",28,INK,true);titles.addView(heading);
+        heading=text(selectedId==null?group:"God",26,INK,true);titles.addView(heading);
         header.addView(titles,new LinearLayout.LayoutParams(0,-2,1));
         FrameLayout account=new FrameLayout(this);account.setBackground(theme.ripple(theme.glass(false)));account.setContentDescription(logged?"账号与退出登录":"登录 God 工作台");account.setFocusable(true);account.setOnClickListener(v->account());
-        ImageView avatar=theme.icon("user",BLUE,24);FrameLayout.LayoutParams avatarParams=new FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER);account.addView(avatar,avatarParams);header.addView(account,new LinearLayout.LayoutParams(dp(48),dp(48)));body.addView(header);
+        ImageView avatar=theme.icon("user",ACCENT,24);FrameLayout.LayoutParams avatarParams=new FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER);account.addView(avatar,avatarParams);header.addView(account,new LinearLayout.LayoutParams(dp(48),dp(48)));body.addView(header);
         toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(20),0,dp(20),dp(8));body.addView(toolbar);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(20),dp(8),dp(20),dp(114));scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(14),dp(8),dp(14),dp(114));scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         nav=new ConsoleTheme.GlassBar(this,body);nav.setPadding(dp(6),dp(6),dp(6),dp(6));nav.setGravity(Gravity.CENTER_VERTICAL);
         for(String label:List.of("总览","洞察","资产","工具","设置")) {
             boolean selected=group.equals(label);LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);tab.setPadding(dp(2),dp(8),dp(2),dp(8));
             tab.setBackground(theme.ripple(selected?theme.glass(true):theme.shape(Color.TRANSPARENT,26)));tab.setSelected(selected);tab.setFocusable(true);tab.setContentDescription(label+(selected?"，已选中":""));
-            tab.addView(theme.icon(ConsoleTheme.symbol(label),selected?BLUE:MUTED,23));TextView title=text(label,12,selected?BLUE:MUTED,selected);title.setPadding(0,dp(3),0,0);tab.addView(title);
+            tab.addView(theme.icon(ConsoleTheme.symbol(label),selected?ACCENT:MUTED,23));TextView title=text(label,12,selected?ACCENT:MUTED,selected);title.setPadding(0,dp(3),0,0);tab.addView(title);
             tab.setOnClickListener(v->{++generation;group=label;selectedId=null;project=null;build();});nav.addView(tab,new LinearLayout.LayoutParams(0,-2,1));
         }
         FrameLayout.LayoutParams dock=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);dock.setMargins(dp(16),0,dp(16),dp(12));root.addView(nav,dock);
-        root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());body.setPadding(bars.left,bars.top,bars.right,0);dock.setMargins(bars.left+dp(16),0,bars.right+dp(16),bars.bottom+dp(10));nav.setLayoutParams(dock);content.setPadding(dp(20),dp(8),dp(20),bars.bottom+dp(110));return insets;});root.requestApplyInsets();
+        root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());body.setPadding(bars.left,bars.top,bars.right,0);dock.setMargins(bars.left+dp(16),0,bars.right+dp(16),bars.bottom+dp(10));nav.setLayoutParams(dock);content.setPadding(dp(14),dp(8),dp(14),bars.bottom+dp(110));return insets;});root.requestApplyInsets();
         scroll.setOnScrollChangeListener((v,x,y,oldX,oldY)->nav.invalidate());
         if(device!=null){nav.setVisibility(View.GONE);showDeviceAuthorization(device);return;}
         if(selectedId!=null){FeatureCatalog.Feature f=find(selectedId);if(f!=null){showFeature(f,false);return;}selectedId=null;}
@@ -90,7 +90,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
     }
     private void home() {
         if(!loggedIn()){
-            LinearLayout welcome=card();welcome.addView(theme.icon("key",BLUE,38));
+            LinearLayout welcome=card();welcome.addView(theme.icon("key",ACCENT,38));
             TextView title=text("登录你的工作台",24,INK,true);title.setPadding(0,dp(20),0,dp(8));welcome.addView(title);
             TextView hint=text("使用 Passkey，安全查看你的数据与资产。",15,MUTED,false);hint.setPadding(0,0,0,dp(22));welcome.addView(hint);
             Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);welcome.addView(passkey,new LinearLayout.LayoutParams(-1,-2));
@@ -119,10 +119,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
     private void featureRow(FeatureCatalog.Feature f,LinearLayout list){featureRow(f.title,f.subtitle,ConsoleTheme.symbol(f.id),list,()->open(f));}
     private LinearLayout groupCard(){LinearLayout c=card();c.setPadding(dp(4),dp(2),dp(4),dp(2));return c;}
     private void featureRow(String title,String subtitle,String symbol,LinearLayout parent,Runnable action){
-        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(14),dp(10),dp(14));row.setMinimumHeight(dp(76));row.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,16)));row.setFocusable(true);row.setContentDescription(title+"，"+subtitle);row.setOnClickListener(v->action.run());
-        FrameLayout iconBox=new FrameLayout(this);iconBox.setBackground(theme.shape(theme.soft,13));ImageView icon=theme.icon(symbol,BLUE,22);iconBox.addView(icon,new FrameLayout.LayoutParams(dp(22),dp(22),Gravity.CENTER));row.addView(iconBox,new LinearLayout.LayoutParams(dp(42),dp(42)));
+        if(parent.getChildCount()>0){View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(63),0,dp(12),0);parent.addView(divider,d);}
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(10),dp(10),dp(10));row.setMinimumHeight(dp(68));row.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,16)));row.setFocusable(true);row.setContentDescription(title+"，"+subtitle);row.setOnClickListener(v->action.run());
+        FrameLayout iconBox=new FrameLayout(this);iconBox.setBackground(theme.shape(theme.soft,10));ImageView icon=theme.icon(symbol,ACCENT,22);iconBox.addView(icon,new FrameLayout.LayoutParams(dp(22),dp(22),Gravity.CENTER));row.addView(iconBox,new LinearLayout.LayoutParams(dp(38),dp(38)));
         LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(13),0,dp(8),0);labels.addView(text(title,16,INK,true));TextView detail=text(subtitle,12,MUTED,false);detail.setPadding(0,dp(3),0,0);labels.addView(detail);row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));row.addView(theme.icon("chevron",MUTED,14));parent.addView(row);
-        View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(67),0,dp(12),0);parent.addView(divider,d);
     }
     private void open(FeatureCatalog.Feature f){++generation;selectedId=f.id;project=null;ledgerCursor=null;ledgerPages.clear();build();}
     private void showFeature(FeatureCatalog.Feature f,boolean refresh) {
@@ -172,13 +172,13 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         section("账号");row(loggedIn()?"已登录":"尚未登录","Passkey · 设备加密存储",this::account);
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");row("隐私与数据","无第三方统计 · 不保存网页 Cookie",()->new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null).show());
-        row("God 工作台","Android 0.3.0",()->{});
+        row("God 工作台","Android 0.3.1",()->{});
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){
         heading.setText("授权此设备");session.setText("等待本人确认");
         LinearLayout c=card();c.addView(text("1  打开安全验证页",19,INK,true));
-        TextView url=text(info.verificationUri.toString(),15,BLUE,false);url.setPadding(0,dp(14),0,dp(22));c.addView(url);
+        TextView url=text(info.verificationUri.toString(),15,ACCENT,false);url.setPadding(0,dp(14),0,dp(22));c.addView(url);
         c.addView(text("使用已经能登录 God 的电脑或其他设备。",14,MUTED,false));
         c=card();c.addView(text("2  输入这组一次性代码",19,INK,true));
         TextView code=text(info.userCode,30,INK,true);code.setLetterSpacing(0.12f);code.setPadding(0,dp(22),0,dp(22));code.setGravity(Gravity.CENTER);c.addView(code);

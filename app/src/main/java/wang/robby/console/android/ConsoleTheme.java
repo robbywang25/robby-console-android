@@ -14,7 +14,7 @@ import android.widget.*;
 public final class ConsoleTheme {
     public final Context context;
     public final boolean dark, contrast, effects;
-    public final int canvas, surface, ink, muted, accent, line, soft, danger;
+    public final int canvas, surface, ink, muted, accent, accentStrong, line, soft, danger;
     public ConsoleTheme(Context c) {
         context=c;
         dark=(c.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
@@ -22,33 +22,33 @@ public final class ConsoleTheme {
         contrast=Build.VERSION.SDK_INT>=36 && a!=null && a.isHighContrastTextEnabled();
         android.os.PowerManager power=(android.os.PowerManager)c.getSystemService(Context.POWER_SERVICE);
         effects=!contrast&&android.animation.ValueAnimator.areAnimatorsEnabled()&&(power==null||!power.isPowerSaveMode());
-        canvas=dark?0xff0e1117:0xfff4f6f9; surface=dark?0xff1b1f27:Color.WHITE;
-        ink=dark?0xfff0f3fa:0xff17243b; muted=dark?0xffafb9ca:0xff627087;
-        accent=dark?0xff9ab8ff:0xff315ad9; line=dark?0xff343c4b:0xffe2e7ef;
-        soft=dark?0xff263651:0xffeaf0fe; danger=dark?0xffffb4a5:0xffa13c28;
+        canvas=dark?0xff0b111a:0xfff3efe7; surface=dark?0xff121c2a:0xfffffdf9;
+        ink=dark?0xfff4f6f8:0xff231f18; muted=dark?0xff9eacbd:0xff71695f;
+        accent=dark?0xffd5b66f:0xff89661f; accentStrong=dark?0xfff2d48b:0xff624613; line=dark?0xff2b3d4f:0xffe9e3d8;
+        soft=dark?0xff1e2a38:0xfff5f1e8; danger=dark?0xffe28d86:0xffa0443e;
     }
     public int dp(float n){return Math.round(n*context.getResources().getDisplayMetrics().density);}
     public GradientDrawable shape(int color,float radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
-    public Drawable card(){GradientDrawable d=shape(surface,22);d.setStroke(dp(contrast?1.5f:0.5f),contrast?muted:line);return d;}
-    public Drawable backdrop(){if(!effects)return new ColorDrawable(canvas);return new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{dark?0xff152038:0xffeaf0fc,canvas,canvas});}
+    public Drawable card(){GradientDrawable d=shape(surface,14);d.setStroke(dp(contrast?1.5f:0.5f),contrast?muted:line);return d;}
+    public Drawable backdrop(){if(!effects)return new ColorDrawable(canvas);return new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{dark?0xff1d2630:0xffeee5d3,canvas,canvas});}
     public Drawable glass(boolean selected){
         if(!effects)return selected?shape(soft,28):card();
         GradientDrawable d=new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-            selected?new int[]{dark?0xff344b70:0xffe0eaff,dark?0xff243653:0xfff0f5ff}:
-                new int[]{dark?0xeb303949:0xf7ffffff,dark?0xc51c2635:0xe8edf2fb});
-        d.setCornerRadius(dp(28));d.setStroke(dp(1),dark?0x557f96b7:0xfaffffff);return d;
+            selected?new int[]{dark?0xff3e3b30:0xffeee4cf,dark?0xff292d31:0xfff5eddc}:
+                new int[]{dark?0xeb25313f:0xf7fffdf9,dark?0xe0121c2a:0xeff5f1e8});
+        d.setCornerRadius(dp(28));d.setStroke(dp(1),dark?0x557e8d9f:0xfafffdf8);return d;
     }
-    public Drawable ripple(Drawable base){return new RippleDrawable(ColorStateList.valueOf(dark?0x339ab8ff:0x1e315ad9),base,shape(Color.WHITE,22));}
+    public Drawable ripple(Drawable base){return new RippleDrawable(ColorStateList.valueOf(dark?0x33d5b66f:0x2289661f),base,shape(Color.WHITE,22));}
     public TextView text(String value,int size,boolean bold){TextView v=new TextView(context);v.setText(value);v.setTextSize(size);v.setTextColor(bold?ink:muted);v.setFontFeatureSettings("tnum");v.setLineSpacing(dp(2),1);if(bold)v.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));return v;}
     public void button(Button b,boolean prominent){
         b.setTextSize(14);b.setAllCaps(false);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         b.setMinHeight(dp(48));b.setMinimumHeight(dp(48));b.setMinWidth(0);b.setMinimumWidth(0);
         b.setPadding(dp(18),dp(10),dp(18),dp(10));b.setStateListAnimator(null);b.setElevation(0);
-        b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{muted,prominent?(dark?0xff102244:Color.WHITE):accent}));
-        b.setBackground(ripple(prominent?shape(accent,28):glass(false)));
+        b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{muted,prominent?(dark?0xff231f18:Color.WHITE):accentStrong}));
+        b.setBackground(ripple(prominent?shape(accentStrong,12):shape(soft,12)));
     }
     public Button button(String label,Runnable action){Button b=new Button(context);b.setText(label);button(b,false);b.setOnClickListener(v->action.run());return b;}
-    public LinearLayout card(LinearLayout root){LinearLayout c=new LinearLayout(context);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(18),dp(16),dp(18),dp(16));c.setBackground(card());c.setElevation(dark||contrast?0:dp(1));LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);root.addView(c,p);return c;}
+    public LinearLayout card(LinearLayout root){LinearLayout c=new LinearLayout(context);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(16),dp(16),dp(16),dp(16));c.setBackground(card());c.setElevation(0);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);root.addView(c,p);return c;}
     public ImageView icon(String name,int color,int size){ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,color));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     public static String symbol(String id){return switch(id){
         case "总览","overview"->"grid";case "洞察","observer","umami","posthog","openai"->"chart";
@@ -57,7 +57,7 @@ public final class ConsoleTheme {
         case "status","site-maintenance"->"pulse";case "market","okx"->"trend";
         case "engineering"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog"->"chat";
         case "prompts","visit-insight-reports"->"document";case "secrets","wechat-login-audit"->"shield";default->"grid";};}
-    public void input(EditText v){v.setTextColor(ink);v.setHintTextColor(muted);v.setBackgroundTintList(null);v.setPadding(dp(12),dp(12),dp(12),dp(12));GradientDrawable focused=shape(surface,16);focused.setStroke(dp(1.5f),accent);StateListDrawable states=new StateListDrawable();states.addState(new int[]{android.R.attr.state_focused},focused);states.addState(new int[]{},card());v.setBackground(states);v.setTextSize(16);}
+    public void input(EditText v){v.setTextColor(ink);v.setHintTextColor(muted);v.setBackgroundTintList(null);v.setPadding(dp(12),dp(12),dp(12),dp(12));GradientDrawable focused=shape(soft,10);focused.setStroke(dp(1.5f),accent);StateListDrawable states=new StateListDrawable();states.addState(new int[]{android.R.attr.state_focused},focused);GradientDrawable normal=shape(soft,10);normal.setStroke(dp(1),dark?0xff4c617a:0xffd3cbbd);states.addState(new int[]{},normal);v.setBackground(states);v.setTextSize(16);}
     public void dialog(android.app.AlertDialog d){
         Window w=d.getWindow();if(w==null)return;w.setBackgroundDrawable(card());
         w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);w.setDimAmount(dark?.55f:.25f);
@@ -76,7 +76,7 @@ public final class ConsoleTheme {
         }
         public void clearBackdrop(){if(node!=null)node.discardDisplayList();}
         @Override protected void onDetachedFromWindow(){clearBackdrop();super.onDetachedFromWindow();}
-        @Override protected void onSizeChanged(int w,int h,int oldW,int oldH){super.onSizeChanged(w,h,oldW,oldH);tint=new LinearGradient(0,0,w,h,t.dark?0xe82b3445:0xeaffffff,t.dark?0xee192330:0xe2edf2fb,Shader.TileMode.CLAMP);}
+        @Override protected void onSizeChanged(int w,int h,int oldW,int oldH){super.onSizeChanged(w,h,oldW,oldH);tint=new LinearGradient(0,0,w,h,t.dark?0xe825303f:0xeffffdf9,t.dark?0xee121c2a:0xe8f3efe7,Shader.TileMode.CLAMP);}
         @Override protected void onDraw(Canvas c){
             int w=getWidth(),h=getHeight();if(w==0||h==0)return;
             bounds.set(0,0,w,h);clip.reset();clip.addRoundRect(bounds,t.dp(32),t.dp(32),Path.Direction.CW);int save=c.save();c.clipPath(clip);
@@ -86,7 +86,7 @@ public final class ConsoleTheme {
                 RecordingCanvas record=node.beginRecording(w,h);record.translate(b[0]-a[0],b[1]-a[1]);source.draw(record);node.endRecording();c.drawRenderNode(node);
             }
             paint.setShader(tint);c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setShader(null);
-            paint.setColor(t.contrast?t.muted:t.dark?0x608ca0bd:0xfaffffff);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(t.dp(1));bounds.inset(t.dp(.5f),t.dp(.5f));c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setStyle(Paint.Style.FILL);c.restoreToCount(save);
+            paint.setColor(t.contrast?t.muted:t.dark?0x6099b5d3:0xfafffdf9);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(t.dp(1));bounds.inset(t.dp(.5f),t.dp(.5f));c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setStyle(Paint.Style.FILL);c.restoreToCount(save);
         }
     }
     /** Small consistent vector symbols, never font-dependent emoji. Coordinates use a 24-unit grid. */

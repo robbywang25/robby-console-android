@@ -100,7 +100,7 @@ public final class FeatureRenderer {
             LinearLayout tile=new LinearLayout(u.context);tile.setOrientation(LinearLayout.VERTICAL);tile.setPadding(u.dp(18),u.dp(16),u.dp(18),u.dp(16));tile.setBackground(u.theme.card());
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.bottomMargin=u.dp(12);if(i==1&&wide)lp.rightMargin=u.dp(10);band.addView(tile,lp);
             LinearLayout line=new LinearLayout(u.context);line.setGravity(Gravity.CENTER_VERTICAL);TextView label=u.text(metrics[i][0],14,false);line.addView(label,new LinearLayout.LayoutParams(0,-2,1));line.addView(u.theme.icon(metrics[i][3],u.theme.accent,20));tile.addView(line);
-            TextView value=u.text(metrics[i][1],i==0?38:30,true);value.setPadding(0,u.dp(6),0,u.dp(2));tile.addView(value);tile.addView(u.text(metrics[i][2],12,false));
+            TextView value=u.text(metrics[i][1],i==0?34:28,true);value.setPadding(0,u.dp(6),0,u.dp(2));tile.addView(value);tile.addView(u.text(metrics[i][2],12,false));
         }
         LinearLayout c;
         JSONArray notices = arr(p, "notices");
@@ -226,14 +226,14 @@ public final class FeatureRenderer {
         }
         LinearLayout c = u.card(s(obj(p, "project"), "name")); JSONObject summary = obj(p, "summary");
         u.fields(c, summary, "entryCount", "账目", "refundCount", "退款");
-        u.row(c, "人民币参考合计", unit(summary, "cnyTotal", " CNY"));
+        u.amount(c, "人民币参考合计", unit(summary, "cnyTotal", " CNY"));
         u.row(c, "汇率覆盖", flag(summary, "cnyComplete", "完整", "部分币种缺失"));
         for (JSONObject n : rows(summary, "totals")) { c = u.card(s(n, "currency")); u.fields(c, n, "spent", "支出", "refunded", "退款", "net", "净支出"); }
         for (JSONObject n : rows(p, "members")) { c = u.card(s(n, "displayName")); for (JSONObject total : rows(n, "totals")) {
             u.row(c, s(total, "currency") + " 已付", s(total, "paid")); u.row(c, "应分摊 / 差额", s(total, "expense") + " / " + s(total, "net")); } }
         u.message("分摊参考", "差额是账本计算结果，不代表实际还款。");
         for (JSONObject n : rows(p, "entries")) { c = u.card(s(n, "merchant").equals(UNKNOWN) ? s(n, "category") : s(n, "merchant"));
-            u.row(c, "金额", money(n, "amount", "currency")); u.row(c, "退款", money(n, "refundedAmount", "currency"));
+            u.amount(c, "金额", money(n, "amount", "currency")); u.row(c, "退款", money(n, "refundedAmount", "currency"));
             u.row(c, "净额", money(n, "netAmount", "currency")); u.row(c, "类别", s(n, "category")); u.row(c, "付款人", s(n, "payer"));
             u.row(c, "发生时间", s(n, "occurredAt")); }
         JSONObject page = obj(p, "page"); u.message("账目分页", "总计 " + number(page, "total") + " 条 · " + flag(page, "hasMore", "还有下一页", "已到末页"));
@@ -378,6 +378,10 @@ public final class FeatureRenderer {
             LinearLayout r=new LinearLayout(context);r.setOrientation(stack?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);r.setGravity(Gravity.CENTER_VERTICAL);r.setMinimumHeight(dp(44));r.setPadding(0,dp(7),0,dp(7));
             TextView k=text(label,13,false),v=text(value,15,true);v.setTextDirection(android.view.View.TEXT_DIRECTION_FIRST_STRONG);v.setGravity(stack?Gravity.START:Gravity.END);v.setPadding(stack?0:dp(12),stack?dp(4):0,0,0);
             if(stack){r.addView(k);r.addView(v);}else{r.addView(k,new LinearLayout.LayoutParams(0,-2,1));r.addView(v,new LinearLayout.LayoutParams(0,-2,1.4f));}c.addView(r);
+        }
+        void amount(LinearLayout c,String label,String value){
+            TextView k=text(label,12,false);k.setPadding(0,dp(8),0,dp(3));c.addView(k);
+            TextView v=text(value,26,true);v.setTextColor(theme.accentStrong);v.setPadding(0,0,0,dp(12));c.addView(v);
         }
         void fields(LinearLayout c, JSONObject p, String... pairs) { for (int i = 0; i + 1 < pairs.length; i += 2) row(c, pairs[i + 1], s(p, pairs[i])); }
         void paragraph(LinearLayout c, String value) { if (value.isEmpty() || value.equals(UNKNOWN)) return; TextView t = text(value, 14, false); t.setPadding(0, dp(2), 0, dp(8)); c.addView(t); }
