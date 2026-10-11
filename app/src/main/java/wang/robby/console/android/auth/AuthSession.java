@@ -1,0 +1,303 @@
+package wang.robby.console.android.auth;
+
+import android.content.Context;
+import android.net.Uri;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import javax.net.ssl.HttpsURLConnection;
+
+/**
+ * Public-client Authorization Code + PKCE session. All network methods must run on
+ * a worker thread. Safe across Activity recreation and multiple helper instances
+ * in the app's single Android process. Does not parse or trust ID-token claims.
+ */
+public final class AuthSession {
+    public static final String ISSUER = "https://auth.god.robby.wang";
+    public static final String CLIENT_ID = "robby-console-android";
+    public static final String AUDIENCE = "https://god.robby.wang/api/mobile/v1";
+    public static final String REDIRECT_URI = "https://god.robby.wang/mobile/android/callback";
+    public static final String SCOPES = "openid offline_access god.mobile.read god.mobile.clipboard.read "
+            + "god.mobile.travel.read god.mobile.travel.current.read god.mobile.analytics.read "
+            + "god.mobile.sites.health.read god.mobile.domains.read god.mobile.okx.read "
+            + "god.mobile.wechat.read god.mobile.prompts.read "
+            + "god.mobile.travel.entries.write god.mobile.travel.people.write";
+    private static final Object STATE_LOCK = new Object();
+    private static final Object REFRESH_LOCK = new Object();
+    private static long generation;
+    private final EncryptedStore store;
+    private volatile Discovery cachedDiscovery;
+
+    public AuthSession(Context context) { store = new EncryptedStore(context.getApplicationContext()); }
+
+    public String authorizationUrl() throws Exception {
+        return authorizationUrl(beginAuthorization());
+    }
+
+    // Reserve synchronously before queueing network work, so logout also cancels
+    // authorization tasks which have not started executing yet.
+    long beginAuthorization() {
+        synchronized (STATE_LOCK) { return ++generation; }
+    }
+
+    String authorizationUrl(long expected) throws Exception {
+        try {
+            synchronized (STATE_LOCK) { OAuthGuards.require(expected == generation); }
+            Discovery discovery = discovery();
+            String verifier = OAuthGuards.randomSecret(), state = OAuthGuards.randomSecret();
+            JSONObject pending = new JSONObject().put("verifier", verifier).put("state", state)
+                    .put("created_at", System.currentTimeMillis());
+            synchronized (STATE_LOCK) {
+                OAuthGuards.require(expected == generation);
+                JSONObject saved = readOrReset();
+                saved.put("pending", pending);
+                store.write(saved);
+            }
+            return discovery.authorization + "?" + form(OAuthRequests.authorization(verifier, state));
+        } catch (Exception ignored) { throw failure("无法开始登录，请检查网络后重试。"); }
+    }
+
+    public void handleCallback(Uri uri) throws Exception {
+        Token result = null;
+        Discovery discovery = null;
+        try {
+            final long expected;
+            final String code, verifier;
+            synchronized (STATE_LOCK) {
+                JSONObject saved = readOrReset(), pending = saved.optJSONObject("pending");
+                OAuthGuards.require(pending != null);
+                code = OAuthGuards.callback(uri == null ? null : uri.toString(), REDIRECT_URI, ISSUER,
+                        string(pending, "state"), pending.getLong("created_at"), System.currentTimeMillis());
+                verifier = string(pending, "verifier");
+                OAuthGuards.require(verifier.matches("[A-Za-z0-9_-]{43}"));
+                // Durably consume before sending the code, including across process death.
+                saved.remove("pending");
+                store.write(saved);
+                expected = ++generation;
+            }
+            discovery = discovery();
+            result = token(request(discovery.token, OAuthRequests.code(code, verifier), false));
+            synchronized (STATE_LOCK) {
+                OAuthGuards.require(generation == expected);
+                store.write(new JSONObject().put("session", result.json));
+                // A refresh of the previous account may already be in flight.
+                // It must not replace the newly exchanged session.
+                generation++;
+            }
+            result = null; // Persisted: ownership transfers to the session.
+        } catch (Exception ignored) {
+            throw failure("登录未完成或已过期，请重新登录。");
+        } finally {
+            if (result != null) revoke(discovery, result.refresh, result.access);
+        }
+    }
+
+    public String accessToken() throws Exception {
+        // One refresh at a time, shared by all Activity/helper instances.
+        synchronized (REFRESH_LOCK) {
+            Token updated = null;
+            Discovery discovery = null;
+            long expected = -1;
+            try {
+                final JSONObject current;
+                synchronized (STATE_LOCK) {
+                    current = readOrReset().optJSONObject("session");
+                    OAuthGuards.require(current != null);
+                    validateStored(current);
+                    if (current.getLong("expires_at") > System.currentTimeMillis() + 60_000L)
+                        return string(current, "access_token");
+                    expected = generation;
+                }
+                discovery = discovery();
+                updated = token(request(discovery.token, OAuthRequests.refresh(string(current, "refresh_token")), false));
+                String access = updated.access;
+                synchronized (STATE_LOCK) {
+                    OAuthGuards.require(expected == generation);
+                    JSONObject saved = readOrReset();
+                    saved.put("session", updated.json);
+                    store.write(saved);
+                }
+                updated = null;
+                return access;
+            } catch (HttpFailure failure) {
+                if (failure.invalidSession) {
+                    synchronized (STATE_LOCK) {
+                        if (generation == expected) { generation++; store.clear(); }
+                    }
+                    throw failure("登录已失效，请重新登录。");
+                }
+                throw failure("暂时无法刷新登录，请检查网络后重试。");
+            } catch (Exception ignored) {
+                throw failure("无法读取有效登录，请重新登录或稍后重试。");
+            } finally {
+                if (updated != null) revoke(discovery, updated.refresh, updated.access);
+            }
+        }
+    }
+
+    /** Locally stored session presence only; does not claim server validity. */
+    public boolean hasSession() {
+        synchronized (STATE_LOCK) {
+            try {
+                JSONObject session = readOrReset().optJSONObject("session");
+                if (session == null) return false;
+                validateStored(session);
+                return true;
+            } catch (Exception ignored) { return false; }
+        }
+    }
+
+    /** Clears local state immediately; server revocation is best effort on the calling worker. */
+    public void logout() {
+        clearLocal().run();
+    }
+
+    /** Synchronous local invalidation; returned job only performs best-effort remote revocation. */
+    Runnable clearLocal() {
+        String refresh = null, access = null;
+        synchronized (STATE_LOCK) {
+            generation++;
+            try {
+                JSONObject session = store.read().optJSONObject("session");
+                if (session != null) { refresh = string(session, "refresh_token"); access = string(session, "access_token"); }
+            } catch (Exception ignored) { /* Removal still proceeds if keystore is unavailable. */ }
+            store.clear();
+        }
+        final String refreshToRevoke = refresh, accessToRevoke = access;
+        return () -> {
+            if (refreshToRevoke != null || accessToRevoke != null) {
+                try { revoke(discovery(), refreshToRevoke, accessToRevoke); } catch (Exception ignored) { }
+            }
+        };
+    }
+
+    private JSONObject readOrReset() throws Exception {
+        try { return store.read(); }
+        catch (Exception ignored) { store.clear(); throw failure("本机登录存储不可用，请重新登录。"); }
+    }
+    private static void validateStored(JSONObject token) throws Exception {
+        OAuthGuards.require(OAuthGuards.safeToken(string(token, "access_token"), 32768)
+                && OAuthGuards.safeToken(string(token, "refresh_token"), 32768)
+                && SCOPES.equals(string(token, "scope")) && token.getLong("expires_at") > 0);
+    }
+    private static Token token(JSONObject body) throws Exception {
+        String access = string(body, "access_token"), refresh = string(body, "refresh_token");
+        Object expiry = body.opt("expires_in");
+        long seconds = OAuthGuards.tokenLifetime(access, refresh, string(body, "token_type"),
+                string(body, "scope"), expiry, SCOPES);
+        JSONObject saved = new JSONObject().put("access_token", access).put("refresh_token", refresh)
+                .put("scope", SCOPES).put("expires_at", System.currentTimeMillis() + seconds * 1000L);
+        return new Token(saved, access, refresh);
+    }
+    private Discovery discovery() throws Exception {
+        Discovery cached = cachedDiscovery;
+        if (cached != null && System.currentTimeMillis() >= cached.created
+                && System.currentTimeMillis() - cached.created < 600_000L) return cached;
+        JSONObject body = request(URI.create(ISSUER + "/.well-known/openid-configuration"), null, false);
+        OAuthGuards.require(ISSUER.equals(string(body, "issuer"))
+                && Boolean.TRUE.equals(body.opt("authorization_response_iss_parameter_supported"))
+                && contains(body, "code_challenge_methods_supported", "S256")
+                && contains(body, "response_types_supported", "code")
+                && contains(body, "grant_types_supported", "authorization_code")
+                && contains(body, "grant_types_supported", "refresh_token")
+                && contains(body, "token_endpoint_auth_methods_supported", "none"));
+        URI authorization = OAuthGuards.endpoint(string(body, "authorization_endpoint"), ISSUER);
+        URI token = OAuthGuards.endpoint(string(body, "token_endpoint"), ISSUER);
+        URI revocation = body.has("revocation_endpoint")
+                ? OAuthGuards.endpoint(string(body, "revocation_endpoint"), ISSUER) : null;
+        cachedDiscovery = new Discovery(authorization, token, revocation);
+        return cachedDiscovery;
+    }
+    private static boolean contains(JSONObject body, String key, String value) throws Exception {
+        JSONArray array = body.getJSONArray(key);
+        for (int i = 0; i < array.length(); i++) if (value.equals(array.opt(i))) return true;
+        return false;
+    }
+    private static String string(JSONObject body, String key) throws Exception {
+        Object value = body.opt(key);
+        OAuthGuards.require(value instanceof String);
+        return (String) value;
+    }
+    private static void revoke(Discovery discovery, String refresh, String access) {
+        if (discovery == null || discovery.revocation == null) return;
+        for (String hint : new String[] {"refresh_token", "access_token"}) {
+            String token = "refresh_token".equals(hint) ? refresh : access;
+            if (token == null) continue;
+            try { request(discovery.revocation, parameters("client_id", CLIENT_ID, "token", token,
+                    "token_type_hint", hint), true); } catch (Exception ignored) { }
+        }
+    }
+    private static JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse) throws Exception {
+        OAuthGuards.endpoint(endpoint.toString(), ISSUER);
+        HttpsURLConnection connection = (HttpsURLConnection) endpoint.toURL().openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(15000); connection.setReadTimeout(20000);
+        connection.setUseCaches(false);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Cache-Control", "no-store");
+        try {
+            if (form != null) {
+                byte[] bytes = form(form).getBytes(StandardCharsets.UTF_8);
+                connection.setRequestMethod("POST"); connection.setDoOutput(true);
+                connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
+                connection.setFixedLengthStreamingMode(bytes.length);
+                try (OutputStream output = connection.getOutputStream()) { output.write(bytes); }
+            }
+            int status = connection.getResponseCode();
+            if (status < 200 || status >= 300) {
+                // Server error text and credential-bearing URLs are never surfaced or logged.
+                throw new HttpFailure(status == 400 || status == 401 || status == 403);
+            }
+            if (emptyResponse) return new JSONObject();
+            String contentType = connection.getContentType();
+            OAuthGuards.require(contentType != null && contentType.split(";", 2)[0].trim().equalsIgnoreCase("application/json"));
+            OAuthGuards.require(connection.getContentLengthLong() <= 131072L);
+            try (InputStream stream = connection.getInputStream(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+                byte[] buffer = new byte[4096]; int count;
+                while ((count = stream.read(buffer)) != -1) {
+                    OAuthGuards.require(output.size() + count <= 131072);
+                    output.write(buffer, 0, count);
+                }
+                return new JSONObject(output.toString("UTF-8"));
+            }
+        } finally { connection.disconnect(); }
+    }
+    private static Map<String, String> parameters(String... pairs) {
+        Map<String, String> result = new LinkedHashMap<>();
+        for (int i = 0; i < pairs.length; i += 2) result.put(pairs[i], pairs[i + 1]);
+        return result;
+    }
+    private static String form(Map<String, String> parameters) throws Exception {
+        StringBuilder result = new StringBuilder();
+        for (Map.Entry<String, String> entry : parameters.entrySet()) {
+            if (result.length() > 0) result.append('&');
+            result.append(URLEncoder.encode(entry.getKey(), "UTF-8")).append('=')
+                    .append(URLEncoder.encode(entry.getValue(), "UTF-8"));
+        }
+        return result.toString();
+    }
+    private static Exception failure(String message) { return new Exception(message); }
+    private static final class HttpFailure extends Exception {
+        final boolean invalidSession;
+        HttpFailure(boolean invalidSession) { super("身份服务请求失败。"); this.invalidSession = invalidSession; }
+    }
+    private static final class Discovery {
+        final URI authorization, token, revocation;
+        final long created = System.currentTimeMillis();
+        Discovery(URI authorization, URI token, URI revocation) {
+            this.authorization = authorization; this.token = token; this.revocation = revocation;
+        }
+    }
+    private static final class Token {
+        final JSONObject json;
+        final String access, refresh;
+        Token(JSONObject json, String access, String refresh) { this.json = json; this.access = access; this.refresh = refresh; }
+    }
+}

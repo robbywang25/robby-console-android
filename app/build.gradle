@@ -1,0 +1,32 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'wang.robby.console.android'
+ compileSdk 36
+ useLibrary 'android.test.runner'
+ useLibrary 'android.test.base'
+ testBuildType 'release'
+ defaultConfig {
+  applicationId 'wang.robby.console.android'
+  minSdk 30
+  targetSdk 36
+  versionCode 1
+  versionName '0.1.0'
+  testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+ }
+ signingConfigs {
+  release {
+   def signingDir = System.getenv('ROBBY_ANDROID_SIGNING_DIR')
+   if (signingDir) {
+    storeFile file(signingDir + '/release.jks')
+    storePassword file(signingDir + '/store-password').text.trim()
+    keyAlias 'robby-console-android'
+    keyPassword file(signingDir + '/store-password').text.trim()
+   }
+  }
+ }
+ buildTypes { release { minifyEnabled false; signingConfig signingConfigs.release } }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+ testOptions { unitTests.returnDefaultValues = true }
+ lint { abortOnError true }
+}
+dependencies { testImplementation 'junit:junit:4.13.2' }
