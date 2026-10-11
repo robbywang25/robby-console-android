@@ -63,14 +63,14 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
         Button account=button(logged?"账号":"登录",()->account());account.setContentDescription(logged?"账号与退出登录":"登录 God 工作台");header.addView(account);root.addView(header);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(20),dp(8),dp(20),dp(20));scroll.addView(content);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
         nav=new LinearLayout(this);nav.setPadding(dp(6),dp(5),dp(6),dp(5));nav.setBackgroundColor(Color.WHITE);
-        for(String label:List.of("总览","洞察","资产","工具","设置")) {Button b=button(label,()->{++generation;group=label;selectedId=null;project=null;build();});b.setTextSize(13);b.setPadding(0,dp(12),0,dp(12));b.setTextColor(group.equals(label)?BLUE:MUTED);nav.addView(b,new LinearLayout.LayoutParams(0,dp(52),1));}root.addView(nav);
+        for(String label:List.of("总览","洞察","资产","工具","设置")) {Button b=button(label,()->{++generation;group=label;selectedId=null;project=null;build();});b.setTextSize(13);b.setPadding(0,dp(12),0,dp(12));b.setTextColor(group.equals(label)?BLUE:MUTED);b.setBackground(round(group.equals(label)?0xffeaf0ff:Color.WHITE,10));nav.addView(b,new LinearLayout.LayoutParams(0,dp(52),1));}root.addView(nav);
         if(selectedId!=null){FeatureCatalog.Feature f=find(selectedId);if(f!=null){showFeature(f,false);return;}selectedId=null;}
         if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else catalog(group);
     }
     private void home() {
         LinearLayout hero=card();hero.setPadding(dp(22),dp(22),dp(22),dp(22));hero.setBackground(round(INK,22));
         hero.addView(text("你的私人工作台",24,Color.WHITE,true));TextView sub=text("数据、资产与常用工具，随身查看。",14,0xffc5d0e6,false);sub.setPadding(0,dp(10),0,dp(18));hero.addView(sub);
-        Button b=button(auth.hasSession()?"刷新工作台":"使用 Passkey 登录",()->{if(auth.hasSession()){FeatureCatalog.Feature f=find("overview");if(f==null)f=FeatureCatalog.all().get(0);open(f);}else login();});hero.addView(b);
+        Button b=button(auth.hasSession()?"刷新工作台":"使用 Passkey 登录",()->{if(auth.hasSession()){FeatureCatalog.Feature f=find("overview");if(f==null)f=FeatureCatalog.all().get(0);open(f);}else login();});b.setBackground(round(BLUE,12));b.setTextColor(Color.WHITE);hero.addView(b);
         if(!auth.hasSession()){TextView hint=text("登录后读取真实数据",12,0xffb7c5df,false);hint.setPadding(0,dp(12),0,0);hero.addView(hint);}
         section("常用功能");
         for(String needle:List.of("旅行","剪贴板","OpenAI","域名")){FeatureCatalog.Feature f=FeatureCatalog.all().stream().filter(x->x.title.contains(needle)).findFirst().orElse(null);if(f!=null)featureRow(f);}
@@ -141,7 +141,7 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
     private LinearLayout card(){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(16),dp(15),dp(16),dp(15));box.setBackground(round(Color.WHITE,18));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(10);content.addView(box,lp);return box;}
     private void row(String title,String subtitle,Runnable action){LinearLayout box=card();box.setMinimumHeight(dp(76));TextView t=text(title+"  ›",17,INK,true);box.addView(t);TextView sub=text(subtitle,13,MUTED,false);sub.setPadding(0,dp(6),0,0);box.addView(sub);box.setOnClickListener(v->action.run());box.setFocusable(true);box.setContentDescription(title+"，"+subtitle);}
     private TextView text(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
-    private Button button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setTextColor(BLUE);b.setAllCaps(false);b.setMinHeight(dp(48));b.setTextSize(14);b.setOnClickListener(v->action.run());return b;}
+    private Button button(String label,Runnable action){Button b=new Button(this);b.setText(label);b.setTextColor(BLUE);b.setAllCaps(false);b.setMinHeight(dp(48));b.setTextSize(14);b.setElevation(0);b.setStateListAnimator(null);b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x22315ad9),round(0xffeaf0ff,12),null));b.setPadding(dp(16),dp(10),dp(16),dp(10));b.setOnClickListener(v->action.run());return b;}
     private GradientDrawable round(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private String safeError(Exception e){String m=e.getMessage();return m!=null&&m.matches("[\\p{IsHan}，。、；：！？ ·…A-Za-z0-9-]{1,100}")?m:"连接未完成，请检查网络后重试";}
