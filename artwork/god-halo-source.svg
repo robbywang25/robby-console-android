@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="God halo">
+  <rect width="64" height="64" rx="16" fill="#111827"/>
+  <ellipse cx="32" cy="18" rx="18" ry="7" fill="none" stroke="#f8d477" stroke-width="5"/>
+  <path d="M18 50c0-11 6-19 14-19s14 8 14 19" fill="#e8efff"/>
+  <circle cx="32" cy="35" r="8" fill="#f7cfae"/>
+  <path d="M23 34c1-7 5-11 9-11s8 4 9 11c-3-2-6-3-9-3s-6 1-9 3Z" fill="#9aa9ca"/>
+</svg>

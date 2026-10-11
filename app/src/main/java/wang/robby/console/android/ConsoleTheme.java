@@ -22,33 +22,38 @@ public final class ConsoleTheme {
         contrast=Build.VERSION.SDK_INT>=36 && a!=null && a.isHighContrastTextEnabled();
         android.os.PowerManager power=(android.os.PowerManager)c.getSystemService(Context.POWER_SERVICE);
         effects=!contrast&&android.animation.ValueAnimator.areAnimatorsEnabled()&&(power==null||!power.isPowerSaveMode());
-        canvas=dark?0xff0b111a:0xfff3efe7; surface=dark?0xff121c2a:0xfffffdf9;
-        ink=dark?0xfff4f6f8:0xff231f18; muted=dark?0xff9eacbd:0xff71695f;
-        accent=dark?0xffd5b66f:0xff89661f; accentStrong=dark?0xfff2d48b:0xff624613; line=dark?0xff2b3d4f:0xffe9e3d8;
-        soft=dark?0xff1e2a38:0xfff5f1e8; danger=dark?0xffe28d86:0xffa0443e;
+        canvas=dark?Color.BLACK:Color.WHITE; surface=dark?0xff111111:Color.WHITE;
+        ink=dark?Color.WHITE:Color.BLACK; muted=dark?0xffaaaaaa:0xff666666;
+        accent=ink;accentStrong=ink;line=dark?0xff292929:0xffe8e8e8;
+        soft=dark?0xff1a1a1a:0xfff5f5f5;danger=dark?0xffffb4ab:0xffa0443e;
     }
     public int dp(float n){return Math.round(n*context.getResources().getDisplayMetrics().density);}
     public GradientDrawable shape(int color,float radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     public Drawable card(){GradientDrawable d=shape(surface,14);d.setStroke(dp(contrast?1.5f:0.5f),contrast?muted:line);return d;}
-    public Drawable backdrop(){if(!effects)return new ColorDrawable(canvas);return new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{dark?0xff1d2630:0xffeee5d3,canvas,canvas});}
-    /** Ledger: selected accent at 10%; glass panel-strong at 82%, without a separate gradient. */
-    public Drawable glass(boolean selected){
-        if(selected)return shape((accent & 0x00ffffff)|0x1a000000,24);
-        GradientDrawable d=shape(effects?(dark?0xd1152235:0xd1fffdf8):(dark?0xff152235:0xfffffdf8),24);
-        d.setStroke(dp(1),contrast?muted:(dark?0xff1d2b3f:0xfff8f5ef));return d;
-    }
-    public Drawable ripple(Drawable base){return new RippleDrawable(ColorStateList.valueOf(dark?0x33d5b66f:0x2289661f),base,shape(Color.WHITE,22));}
+    public Drawable backdrop(){return new ColorDrawable(canvas);}
+    public Drawable glass(boolean selected){return shape(soft,24);}
+    public Drawable ripple(Drawable base){return new RippleDrawable(ColorStateList.valueOf(dark?0x22ffffff:0x11000000),base,shape(Color.WHITE,22));}
     public TextView text(String value,int size,boolean bold){TextView v=new TextView(context);v.setText(value);v.setTextSize(size);v.setTextColor(bold?ink:muted);v.setFontFeatureSettings("tnum");v.setLineSpacing(dp(2),1);if(bold)v.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));return v;}
     public void button(Button b,boolean prominent){
         b.setTextSize(14);b.setAllCaps(false);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         b.setMinHeight(dp(48));b.setMinimumHeight(dp(48));b.setMinWidth(0);b.setMinimumWidth(0);
         b.setPadding(dp(18),dp(10),dp(18),dp(10));b.setStateListAnimator(null);b.setElevation(0);
-        b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{muted,prominent?(dark?0xff231f18:Color.WHITE):accentStrong}));
+        b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{muted,prominent?(dark?Color.BLACK:Color.WHITE):accentStrong}));
         b.setBackground(ripple(prominent?shape(accentStrong,12):shape(soft,12)));
     }
     public Button button(String label,Runnable action){Button b=new Button(context);b.setText(label);button(b,false);b.setOnClickListener(v->action.run());return b;}
     public LinearLayout card(LinearLayout root){LinearLayout c=new LinearLayout(context);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(16),dp(16),dp(16),dp(16));c.setBackground(card());c.setElevation(0);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);root.addView(c,p);return c;}
-    public ImageView icon(String name,int color,int size){ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,color));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
+    public ImageView icon(String name,int color,int size){if("grid".equals(name))return tabIcon(name,true,size);ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,color));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
+    public ImageView tabIcon(String name,boolean selected,int size){
+        int asset=switch(name){
+            case "grid"->selected?R.drawable.tab_home_solid:R.drawable.tab_home_outline;
+            case "chart"->selected?R.drawable.tab_insights_solid:R.drawable.tab_insights_outline;
+            case "globe"->selected?R.drawable.tab_assets_solid:R.drawable.tab_assets_outline;
+            case "tools"->selected?R.drawable.tab_tools_solid:R.drawable.tab_tools_outline;
+            default->selected?R.drawable.tab_settings_solid:R.drawable.tab_settings_outline;
+        };
+        ImageView v=new ImageView(context);v.setImageResource(asset);v.setImageTintList(ColorStateList.valueOf(ink));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;
+    }
     public static String symbol(String id){return switch(id){
         case "总览","overview"->"grid";case "洞察","observer","umami","posthog","openai"->"chart";
         case "资产","domains"->"globe";case "工具"->"tools";case "设置"->"gear";
@@ -56,38 +61,12 @@ public final class ConsoleTheme {
         case "status","site-maintenance"->"pulse";case "market","okx"->"trend";
         case "engineering"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog"->"chat";
         case "prompts","visit-insight-reports"->"document";case "secrets","wechat-login-audit"->"shield";default->"grid";};}
-    public void input(EditText v){v.setTextColor(ink);v.setHintTextColor(muted);v.setBackgroundTintList(null);v.setPadding(dp(12),dp(12),dp(12),dp(12));GradientDrawable focused=shape(soft,10);focused.setStroke(dp(1.5f),accent);StateListDrawable states=new StateListDrawable();states.addState(new int[]{android.R.attr.state_focused},focused);GradientDrawable normal=shape(soft,10);normal.setStroke(dp(1),dark?0xff4c617a:0xffd3cbbd);states.addState(new int[]{},normal);v.setBackground(states);v.setTextSize(16);}
+    public void input(EditText v){v.setTextColor(ink);v.setHintTextColor(muted);v.setBackgroundTintList(null);v.setPadding(dp(12),dp(12),dp(12),dp(12));GradientDrawable focused=shape(soft,10);focused.setStroke(dp(1.5f),accent);StateListDrawable states=new StateListDrawable();states.addState(new int[]{android.R.attr.state_focused},focused);GradientDrawable normal=shape(soft,10);normal.setStroke(dp(1),dark?0xff555555:0xffcccccc);states.addState(new int[]{},normal);v.setBackground(states);v.setTextSize(16);}
     public void dialog(android.app.AlertDialog d){
         Window w=d.getWindow();if(w==null)return;w.setBackgroundDrawable(card());
         w.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);w.setDimAmount(dark?.55f:.25f);
         if(Build.VERSION.SDK_INT>=31&&effects)w.setBackgroundBlurRadius(dp(20));
         for(int which:new int[]{-1,-2,-3}){Button b=d.getButton(which);if(b!=null){b.setTextColor(accent);b.setAllCaps(false);b.setMinHeight(dp(48));}}
-    }
-    /** Frosted navigation samples only the app's own sibling view in memory. No screenshot or disk capture. */
-    public static final class GlassBar extends LinearLayout {
-        private final ConsoleTheme t;private final View source;private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final Path clip=new Path();private final RectF bounds=new RectF();
-        private final RenderNode node;private final int[] a=new int[2],b=new int[2];
-        public GlassBar(Context c){this(c,null);}
-        public GlassBar(Context c,View source){super(c);this.source=source;t=new ConsoleTheme(c);setWillNotDraw(false);setLayerType(View.LAYER_TYPE_NONE,null);
-            node=Build.VERSION.SDK_INT>=31?new RenderNode("God navigation backdrop"):null;
-            if(Build.VERSION.SDK_INT>=31&&node!=null)node.setRenderEffect(RenderEffect.createBlurEffect(t.dp(24),t.dp(24),Shader.TileMode.CLAMP));
-            setElevation(t.dp(8));setOutlineAmbientShadowColor(0x12000000);setOutlineSpotShadowColor(0x12000000);setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View v,Outline o){o.setRoundRect(0,0,v.getWidth(),v.getHeight(),t.dp(32));}});
-        }
-        public void clearBackdrop(){if(node!=null)node.discardDisplayList();}
-        @Override protected void onDetachedFromWindow(){clearBackdrop();super.onDetachedFromWindow();}
-        @Override protected void onDraw(Canvas c){
-            int w=getWidth(),h=getHeight();if(w==0||h==0)return;
-            bounds.set(0,0,w,h);clip.reset();clip.addRoundRect(bounds,t.dp(32),t.dp(32),Path.Direction.CW);int save=c.save();c.clipPath(clip);
-            c.drawColor(t.surface);
-            if(Build.VERSION.SDK_INT>=31&&t.effects&&c.isHardwareAccelerated()&&source!=null&&source.getWidth()>0){
-                getLocationInWindow(a);source.getLocationInWindow(b);node.setPosition(0,0,w,h);
-                RecordingCanvas record=node.beginRecording(w,h);record.translate(b[0]-a[0],b[1]-a[1]);source.draw(record);node.endRecording();c.drawRenderNode(node);
-            }
-            paint.setColor(t.effects?(t.dark?0xd1152235:0xd1fffdf8):(t.dark?0xff152235:0xfffffdf8));c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);
-            paint.setColor(t.contrast?t.muted:t.dark?0xff1d2b3f:0xfff8f5ef);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(t.dp(1));bounds.inset(t.dp(.5f),t.dp(.5f));c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setStyle(Paint.Style.FILL);
-            if(t.effects){int shine=c.save();c.clipRect(0,0,w,t.dp(2));paint.setStyle(Paint.Style.STROKE);paint.setColor(0x70ffffff);c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setStyle(Paint.Style.FILL);c.restoreToCount(shine);}
-            c.restoreToCount(save);
-        }
     }
     /** Small consistent vector symbols, never font-dependent emoji. Coordinates use a 24-unit grid. */
     private static final class Symbol extends Drawable {
