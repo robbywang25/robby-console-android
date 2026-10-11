@@ -1,3 +1,0 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
- <instrumentation android:name="wang.robby.console.android.LiveReadAcceptance" android:targetPackage="wang.robby.console.android" android:functionalTest="true" />
-</manifest>

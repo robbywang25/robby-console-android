@@ -11,7 +11,7 @@ android {
   targetSdk 36
   versionCode 3
   versionName '0.2.1'
-  testInstrumentationRunner 'android.test.InstrumentationTestRunner'
+  testInstrumentationRunner (project.hasProperty('liveAcceptance') ? 'wang.robby.console.android.LiveReadAcceptance' : 'android.test.InstrumentationTestRunner')
  }
  signingConfigs {
   release {
