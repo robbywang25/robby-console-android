@@ -31,12 +31,11 @@ public final class ConsoleTheme {
     public GradientDrawable shape(int color,float radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
     public Drawable card(){GradientDrawable d=shape(surface,14);d.setStroke(dp(contrast?1.5f:0.5f),contrast?muted:line);return d;}
     public Drawable backdrop(){if(!effects)return new ColorDrawable(canvas);return new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{dark?0xff1d2630:0xffeee5d3,canvas,canvas});}
+    /** Ledger: selected accent at 10%; glass panel-strong at 82%, without a separate gradient. */
     public Drawable glass(boolean selected){
-        if(!effects)return selected?shape(soft,28):card();
-        GradientDrawable d=new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-            selected?new int[]{dark?0xff3e3b30:0xffeee4cf,dark?0xff292d31:0xfff5eddc}:
-                new int[]{dark?0xeb25313f:0xf7fffdf9,dark?0xe0121c2a:0xeff5f1e8});
-        d.setCornerRadius(dp(28));d.setStroke(dp(1),dark?0x557e8d9f:0xfafffdf8);return d;
+        if(selected)return shape((accent & 0x00ffffff)|0x1a000000,24);
+        GradientDrawable d=shape(effects?(dark?0xd1152235:0xd1fffdf8):(dark?0xff152235:0xfffffdf8),24);
+        d.setStroke(dp(1),contrast?muted:(dark?0xff1d2b3f:0xfff8f5ef));return d;
     }
     public Drawable ripple(Drawable base){return new RippleDrawable(ColorStateList.valueOf(dark?0x33d5b66f:0x2289661f),base,shape(Color.WHITE,22));}
     public TextView text(String value,int size,boolean bold){TextView v=new TextView(context);v.setText(value);v.setTextSize(size);v.setTextColor(bold?ink:muted);v.setFontFeatureSettings("tnum");v.setLineSpacing(dp(2),1);if(bold)v.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));return v;}
@@ -66,17 +65,16 @@ public final class ConsoleTheme {
     }
     /** Frosted navigation samples only the app's own sibling view in memory. No screenshot or disk capture. */
     public static final class GlassBar extends LinearLayout {
-        private final ConsoleTheme t;private final View source;private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final Path clip=new Path();private final RectF bounds=new RectF();private LinearGradient tint;
+        private final ConsoleTheme t;private final View source;private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);private final Path clip=new Path();private final RectF bounds=new RectF();
         private final RenderNode node;private final int[] a=new int[2],b=new int[2];
         public GlassBar(Context c){this(c,null);}
         public GlassBar(Context c,View source){super(c);this.source=source;t=new ConsoleTheme(c);setWillNotDraw(false);setLayerType(View.LAYER_TYPE_NONE,null);
             node=Build.VERSION.SDK_INT>=31?new RenderNode("God navigation backdrop"):null;
-            if(Build.VERSION.SDK_INT>=31&&node!=null)node.setRenderEffect(RenderEffect.createBlurEffect(t.dp(18),t.dp(18),Shader.TileMode.CLAMP));
-            setElevation(t.dp(8));setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View v,Outline o){o.setRoundRect(0,0,v.getWidth(),v.getHeight(),t.dp(32));}});
+            if(Build.VERSION.SDK_INT>=31&&node!=null)node.setRenderEffect(RenderEffect.createBlurEffect(t.dp(24),t.dp(24),Shader.TileMode.CLAMP));
+            setElevation(t.dp(8));setOutlineAmbientShadowColor(0x12000000);setOutlineSpotShadowColor(0x12000000);setOutlineProvider(new ViewOutlineProvider(){@Override public void getOutline(View v,Outline o){o.setRoundRect(0,0,v.getWidth(),v.getHeight(),t.dp(32));}});
         }
         public void clearBackdrop(){if(node!=null)node.discardDisplayList();}
         @Override protected void onDetachedFromWindow(){clearBackdrop();super.onDetachedFromWindow();}
-        @Override protected void onSizeChanged(int w,int h,int oldW,int oldH){super.onSizeChanged(w,h,oldW,oldH);tint=new LinearGradient(0,0,w,h,t.dark?0xe825303f:0xeffffdf9,t.dark?0xee121c2a:0xe8f3efe7,Shader.TileMode.CLAMP);}
         @Override protected void onDraw(Canvas c){
             int w=getWidth(),h=getHeight();if(w==0||h==0)return;
             bounds.set(0,0,w,h);clip.reset();clip.addRoundRect(bounds,t.dp(32),t.dp(32),Path.Direction.CW);int save=c.save();c.clipPath(clip);
@@ -85,8 +83,10 @@ public final class ConsoleTheme {
                 getLocationInWindow(a);source.getLocationInWindow(b);node.setPosition(0,0,w,h);
                 RecordingCanvas record=node.beginRecording(w,h);record.translate(b[0]-a[0],b[1]-a[1]);source.draw(record);node.endRecording();c.drawRenderNode(node);
             }
-            paint.setShader(tint);c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setShader(null);
-            paint.setColor(t.contrast?t.muted:t.dark?0x6099b5d3:0xfafffdf9);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(t.dp(1));bounds.inset(t.dp(.5f),t.dp(.5f));c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setStyle(Paint.Style.FILL);c.restoreToCount(save);
+            paint.setColor(t.effects?(t.dark?0xd1152235:0xd1fffdf8):(t.dark?0xff152235:0xfffffdf8));c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);
+            paint.setColor(t.contrast?t.muted:t.dark?0xff1d2b3f:0xfff8f5ef);paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(t.dp(1));bounds.inset(t.dp(.5f),t.dp(.5f));c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setStyle(Paint.Style.FILL);
+            if(t.effects){int shine=c.save();c.clipRect(0,0,w,t.dp(2));paint.setStyle(Paint.Style.STROKE);paint.setColor(0x70ffffff);c.drawRoundRect(bounds,t.dp(32),t.dp(32),paint);paint.setStyle(Paint.Style.FILL);c.restoreToCount(shine);}
+            c.restoreToCount(save);
         }
     }
     /** Small consistent vector symbols, never font-dependent emoji. Coordinates use a 24-unit grid. */

@@ -74,15 +74,15 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         toolbar=new LinearLayout(this);toolbar.setGravity(Gravity.CENTER_VERTICAL);toolbar.setPadding(dp(20),0,dp(20),dp(8));body.addView(toolbar);
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
         content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(14),dp(8),dp(14),dp(114));scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        nav=new ConsoleTheme.GlassBar(this,body);nav.setPadding(dp(6),dp(6),dp(6),dp(6));nav.setGravity(Gravity.CENTER_VERTICAL);
+        nav=new ConsoleTheme.GlassBar(this,body);nav.setPadding(dp(8),dp(8),dp(8),dp(8));nav.setGravity(Gravity.CENTER_VERTICAL);
         for(String label:List.of("总览","洞察","资产","工具","设置")) {
-            boolean selected=group.equals(label);LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);tab.setPadding(dp(2),dp(8),dp(2),dp(8));
-            tab.setBackground(theme.ripple(selected?theme.glass(true):theme.shape(Color.TRANSPARENT,26)));tab.setSelected(selected);tab.setFocusable(true);tab.setContentDescription(label+(selected?"，已选中":""));
-            tab.addView(theme.icon(ConsoleTheme.symbol(label),selected?ACCENT:MUTED,23));TextView title=text(label,12,selected?ACCENT:MUTED,selected);title.setGravity(Gravity.CENTER);title.setPadding(0,dp(3),0,0);tab.addView(title);
-            tab.setOnClickListener(v->{++generation;group=label;selectedId=null;project=null;build();});nav.addView(tab,new LinearLayout.LayoutParams(0,-2,1));
+            boolean selected=group.equals(label);LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);tab.setPadding(0,0,0,0);
+            tab.setBackground(theme.ripple(selected?theme.glass(true):theme.shape(Color.TRANSPARENT,24)));tab.setSelected(selected);tab.setFocusable(true);tab.setContentDescription(label+(selected?"，已选中":""));
+            tab.addView(theme.icon(ConsoleTheme.symbol(label),selected?ACCENT:MUTED,24));tab.setTooltipText(label);
+            tab.setOnClickListener(v->{++generation;group=label;selectedId=null;project=null;build();});LinearLayout.LayoutParams tabParams=new LinearLayout.LayoutParams(0,dp(56),1);if(nav.getChildCount()>0)tabParams.leftMargin=dp(4);nav.addView(tab,tabParams);
         }
-        FrameLayout.LayoutParams dock=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);dock.setMargins(dp(16),0,dp(16),dp(12));root.addView(nav,dock);
-        root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());body.setPadding(bars.left,bars.top,bars.right,0);dock.setMargins(bars.left+dp(16),0,bars.right+dp(16),bars.bottom+dp(10));nav.setLayoutParams(dock);content.setPadding(dp(14),dp(8),dp(14),bars.bottom+dp(110));return insets;});root.requestApplyInsets();
+        FrameLayout.LayoutParams dock=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);dock.setMargins(dp(12),0,dp(12),dp(10));root.addView(nav,dock);
+        root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());body.setPadding(bars.left,bars.top,bars.right,0);dock.setMargins(bars.left+dp(12),0,bars.right+dp(12),bars.bottom+dp(10));nav.setLayoutParams(dock);content.setPadding(dp(14),dp(8),dp(14),bars.bottom+dp(98));return insets;});root.requestApplyInsets();
         scroll.setOnScrollChangeListener((v,x,y,oldX,oldY)->nav.invalidate());
         if(device!=null){nav.setVisibility(View.GONE);showDeviceAuthorization(device);return;}
         if(selectedId!=null){FeatureCatalog.Feature f=find(selectedId);if(f!=null){showFeature(f,false);return;}selectedId=null;}
@@ -172,7 +172,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         section("账号");row(loggedIn()?"已登录":"尚未登录","Passkey · 设备加密存储",this::account);
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");row("隐私与数据","无第三方统计 · 不保存网页 Cookie",()->new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null).show());
-        row("God 工作台","Android 0.3.2",()->{});
+        row("God 工作台","Android 0.3.3",()->{});
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){
