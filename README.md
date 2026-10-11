@@ -63,6 +63,7 @@ ROBBY_ANDROID_SIGNING_DIR=/absolute/private/signing ./gradlew assembleRelease
 - `app/`：原生 Activity、功能卡片、固定 API 传输、认证与测试。
 - `docs/FEATURE-PARITY.md`：与既有工作台能力的对应关系和限制。
 - `docs/NATIVE-APPEARANCE.md`：原生视觉组件、平台降级和独立界面预览。
+- `docs/PRODUCT-STYLE.md`：当前产品风格、交互原则和迭代验收标准。
 - `.github/workflows/`：编译、静态检查和单元测试。
 
 服务端运维、私人数据、签名密钥和内部系统配置不在此仓库。正式 APK 由维护者签名后上传 GitHub Release。
