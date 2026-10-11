@@ -1,11 +1,11 @@
 # 原生界面
 
-当前版本按用户最新要求采用白色/黑色中性主题和固定底栏。浅色白底黑图标，深色黑底白图标；内容卡片与输入使用中性灰区分层级。下方v0.3.1和v0.3.3记录保留为历史，不是当前默认样式。Android 使用平台原生 View、Canvas、RenderNode 和 RenderEffect；不依赖 Apple 的 Liquid Glass API。
+当前版本按用户最新要求采用白色/黑色中性主题和固定底栏。浅色白底黑图标，深色黑底白图标；内容卡片与输入使用中性灰区分层级。下方v0.3.1和v0.3.3记录保留为历史，不是当前默认样式。Android 使用平台原生 View 和矢量资源；当前底栏不使用模糊或悬浮表面。
 
 ## 组件
 
-- `ConsoleTheme` 统一浅色/深色配色、14 dp 数据卡片、12 dp 按钮、10 dp 输入框、图标和对话框。导航保留胶囊轮廓，内容层减少阴影。
-- `GlassBar` 是悬浮五栏导航；Android 12 及以上在内存中采样本应用的内容层并模糊，再绘制半透明表面。只处理导航区域，不模糊正文或金额，不截图到文件。
+- `ConsoleTheme` 统一浅色/深色配色、14 dp 数据卡片、12 dp 按钮、10 dp 输入框、图标和对话框。导航铺满底部，内容层不加装饰阴影。
+- 底栏位于纵向布局内，滚动区域在它上方结束，底栏本身包含系统手势安全区；选中状态只切换图标填充。
 - Android 11、关闭动画、省电模式及支持检测的高对比文字模式使用实色或描边控件。其余数据卡片始终不透明。
 - 总览直接加载已有 `overview` 数据，展示服务、实例、域名和提醒；不使用演示余额填补失败或空值。
 - 功能列表有统一矢量图标与按压反馈。详情页返回和刷新固定在顶部。常用功能按明确 ID 选择。
@@ -22,8 +22,8 @@ Debug 构建是独立的 `wang.robby.console.android.preview` 应用，显示“
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 adb shell am start -n wang.robby.console.android.preview/wang.robby.console.android.PreviewActivity
-adb shell am start -n 'wang.robby.console.android.preview/wang.robby.console.android.PreviewActivity$Dark'
-adb shell am start -n 'wang.robby.console.android.preview/wang.robby.console.android.PreviewActivity$Large'
+adb shell 'am start -n wang.robby.console.android.preview/wang.robby.console.android.PreviewActivity\$Dark'
+adb shell 'am start -n wang.robby.console.android.preview/wang.robby.console.android.PreviewActivity\$Large'
 ```
 
 这些入口只覆盖预览应用的显示配置，不修改设备的全局主题或字体。可检查首页、五栏导航、功能列表、返回、滚动、设置和已有示例详情。未提供合成数据的功能显示预览限制，不请求真实服务。
