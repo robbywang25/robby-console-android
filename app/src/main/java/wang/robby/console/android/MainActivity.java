@@ -73,7 +73,7 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
     private void home() {
         LinearLayout hero=card();hero.setPadding(dp(22),dp(22),dp(22),dp(22));hero.setBackground(round(INK,22));
         hero.addView(text("你的私人工作台",24,Color.WHITE,true));TextView sub=text("数据、资产与常用工具，随身查看。",14,0xffc5d0e6,false);sub.setPadding(0,dp(10),0,dp(18));hero.addView(sub);
-        Button b=button(auth.hasSession()?"刷新工作台":"通过电脑授权",()->{if(auth.hasSession()){FeatureCatalog.Feature f=find("overview");if(f==null)f=FeatureCatalog.all().get(0);open(f);}else deviceLogin();});b.setBackground(round(BLUE,12));b.setTextColor(Color.WHITE);hero.addView(b);
+        Button b=button(auth.hasSession()?"刷新工作台":"通过已有设备授权",()->{if(auth.hasSession()){FeatureCatalog.Feature f=find("overview");if(f==null)f=FeatureCatalog.all().get(0);open(f);}else deviceLogin();});b.setBackground(round(BLUE,12));b.setTextColor(Color.WHITE);hero.addView(b);
         if(!auth.hasSession()){Button passkey=button("使用此设备或附近设备的 Passkey",this::login);hero.addView(passkey);TextView hint=text("登录后读取真实数据",12,0xffb7c5df,false);hint.setPadding(0,dp(12),0,0);hero.addView(hint);}
         section("常用功能");
         for(String needle:List.of("旅行","剪贴板","OpenAI","域名")){FeatureCatalog.Feature f=FeatureCatalog.all().stream().filter(x->x.title.contains(needle)).findFirst().orElse(null);if(f!=null)featureRow(f);}
@@ -86,7 +86,7 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
     private void showFeature(FeatureCatalog.Feature f,boolean refresh) {
         content.removeAllViews();heading.setText(f.title);
         LinearLayout controls=new LinearLayout(this);controls.addView(button("‹ 返回",this::goBack));controls.addView(button("刷新",()->showFeature(f,true)));content.addView(controls);
-        if(!auth.hasSession()){section(f.title);TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(20),0,dp(20));content.addView(t);content.addView(button("通过电脑授权",this::deviceLogin));content.addView(button("使用 Passkey 登录",this::login));return;}
+        if(!auth.hasSession()){section(f.title);TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(20),0,dp(20));content.addView(t);content.addView(button("通过已有设备授权",this::deviceLogin));content.addView(button("使用 Passkey 登录",this::login));return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
         String key=path; JSONObject cached=key.startsWith("travel-ledger/")?null:snapshots.get(key);
@@ -133,7 +133,7 @@ public final class MainActivity extends Activity implements AuthCoordinator.List
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){
-        heading.setText("在电脑上授权");session.setText("等待本人确认");
+        heading.setText("授权此设备");session.setText("等待本人确认");
         LinearLayout c=card();c.addView(text("1  打开安全验证页",19,INK,true));
         TextView url=text(info.verificationUri.toString(),15,BLUE,false);url.setPadding(0,dp(14),0,dp(22));c.addView(url);
         c.addView(text("使用已经能登录 God 的电脑或其他设备。",14,MUTED,false));
