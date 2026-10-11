@@ -78,7 +78,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         for(String label:List.of("总览","洞察","资产","工具","设置")) {
             boolean selected=group.equals(label);LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);tab.setPadding(dp(2),dp(8),dp(2),dp(8));
             tab.setBackground(theme.ripple(selected?theme.glass(true):theme.shape(Color.TRANSPARENT,26)));tab.setSelected(selected);tab.setFocusable(true);tab.setContentDescription(label+(selected?"，已选中":""));
-            tab.addView(theme.icon(ConsoleTheme.symbol(label),selected?ACCENT:MUTED,23));TextView title=text(label,12,selected?ACCENT:MUTED,selected);title.setPadding(0,dp(3),0,0);tab.addView(title);
+            tab.addView(theme.icon(ConsoleTheme.symbol(label),selected?ACCENT:MUTED,23));TextView title=text(label,12,selected?ACCENT:MUTED,selected);title.setGravity(Gravity.CENTER);title.setPadding(0,dp(3),0,0);tab.addView(title);
             tab.setOnClickListener(v->{++generation;group=label;selectedId=null;project=null;build();});nav.addView(tab,new LinearLayout.LayoutParams(0,-2,1));
         }
         FrameLayout.LayoutParams dock=new FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM);dock.setMargins(dp(16),0,dp(16),dp(12));root.addView(nav,dock);
@@ -172,7 +172,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         section("账号");row(loggedIn()?"已登录":"尚未登录","Passkey · 设备加密存储",this::account);
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");row("隐私与数据","无第三方统计 · 不保存网页 Cookie",()->new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null).show());
-        row("God 工作台","Android 0.3.1",()->{});
+        row("God 工作台","Android 0.3.2",()->{});
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){

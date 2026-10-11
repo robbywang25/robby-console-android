@@ -238,7 +238,14 @@ public final class AuthSession {
                     throw failure("登录已失效，请重新登录。");
                 }
                 throw failure("暂时无法刷新登录，会话已保留，请稍后重试。");
-            } catch (Exception ignored) {
+            } catch (Exception error) {
+                // Only fixed categories; never log exception messages, URLs or credentials.
+                String kind = error instanceof java.net.SocketTimeoutException ? "timeout"
+                    : error instanceof java.net.UnknownHostException ? "dns"
+                    : error instanceof javax.net.ssl.SSLException ? "tls"
+                    : error instanceof android.os.NetworkOnMainThreadException ? "main_thread"
+                    : error instanceof java.io.IOException ? "io" : "validation_or_storage";
+                Log.w("GodAuth", "refresh_failure=" + kind);
                 throw failure("无法读取有效登录，请重新登录或稍后重试。");
             } finally {
                 if (updated != null) revoke(discovery, updated.refresh, updated.access);
