@@ -10,13 +10,19 @@ import java.util.*;
 
 /** Independent learning app. All commercial outcomes are explicitly simulated in memory. */
 public final class BillingLabActivity extends Activity {
- private final ScenarioSession session=new ScenarioSession();
+ private ScenarioSession session=new ScenarioSession();
  private final PlayEnvironmentProbe probe=new PlayEnvironmentProbe();
  private String owner="A",notice="选择一种购买模型，再模拟事件。",probeStatus="尚未检测。此功能只连接SDK，不发起购买。";
  private ScenarioEngine.Product product=ScenarioEngine.Product.LIFETIME;
  private boolean dark,probing;
  private LinearLayout content;private int ink,muted,blue;
- @Override public void onCreate(Bundle state){super.onCreate(state);dark=(getResources().getConfiguration().uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;ink=dark?Color.WHITE:Color.BLACK;muted=dark?0xffaaaaaa:0xff666666;blue=dark?0xff4582e6:0xff0052d9;render();}
+ /** Rotation or a light/dark switch recreates the Activity; the in-memory simulation must survive it (only an app restart resets it). */
+ private static final class Retained { final ScenarioSession session;final String owner,notice,probeStatus;final ScenarioEngine.Product product;
+  Retained(ScenarioSession session,String owner,String notice,String probeStatus,ScenarioEngine.Product product){this.session=session;this.owner=owner;this.notice=notice;this.probeStatus=probeStatus;this.product=product;} }
+ @Override public Object onRetainNonConfigurationInstance(){return new Retained(session,owner,notice,probeStatus,product);}
+ @Override public void onCreate(Bundle state){super.onCreate(state);
+  Object last=getLastNonConfigurationInstance();if(last instanceof Retained){Retained r=(Retained)last;session=r.session;owner=r.owner;notice=r.notice;probeStatus=r.probeStatus;product=r.product;}
+ dark=(getResources().getConfiguration().uiMode&Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;ink=dark?Color.WHITE:Color.BLACK;muted=dark?0xffaaaaaa:0xff666666;blue=dark?0xff4582e6:0xff0052d9;render();}
  private void render(){
   ScrollView scroll=new ScrollView(this);scroll.setBackgroundColor(dark?Color.BLACK:Color.WHITE);content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(20),dp(16),dp(20),dp(24));scroll.addView(content);setContentView(scroll);
   scroll.setOnApplyWindowInsetsListener((v,i)->{android.graphics.Insets b=i.getInsets(WindowInsets.Type.systemBars());v.setPadding(b.left,b.top,b.right,b.bottom);return i;});scroll.requestApplyInsets();

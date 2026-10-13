@@ -92,5 +92,15 @@ public final class LedgerContractTest extends InstrumentationTestCase {
             assertFalse(FeatureRenderer.isCompatible(FeatureCatalog.find("wechat-publishing"),publishing));
         }
     }
+    public void testEntryPickerLabelsFallBackToCategoryAndTolerateMissingFields()throws Exception{
+        assertEquals("测试商户 · 12.50 CNY",FeatureRenderer.ledgerEntryLabel(j("merchant","测试商户","category","餐饮","amount","12.50","currency","CNY")));
+        assertEquals("餐饮 · 8 JPY",FeatureRenderer.ledgerEntryLabel(j("merchant","  ","category","餐饮","amount","8","currency","JPY")));
+        assertEquals("账目",FeatureRenderer.ledgerEntryLabel(new JSONObject()));
+    }
+    public void testUpstreamStatusShowsFeedAvailabilityNotProviderState()throws Exception{
+        assertEquals("可用",FeatureRenderer.availability(j("available",true,"stale",false,"state","major_outage")));
+        assertEquals("数据已陈旧",FeatureRenderer.availability(j("available",true,"stale",true,"state","operational")));
+        assertEquals("暂不可用",FeatureRenderer.availability(j("available",false,"stale",false,"state","operational")));
+    }
     private static void collect(View view,StringBuilder out){if(view instanceof TextView)out.append(((TextView)view).getText()).append('\n');if(view instanceof ViewGroup){ViewGroup g=(ViewGroup)view;for(int i=0;i<g.getChildCount();i++)collect(g.getChildAt(i),out);}}
 }

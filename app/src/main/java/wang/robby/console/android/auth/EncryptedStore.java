@@ -4,12 +4,14 @@ import android.content.Context;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.util.AtomicFile;
+import org.json.JSONException;
 import org.json.JSONObject;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyStore;
 import java.util.Arrays;
+import javax.crypto.AEADBadTagException;
 import javax.crypto.Cipher;
 import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
@@ -33,15 +35,23 @@ final class EncryptedStore {
                 .setKeySize(256).setRandomizedEncryptionRequired(true).build());
         return generator.generateKey();
     }
+    /** Provably unusable contents (format, authentication tag or JSON), as opposed to a transient Keystore/IO failure. */
+    static final class Corrupt extends Exception {
+        Corrupt() { super("本机登录存储已损坏。"); }
+    }
     JSONObject read() throws Exception {
         if (!file.getBaseFile().exists()) return new JSONObject();
-        OAuthGuards.require(file.getBaseFile().length() <= 131072);
+        if (file.getBaseFile().length() > 131072) throw new Corrupt();
         byte[] bytes = file.readFully();
-        OAuthGuards.require(bytes.length >= 29 && bytes[0] == 1);
+        if (bytes.length < 29 || bytes[0] != 1) throw new Corrupt();
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
         cipher.init(Cipher.DECRYPT_MODE, key(), new GCMParameterSpec(128, Arrays.copyOfRange(bytes, 1, 13)));
         cipher.updateAAD(AAD);
-        return new JSONObject(new String(cipher.doFinal(bytes, 13, bytes.length - 13), StandardCharsets.UTF_8));
+        final byte[] plain;
+        try { plain = cipher.doFinal(bytes, 13, bytes.length - 13); }
+        catch (AEADBadTagException wrongKeyOrTampered) { throw new Corrupt(); }
+        try { return new JSONObject(new String(plain, StandardCharsets.UTF_8)); }
+        catch (JSONException malformed) { throw new Corrupt(); }
     }
     void write(JSONObject object) throws Exception {
         Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");

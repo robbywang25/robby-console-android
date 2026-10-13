@@ -77,7 +77,10 @@ public final class LedgerActions {
     }
     public void recover() {
         start(ENTRY, null, null, "核实提交结果");
-        run(() -> { JSONObject p = journal.load(); check(p != null); return p; }, p -> pendingScreen(p));
+        // Nothing pending is a normal answer, not a failure: previously this surfaced the generic
+        // "检查输入与网络" error together with a permanently disabled reload button.
+        run(() -> { JSONObject p = journal.load(); return p == null ? json("none", true) : p; },
+            p -> { if (p.has("none")) { clear(); text("没有待核实的提交，可以正常记账。"); action("完成", this::close, true); return; } pendingScreen(p); });
     }
     private void start(String k, String p, String e, String title) {
         close(); closed = false; kind = k; project = p; entryId = e; openDialog(title);
@@ -219,7 +222,8 @@ public final class LedgerActions {
     }
     private void confirm() throws Exception {
         check(prepared!=null); final JSONObject p=copy(prepared); final String k=kind;
-        check(Instant.parse(p.getString("expiresAt")).isAfter(Instant.now()));
+        // An idle review screen outlives the ~5 minute prepare window; say so instead of "检查输入与网络".
+        if(!Instant.parse(p.getString("expiresAt")).isAfter(Instant.now()))throw new Rejected("prepare_expired");
         final long stamp=generation; final JSONObject pending=pending(k,p); prepared=null;
         run(()->{
             check(!closed&&generation==stamp);

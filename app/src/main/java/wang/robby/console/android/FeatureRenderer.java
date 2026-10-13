@@ -131,7 +131,9 @@ public final class FeatureRenderer {
             u.row(c, "服务", flag(n, "online", "在线", "离线")); u.row(c, "可达", flag(n, "reachable", "可达", "不可达"));
             u.row(c, "HTTP", number(n, "status")); u.row(c, "延迟", unit(n, "latencyMs", " ms"));
             u.row(c, "DNS", flag(obj(n, "dns"), "resolved", "已解析", "未解析")); }
-        for (JSONObject n : rows(p, "upstreams")) { c = u.card(s(n, "name")); u.row(c, "状态", source(n));
+        // Upstream rows carry both feed availability and the provider's own state; source() would
+        // pick "state" first and render the same value twice, hiding an unavailable or stale feed.
+        for (JSONObject n : rows(p, "upstreams")) { c = u.card(s(n, "name")); u.row(c, "状态", availability(n));
             u.row(c, "运行", state(n, "state")); for (JSONObject part : rows(n, "components")) u.row(c, s(part, "name"), state(part, "status")); }
     }
     private static void observer(UI u, JSONObject p) {
@@ -328,6 +330,17 @@ public final class FeatureRenderer {
         if (Boolean.FALSE.equals(p.opt("available"))) return "暂不可用";
         if (Boolean.TRUE.equals(p.opt("stale"))) return "数据已陈旧";
         if (Boolean.TRUE.equals(p.opt("cached"))) return "缓存";
+        return flag(p, "available", "可用", "暂不可用");
+    }
+    /** Picker label for one ledger snapshot entry. Blank merchants fall back to the category, matching the entry cards. */
+    static String ledgerEntryLabel(JSONObject e) {
+        String title = e.optString("merchant").trim(); if (title.isEmpty()) title = e.optString("category").trim(); if (title.isEmpty()) title = "账目";
+        String amount = (e.optString("amount") + " " + e.optString("currency")).trim();
+        return amount.isEmpty() ? title : title + " · " + amount;
+    }
+    static String availability(JSONObject p) {
+        if (Boolean.FALSE.equals(p.opt("available"))) return "暂不可用";
+        if (Boolean.TRUE.equals(p.opt("stale"))) return "数据已陈旧";
         return flag(p, "available", "可用", "暂不可用");
     }
     private static String state(JSONObject p, String key) {

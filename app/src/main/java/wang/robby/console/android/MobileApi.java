@@ -26,18 +26,29 @@ public final class MobileApi {
         return path;
     }
     private static boolean ledgerRoute(String route){return route.matches("travel-ledger/(entry-writes|people-writes)/(context|prepare|commit|receipt|resolve)")||route.equals("travel-ledger/entry-writes/trash");}
-    public JSONObject get(String path) throws Exception { return request("GET",path,null); }
+    /**
+     * A 401 means the bearer was rejected before the request was processed. Reads get exactly one
+     * forced refresh and retry, so a server-side revocation or early expiry no longer leaves the
+     * screen stuck on "重新验证" until the cached access token naturally ages out. Writes never retry.
+     */
+    public JSONObject get(String path) throws Exception {
+        checkedPath(path);
+        try { return request("GET",path,null,auth.accessToken()); }
+        catch (ApiError error) { if (!retryWithFreshToken(error)) throw error; }
+        return request("GET",path,null,auth.accessToken(true));
+    }
+    static boolean retryWithFreshToken(ApiError error){return error.status==401;}
     public JSONObject post(String path,JSONObject body) throws Exception {
         checkedPath(path);
         if(!path.matches("travel-ledger/(entry-writes|people-writes)/(prepare|commit|resolve)"))throw new IllegalArgumentException("写入接口未登记");
-        return request("POST",path,body);
+        return request("POST",path,body,auth.accessToken());
     }
-    private JSONObject request(String method,String path,JSONObject body) throws Exception {
+    private JSONObject request(String method,String path,JSONObject body,String accessToken) throws Exception {
         checkedPath(path);
         URL url = new URL("https://god.robby.wang/api/mobile/v1/" + path);
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
         c.setInstanceFollowRedirects(false); c.setConnectTimeout(12000); c.setReadTimeout(25000); c.setRequestMethod(method);
-        c.setRequestProperty("Authorization", "Bearer " + auth.accessToken());
+        c.setRequestProperty("Authorization", "Bearer " + accessToken);
         c.setRequestProperty("Accept", "application/json"); c.setRequestProperty("Cache-Control", "no-store");
         c.setRequestProperty("X-Request-ID",UUID.randomUUID().toString()); c.setUseCaches(false);
         try {

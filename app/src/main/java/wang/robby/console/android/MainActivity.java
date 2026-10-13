@@ -51,15 +51,20 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         super.onCreate(state);
         theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;
         try { coordinator=AuthCoordinator.get(this);auth=coordinator.session(); api=new MobileApi(auth);ledger=new LedgerActions(this,new LedgerActions.Transport(){public JSONObject get(String path)throws Exception{return read(path);}public JSONObject post(String path,JSONObject body)throws Exception{if(PreviewMode.isBuild())throw new IllegalStateException("界面预览不执行写入");return api.post(path,body);}},()->{ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature f=find("travel-ledger");if(f!=null)showFeature(f,true);}); }
-        catch(Exception e) { new AlertDialog.Builder(this).setMessage("无法打开设备安全存储，请检查屏幕锁定设置").setPositiveButton("关闭",(d,w)->finish()).show(); return; }
+        catch(Exception e) { new AlertDialog.Builder(this).setMessage("无法打开设备安全存储，请检查屏幕锁定设置").setCancelable(false).setPositiveButton("关闭",(d,w)->finish()).show(); return; }
         if(state!=null) { group=state.getString("group","总览"); selectedId=state.getString("feature"); project=state.getString("project");navigation.rememberOffset(routeKey(),state.getInt("scroll",0)); }
-        build(); handle(getIntent());
+        build();
+        // A recreated Activity (process death) or a Recents relaunch re-delivers the original launch
+        // Intent. Its one-time OAuth callback was already consumed, so replaying it only produced a
+        // spurious "登录未完成或已过期" error. Fresh callbacks always arrive as a new launch or onNewIntent.
+        if(state==null&&!launchedFromHistory(getIntent()))handle(getIntent()); else getIntent().setData(null);
         if(Build.VERSION.SDK_INT>=33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::goBack);
     }
     @Override protected void onSaveInstanceState(Bundle state) {super.onSaveInstanceState(state);state.putString("group",group);state.putString("feature",selectedId);state.putString("project",project);saveViewport();state.putInt("scroll",ledgerCursor==null?navigation.offset(routeKey()):0);}
-    @Override protected void onNewIntent(Intent intent) {super.onNewIntent(intent);setIntent(intent);handle(intent);}
+    @Override protected void onNewIntent(Intent intent) {super.onNewIntent(intent);setIntent(intent);if(!launchedFromHistory(intent))handle(intent);else intent.setData(null);}
+    static boolean launchedFromHistory(Intent intent){return intent!=null&&(intent.getFlags()&Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)!=0;}
     private void handle(Intent intent) {
-        if(PreviewMode.isBuild()){intent.setData(null);return;}
+        if(PreviewMode.isBuild()||coordinator==null){intent.setData(null);return;}
         Uri uri=intent.getData(); if(uri==null)return;
         intent.setData(null); coordinator.callback(uri);
     }
@@ -133,7 +138,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
         else {target.removeAllViews();TextView loading=text("正在更新概览…",14,MUTED,false);loading.setPadding(0,dp(12),0,dp(16));target.addView(loading);}
         if(cached!=null&&!refresh)return;int epoch=++generation;
         worker.execute(()->{if(epoch!=generation)return;try{JSONObject data=read("overview");runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put("overview",data);FeatureRenderer.render(this,target,find("overview"),data);restoreViewport();});}
-        catch(Exception e){runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;project=null;ledgerCursor=null;ledgerPages.clear();}if(cached==null)target.removeAllViews();LinearLayout c=theme.card(target);c.addView(text("概览暂未更新",17,INK,true));c.addView(text(safeError(e),14,MUTED,false));c.addView(button("重试",()->dashboard(true)));restoreViewport();});}});
+        catch(Exception e){runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;
+            // The refresh may have invalidated the stored session; show the sign-in card instead of a
+            // signed-in home that can only ever fail (same handling as feature screens).
+            if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
+            if(cached==null)target.removeAllViews();LinearLayout c=theme.card(target);c.addView(text("概览暂未更新",17,INK,true));c.addView(text(safeError(e),14,MUTED,false));c.addView(button("重试",()->dashboard(true)));restoreViewport();});}});
     }
     private void catalog(String category) {LinearLayout list=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals(category))featureRow(f,list);restoreViewport();}
     private void featureRow(FeatureCatalog.Feature f){featureRow(f,groupCard());}
@@ -178,10 +187,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
                 if(page!=null&&page.optBoolean("hasMore")){String next=page.optString("nextCursor");if(next.matches("[A-Za-z0-9_-]{1,1500}\\.[A-Za-z0-9_-]{43}"))result.addView(button("下一页",()->{ledgerPages.push(ledgerCursor==null?"":ledgerCursor);ledgerCursor=next;showFeature(f,true);}));}
                 addAction(result,"记一笔",()->ledger.showEntry(project,null));
                 JSONArray entries=data.optJSONArray("entries");
-                if(entries!=null&&entries.length()>0)result.addView(button("编辑本页账目",()->{
-                    String[] labels=new String[entries.length()];for(int i=0;i<entries.length();i++){JSONObject e=entries.optJSONObject(i);labels[i]=e.optString("merchant",e.optString("category"))+" · "+e.optString("amount")+" "+e.optString("currency");}
-                    new AlertDialog.Builder(this).setTitle("选择账目").setItems(labels,(d,index)->ledger.showEntry(project,entries.optJSONObject(index).optString("id"))).setNegativeButton("取消",null).show();
-                }));
+                List<String> entryIds=new ArrayList<>(),entryLabels=new ArrayList<>();
+                if(entries!=null)for(int i=0;i<entries.length();i++){JSONObject e=entries.optJSONObject(i);if(e==null)continue;entryIds.add(e.optString("id"));entryLabels.add(FeatureRenderer.ledgerEntryLabel(e));}
+                if(!entryIds.isEmpty())result.addView(button("编辑本页账目",()->
+                    new AlertDialog.Builder(this).setTitle("选择账目").setItems(entryLabels.toArray(new String[0]),(d,index)->ledger.showEntry(project,entryIds.get(index))).setNegativeButton("取消",null).show()));
                 addAction(result,"人员管理",()->ledger.showPeople(project));
                 addAction(result,"最近删除",()->ledger.showTrash(project));
                 addAction(result,"查询上次提交结果",()->ledger.recover());
@@ -189,11 +198,18 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
             }
         }catch(Exception e){result.removeAllViews();result.addView(text("数据格式与当前版本不匹配，请刷新或更新应用。",15,theme.danger,false));}
     }
+    private String versionName(){
+        try{android.content.pm.PackageInfo info=Build.VERSION.SDK_INT>=33
+                ?getPackageManager().getPackageInfo(getPackageName(),android.content.pm.PackageManager.PackageInfoFlags.of(0))
+                :getPackageManager().getPackageInfo(getPackageName(),0);
+            return info.versionName==null?"":info.versionName;}
+        catch(Exception ignored){return "";}
+    }
     private void settings(){
         section("账号");row(loggedIn()?"已登录":"尚未登录","Passkey · 设备加密存储",this::account);
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");row("隐私与数据","无第三方统计 · 不保存网页 Cookie",()->new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null).show());
-        row("God 工作台","Android 0.3.6",()->{});restoreViewport();
+        String version=versionName();row("God 工作台",version.isEmpty()?"Android":"Android "+version,()->{});restoreViewport();
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){
@@ -211,7 +227,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener {
     private void deviceLogin(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy())return;coordinator.loginWithDevice();}
     private void login(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy())return;session.setText("正在准备安全登录…");coordinator.login();}
     private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){new AlertDialog.Builder(this).setTitle("登录 God 工作台").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录"},(d,w)->{if(w==0)deviceLogin();else login();}).setNegativeButton("取消",null).show();return;}new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->{++generation;snapshots.clear();navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}).show();}
-    private void goBack(){if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){saveViewport();++generation;if(project!=null){project=null;ledgerCursor=null;ledgerPages.clear();showFeature(find(selectedId),true);}else{selectedId=null;build();}}else if(!group.equals("总览")){switchTab("总览");}else moveTaskToBack(true);}
+    private void goBack(){if(coordinator==null){finish();return;}if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){saveViewport();++generation;if(project!=null){project=null;ledgerCursor=null;ledgerPages.clear();showFeature(find(selectedId),true);}else{selectedId=null;build();}}else if(!group.equals("总览")){switchTab("总览");}else moveTaskToBack(true);}
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}

@@ -11,7 +11,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.URI;
 import java.net.URLEncoder;
-import java.net.SocketTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -57,9 +56,9 @@ public final class AuthSession {
         synchronized (STATE_LOCK) {
             generation++;
             try {
-                JSONObject saved = readOrReset();
+                JSONObject saved = readPreserving();
                 if (saved.has("pending")) { saved.remove("pending"); store.write(saved); }
-            } catch (Exception ignored) { /* readOrReset has already invalidated unreadable storage. */ }
+            } catch (Exception ignored) { /* Corrupt storage is already invalidated; transient failures keep the session. */ }
         }
     }
 
@@ -105,7 +104,10 @@ public final class AuthSession {
             } catch (DeviceOAuthFailure pending) {
                 grant.policy.response(pending.code, monotonicNow());
                 return false;
-            } catch (SocketTimeoutException timeout) {
+            } catch (java.io.IOException transientNetwork) {
+                // Timeouts, DNS failures and dropped connections (e.g. Wi-Fi to cellular while the
+                // owner approves on another device) back off per RFC 8628 §3.5 instead of
+                // abandoning a code the owner may already be typing.
                 grant.policy.timeout(monotonicNow());
                 return false;
             }
@@ -212,7 +214,7 @@ public final class AuthSession {
             try {
                 final JSONObject current;
                 synchronized (STATE_LOCK) {
-                    current = readOrReset().optJSONObject("session");
+                    current = readPreserving().optJSONObject("session");
                     OAuthGuards.require(current != null);
                     validateStored(current);
                     if (!forceRefresh && current.getLong("expires_at") > System.currentTimeMillis() + 60_000L)
@@ -224,7 +226,8 @@ public final class AuthSession {
                 String access = updated.access;
                 synchronized (STATE_LOCK) {
                     OAuthGuards.require(expected == generation);
-                    JSONObject saved = readOrReset();
+                    JSONObject saved;
+                    try { saved = readPreserving(); } catch (Exception unreadable) { saved = new JSONObject(); }
                     saved.put("session", updated.json);
                     store.write(saved);
                 }
@@ -257,7 +260,7 @@ public final class AuthSession {
     public boolean hasSession() {
         synchronized (STATE_LOCK) {
             try {
-                JSONObject session = readOrReset().optJSONObject("session");
+                JSONObject session = readPreserving().optJSONObject("session");
                 if (session == null) return false;
                 validateStored(session);
                 return true;
@@ -289,9 +292,20 @@ public final class AuthSession {
         };
     }
 
+    /** Starting a new login may discard whatever is stored, readable or not. */
     private JSONObject readOrReset() throws Exception {
         try { return store.read(); }
         catch (Exception ignored) { store.clear(); throw failure("本机登录存储不可用，请重新登录。"); }
+    }
+    /**
+     * Session reads only discard storage that is provably corrupt (bad tag, format or JSON). A transient
+     * Keystore/IO failure (seen right after boot or an OTA on some devices) used to erase a valid
+     * session on a mere hasSession() check, forcing a full Passkey/device re-authorization.
+     */
+    private JSONObject readPreserving() throws Exception {
+        try { return store.read(); }
+        catch (EncryptedStore.Corrupt corrupt) { store.clear(); throw failure("本机登录存储不可用，请重新登录。"); }
+        catch (Exception transientFailure) { throw failure("暂时无法读取本机登录，请稍后重试。"); }
     }
     private static void validateStored(JSONObject token) throws Exception {
         OAuthGuards.require(OAuthGuards.safeToken(string(token, "access_token"), 32768)
