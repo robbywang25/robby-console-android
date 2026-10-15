@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.6.0", "2026-10-15", "运行状态一眼看清",
+            "运行状态页先给结论：全部符合预期，或有几项需要关注，并写明检测时间。",
+            "公开页面、私有入口和官方上游分组显示，状态名称与网页版一致。",
+            "点结论里的问题项直接跳到对应行；每行可以展开看 DNS、HTTP 状态、耗时和上游组件。",
+            "停留在这一页时每 60 秒自动刷新，切到后台就暂停。"),
         new Entry("0.5.0", "2026-10-15", "在 App 里直接更新",
             "打开「我 → 关于」会自动检查新版本，有新版本时点「立即更新」就在 App 里下载安装。",
             "安装包下载后先核对校验值和签名，再交给系统确认安装，登录和数据都保留。",

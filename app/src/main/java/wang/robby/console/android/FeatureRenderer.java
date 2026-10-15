@@ -10,6 +10,7 @@ import android.text.style.AbsoluteSizeSpan;
 import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import org.json.JSONArray;
@@ -18,7 +19,7 @@ import java.text.NumberFormat;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
-import java.util.Locale;
+import java.util.*;
 
 /** Explicit presentation allowlists. Never traverses or prints arbitrary JSON, credentials or clipboard content. */
 public final class FeatureRenderer {
@@ -27,6 +28,8 @@ public final class FeatureRenderer {
     public interface Opener { void openFeature(String id); }
     private static final String UNKNOWN = "未知";
     private static final int MAX_ROWS = 100;
+    /** Status rows the reader expanded (keys are hostnames or upstream ids); process memory only. */
+    private static final Set<String> OPEN = new HashSet<>();
 
     public static void render(Context context, LinearLayout container, FeatureCatalog.Feature feature, JSONObject payload) {
         container.removeAllViews();
@@ -147,18 +150,73 @@ public final class FeatureRenderer {
         }
         empty(u, p, "instances", "暂无实例");
     }
+    /**
+     * 运行状态, modelled on status.robby.wang: an answer-first summary with the public / private / upstream counts,
+     * then each group as one list in the web page's fixed order. Rows expand in place for the probe details, and the
+     * problems named in the summary jump to their row.
+     */
     private static void health(UI u, JSONObject p) {
-        u.freshness(p, 600); LinearLayout c = u.card("健康概览");
-        u.fields(c, obj(p, "summary"), "publicOnline", "公开站在线", "publicKnown", "公开站已知", "publicTotal", "公开站总数",
-            "privateOnline", "私有站在线", "privateKnown", "私有站已知", "privateTotal", "私有站总数", "upstreamOperational", "正常上游", "upstreamTotal", "上游总数");
-        for (JSONObject n : rows(p, "sites")) { c = u.card(s(n, "label")); u.paragraph(c, s(n, "hostname"));
-            u.row(c, "服务", flag(n, "online", "在线", "离线")); u.row(c, "可达", flag(n, "reachable", "可达", "不可达"));
-            u.row(c, "HTTP", number(n, "status")); u.row(c, "延迟", unit(n, "latencyMs", " ms"));
-            u.row(c, "DNS", flag(obj(n, "dns"), "resolved", "已解析", "未解析")); }
-        // Upstream rows carry both feed availability and the provider's own state; source() would
-        // pick "state" first and render the same value twice, hiding an unavailable or stale feed.
-        for (JSONObject n : rows(p, "upstreams")) { c = u.card(s(n, "name")); u.row(c, "状态", availability(n));
-            u.row(c, "运行", state(n, "state")); for (JSONObject part : rows(n, "components")) u.row(c, s(part, "name"), state(part, "status")); }
+        List<JSONObject> pub = new ArrayList<>(), priv = new ArrayList<>(), ups = new ArrayList<>();
+        for (JSONObject n : rows(p, "sites")) ("public_page".equals(n.optString("surface")) ? pub : priv).add(n);
+        for (JSONObject n : rows(p, "upstreams")) ups.add(n);
+        List<String[]> issues = new ArrayList<>(); int bad = 0, unchecked = 0;
+        for (JSONObject n : concat(pub, priv)) { int tone = StatusPage.siteTone(bool(n, "online"));
+            if (tone == StatusPage.BAD) { bad++; issues.add(new String[]{"site:" + s(n, "hostname"), s(n, "label"), siteState(n), String.valueOf(tone)}); }
+            else if (tone == StatusPage.NONE) unchecked++; }
+        for (JSONObject n : ups) { int tone = upTone(n);
+            if (tone == StatusPage.BAD || tone == StatusPage.WARN) { if (tone == StatusPage.BAD) bad++; issues.add(new String[]{"up:" + s(n, "id"), s(n, "name"), upState(n), String.valueOf(tone)}); }
+            else if (tone == StatusPage.NONE) unchecked++; }
+        LinearLayout hero = u.statusHero(p, issues.size(), bad, unchecked);
+        JSONObject sum = obj(p, "summary");
+        u.figures(hero, new String[]{"公开页面", "私有入口", "官方上游"}, new int[][]{
+            {sum.optInt("publicOnline", -1), sum.optInt("publicKnown", -1), sum.optInt("publicTotal", -1)},
+            {sum.optInt("privateOnline", -1), sum.optInt("privateKnown", -1), sum.optInt("privateTotal", -1)},
+            {sum.optInt("upstreamOperational", -1), sum.optInt("upstreamTotal", -1), sum.optInt("upstreamTotal", -1)}});
+        Map<String, Runnable> reveal = new HashMap<>();
+        u.heading("公开页面与资产", "DNS 与 HTTPS 响应头耗时");
+        LinearLayout group = u.group(); for (JSONObject n : pub) reveal.put("site:" + s(n, "hostname"), siteRow(u, group, n));
+        if (pub.isEmpty()) u.paragraph(group, "站点清单暂不可读。");
+        u.heading("私有入口与服务", "门禁可达不等于登录后功能正常");
+        group = u.group(); for (JSONObject n : priv) reveal.put("site:" + s(n, "hostname"), siteRow(u, group, n));
+        if (priv.isEmpty()) u.paragraph(group, "私有入口清单暂不可读。");
+        u.heading("上游官方状态", "只读取官方整体状态和白名单组件");
+        group = u.group(); for (JSONObject n : ups) reveal.put("up:" + s(n, "id"), upRow(u, group, n));
+        if (ups.isEmpty()) u.paragraph(group, "上游状态暂不可读。");
+        for (int i = 0; i < Math.min(6, issues.size()); i++) { String[] it = issues.get(i); u.jump(hero, it[1], it[2], Integer.parseInt(it[3]), reveal.get(it[0])); }
+        if (issues.size() > 6) u.paragraph(hero, "另有 " + (issues.size() - 6) + " 项，见下方列表");
+        LinearLayout c = u.card("这页能证明什么");
+        u.paragraph(c, "站点状态来自固定清单的 DNS 与 HTTPS 响应；耗时是得到响应头的时间，不是完整页面加载时间。");
+        u.paragraph(c, "认证门可达只证明门禁入口可达，不能代替登录后的功能验收。");
+        u.paragraph(c, "OpenAI 与 GitHub 只读取官方整体状态和白名单组件，不读取账号或仓库。");
+    }
+    private static List<JSONObject> concat(List<JSONObject> a, List<JSONObject> b) { List<JSONObject> all = new ArrayList<>(a); all.addAll(b); return all; }
+    /** JSON boolean, or null when the field is null or missing; status rows must tell "unchecked" from "false". */
+    private static Boolean bool(JSONObject p, String key) { Object v = p.opt(key); return v instanceof Boolean ? (Boolean) v : null; }
+    private static Integer integer(JSONObject p, String key) { Object v = p.opt(key); return v instanceof Number ? ((Number) v).intValue() : null; }
+    private static String siteState(JSONObject n) { return StatusPage.site(bool(n, "online"), bool(n, "reachable"), n.optString("expectation"), bool(obj(n, "dns"), "resolved")); }
+    private static int upTone(JSONObject n) { return StatusPage.upstreamTone(Boolean.TRUE.equals(n.opt("available")), Boolean.TRUE.equals(n.opt("stale")), n.optString("state")); }
+    private static String upState(JSONObject n) { return StatusPage.upstream(Boolean.TRUE.equals(n.opt("available")), Boolean.TRUE.equals(n.opt("stale")), n.optString("state")); }
+    private static Runnable siteRow(UI u, LinearLayout group, JSONObject n) {
+        Boolean online = bool(n, "online"); Integer code = integer(n, "status"), latency = integer(n, "latencyMs"); Boolean resolved = bool(obj(n, "dns"), "resolved");
+        String host = s(n, "hostname"), meta = online == null ? host + " · 未检测" : code == null ? host + " · 无响应" : host + " · HTTP " + code + " · " + (latency == null ? "—" : latency + " ms");
+        LinearLayout d = u.details();
+        u.detail(d, "检测方式", StatusPage.expectation(n.optString("expectation")), StatusPage.NONE);
+        u.detail(d, "DNS", resolved == null ? "未检测" : resolved ? "已解析（" + ("cname".equals(obj(n, "dns").optString("recordType")) ? "CNAME" : "地址记录") + "）" : "未解析",
+            resolved == null ? StatusPage.NONE : resolved ? StatusPage.OK : StatusPage.BAD);
+        u.detail(d, "HTTP 状态", code == null ? (online == null ? "未检测" : "无响应") : String.valueOf(code), StatusPage.NONE);
+        u.detail(d, "响应头耗时", latency == null ? "—" : latency + " ms", StatusPage.NONE);
+        if ("auth_gateway".equals(n.optString("expectation"))) u.note(d, "认证门可达只说明门禁入口可达，不代表登录后功能正常。");
+        return u.statusRow(group, "site:" + host, StatusPage.siteTone(online), s(n, "label"), siteState(n), meta, d);
+    }
+    private static Runnable upRow(UI u, LinearLayout group, JSONObject n) {
+        List<String> off = new ArrayList<>(); int count = 0; LinearLayout d = u.details();
+        for (JSONObject part : rows(n, "components")) { count++; String st = part.optString("status");
+            if (!"operational".equals(st)) off.add(s(part, "name") + " " + StatusPage.component(st));
+            u.detail(d, s(part, "name"), StatusPage.component(st), StatusPage.componentTone(st)); }
+        if (n.has("updatedAt") && !n.isNull("updatedAt")) u.detail(d, "官方更新", date(n, "updatedAt"), StatusPage.NONE);
+        String meta = Boolean.TRUE.equals(n.opt("stale")) ? "最近一次成功读取的状态已过期" : count == 0 ? "组件明细暂不可读"
+            : off.isEmpty() ? count + " 个关注组件正常" : String.join("、", off.subList(0, Math.min(2, off.size()))) + (off.size() > 2 ? " 等 " + off.size() + " 项" : "");
+        return u.statusRow(group, "up:" + s(n, "id"), upTone(n), s(n, "name"), upState(n), meta, d);
     }
     private static void observer(UI u, JSONObject p) {
         u.sources(obj(p, "sourceStatus"), "overview", "访问数据", "siteStatus", "站点探测", "analytics", "趋势数据");
@@ -436,6 +494,67 @@ public final class FeatureRenderer {
             LinearLayout texts=new LinearLayout(context);texts.setOrientation(LinearLayout.VERTICAL);texts.addView(text(title,15,true));
             if(!detail.equals(UNKNOWN)){TextView d=text(detail,14,false);d.setPadding(0,dp(3),0,0);texts.addView(d);}
             TextView m=text(meta,12,false);m.setTextColor(theme.faint);m.setPadding(0,dp(4),0,0);texts.addView(m);r.addView(texts,new LinearLayout.LayoutParams(0,-2,1));c.addView(r);
+        }
+        int tone(int t){return t==StatusPage.OK?theme.success:t==StatusPage.WARN?theme.warning:t==StatusPage.BAD?theme.danger:theme.faint;}
+        void heading(String title,String note){TextView h=text(title,15,true);h.setAccessibilityHeading(true);h.setPadding(dp(6),dp(18),0,note==null?dp(10):dp(2));root.addView(h);
+            if(note!=null){TextView n=text(note,12,false);n.setTextColor(theme.faint);n.setPadding(dp(6),0,0,dp(10));root.addView(n);}}
+        LinearLayout group(){LinearLayout c=theme.card(root);c.setPadding(dp(4),dp(4),dp(4),dp(4));if(theme.effects)c.setLayoutTransition(new android.animation.LayoutTransition());return c;}
+        /** Answer-first header of 运行状态: verdict, probe time and whether every source answered. */
+        LinearLayout statusHero(JSONObject p,int problems,int bad,int unchecked){
+            LinearLayout c=theme.card(root);c.setPadding(dp(18),dp(16),dp(18),dp(14));
+            LinearLayout top=new LinearLayout(context);top.setGravity(Gravity.CENTER_VERTICAL);View dot=theme.dot(tone(StatusPage.verdictTone(problems,bad,unchecked)),10);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(10);top.addView(dot);
+            TextView v=text(StatusPage.verdict(problems,unchecked),22,true);v.setAccessibilityHeading(true);top.addView(v,new LinearLayout.LayoutParams(0,-2,1));c.addView(top);
+            TextView w=text("检测于 "+date(p,"generatedAt")+(Boolean.TRUE.equals(p.opt("cacheHit"))?" · 缓存结果":"")+" · 停留时每 60 秒自动刷新",12,false);w.setTextColor(theme.faint);w.setPadding(0,dp(6),0,0);c.addView(w);
+            LinearLayout chips=new LinearLayout(context);chips.setPadding(0,dp(10),0,0);boolean partial=Boolean.TRUE.equals(p.opt("partial"));chip(chips,partial?"部分来源降级":"数据源正常",partial?theme.warning:theme.success);c.addView(chips);
+            return c;
+        }
+        /** Three summary figures; side by side on normal widths, stacked with large text. */
+        void figures(LinearLayout c,String[] labels,int[][] counts){
+            boolean wide=context.getResources().getConfiguration().screenWidthDp>=360&&context.getResources().getConfiguration().fontScale<1.3f;
+            LinearLayout band=new LinearLayout(context);band.setOrientation(wide?LinearLayout.HORIZONTAL:LinearLayout.VERTICAL);band.setPadding(0,dp(8),0,dp(4));
+            for(int i=0;i<labels.length;i++){int[] k=counts[i];LinearLayout f=new LinearLayout(context);f.setOrientation(LinearLayout.VERTICAL);f.setPadding(0,dp(6),dp(8),dp(6));
+                f.addView(text(labels[i],12,false));TextView n=text(k[2]<0?"未知":k[0]+" / "+k[2],20,true);n.setPadding(0,dp(2),0,dp(2));f.addView(n);
+                LinearLayout cap=new LinearLayout(context);cap.setGravity(Gravity.CENTER_VERTICAL);View dot=theme.dot(tone(StatusPage.figureTone(k[0],k[1],k[2])),6);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(5);cap.addView(dot);cap.addView(text(StatusPage.figureCaption(k[0],k[1],k[2]),12,false));f.addView(cap);
+                f.setContentDescription(labels[i]+" "+(k[2]<0?"未知":k[0]+" / "+k[2])+"，"+StatusPage.figureCaption(k[0],k[1],k[2]));
+                band.addView(f,wide?new LinearLayout.LayoutParams(0,-2,1):new LinearLayout.LayoutParams(-1,-2));}
+            c.addView(band);
+        }
+        /** A named problem inside the summary; tapping opens that row below and scrolls to it. */
+        void jump(LinearLayout c,String title,String state,int tone,Runnable reveal){
+            if(c.getChildCount()>0&&!"jump".equals(c.getChildAt(c.getChildCount()-1).getTag())){View d=new View(context);d.setBackgroundColor(border);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(.5f));lp.setMargins(0,dp(6),0,dp(2));c.addView(d,lp);}
+            LinearLayout r=new LinearLayout(context);r.setTag("jump");r.setGravity(Gravity.CENTER_VERTICAL);r.setMinimumHeight(dp(44));r.setPadding(0,dp(4),0,dp(4));
+            View dot=theme.dot(tone(tone),8);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(10);r.addView(dot);
+            TextView t=text(title,15,false);t.setTextColor(theme.ink);r.addView(t,new LinearLayout.LayoutParams(0,-2,1));TextView st=text(state,13,true);st.setTextColor(tone(tone));st.setPadding(dp(8),0,dp(6),0);r.addView(st);
+            ImageView chevron=theme.icon("chevron",theme.muted,14);chevron.setAlpha(.45f);r.addView(chevron);
+            if(reveal!=null){r.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,12),12));r.setFocusable(true);r.setClickable(true);r.setOnClickListener(v->reveal.run());}
+            r.setContentDescription(title+"，"+state+"，查看详情");c.addView(r);
+        }
+        LinearLayout details(){LinearLayout d=new LinearLayout(context);d.setOrientation(LinearLayout.VERTICAL);return d;}
+        void detail(LinearLayout d,String label,String value,int tone){
+            LinearLayout r=new LinearLayout(context);r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(0,dp(5),0,dp(5));
+            r.addView(text(label,13,false),new LinearLayout.LayoutParams(0,-2,1));
+            if(tone!=StatusPage.NONE){View dot=theme.dot(tone(tone),6);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(6);r.addView(dot);}
+            TextView v=text(value,14,false);v.setTextColor(theme.ink);r.addView(v);d.addView(r);
+        }
+        void note(LinearLayout d,String value){TextView t=text(value,12,false);t.setTextColor(theme.faint);t.setPadding(0,dp(6),0,dp(2));d.addView(t);}
+        /** Expandable status row inside a group; returns an action that opens it and scrolls it into view. */
+        Runnable statusRow(LinearLayout group,String key,int tone,String title,String state,String meta,LinearLayout details){
+            if(group.getChildCount()>0){View d=new View(context);d.setBackgroundColor(border);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(.5f));lp.setMargins(dp(34),0,dp(12),0);group.addView(d,lp);}
+            LinearLayout box=new LinearLayout(context);box.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout head=new LinearLayout(context);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(dp(14),dp(11),dp(10),dp(11));head.setMinimumHeight(dp(56));
+            head.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,18),18));head.setFocusable(true);head.setClickable(true);
+            View dot=theme.dot(tone(tone),8);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(12);head.addView(dot);
+            LinearLayout texts=new LinearLayout(context);texts.setOrientation(LinearLayout.VERTICAL);TextView t=text(title,16,false);t.setTextColor(theme.ink);texts.addView(t);
+            TextView m=text(meta,12,false);m.setPadding(0,dp(2),0,0);texts.addView(m);head.addView(texts,new LinearLayout.LayoutParams(0,-2,1));
+            TextView st=text(state,13,true);st.setTextColor(tone==StatusPage.OK?theme.muted:tone(tone));st.setPadding(dp(8),0,dp(6),0);head.addView(st);
+            boolean open=OPEN.contains(key);ImageView chevron=theme.icon("chevron",theme.muted,14);chevron.setAlpha(.45f);chevron.setRotation(open?-90:90);head.addView(chevron);
+            box.addView(head);details.setPadding(dp(34),0,dp(16),dp(10));details.setVisibility(open?View.VISIBLE:View.GONE);box.addView(details);
+            head.setContentDescription(title+"，"+state+"，"+meta);head.setStateDescription(open?"已展开":"已收起");
+            Runnable toggle=()->{boolean show=details.getVisibility()!=View.VISIBLE;if(show)OPEN.add(key);else OPEN.remove(key);details.setVisibility(show?View.VISIBLE:View.GONE);head.setStateDescription(show?"已展开":"已收起");
+                if(theme.effects)chevron.animate().rotation(show?-90:90).setDuration(200).start();else chevron.setRotation(show?-90:90);};
+            head.setOnClickListener(v->toggle.run());group.addView(box);
+            // Leave room for the floating dock when scrolling a revealed row into view.
+            return ()->{if(details.getVisibility()!=View.VISIBLE)toggle.run();box.postDelayed(()->box.requestRectangleOnScreen(new android.graphics.Rect(0,-dp(24),box.getWidth(),box.getHeight()+dp(110)),false),theme.effects?260:0);};
         }
         void divider(LinearLayout c){View d=new View(context);d.setBackgroundColor(border);c.addView(d,new LinearLayout.LayoutParams(-1,dp(.5f)));}
         void row(LinearLayout c, String label, String value) {

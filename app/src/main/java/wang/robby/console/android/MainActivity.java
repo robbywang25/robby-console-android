@@ -36,6 +36,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private final UpdateReceiver.Listener updateListener=this::onUpdateStatus;
     private volatile AppUpdate.Release update; private volatile String updateState="idle",updateNote; private volatile int updatePercent=-1;
     private boolean awaitingInstallPermission; private LinearLayout updateBox;
+    /** 运行状态 refreshes itself every 60 s while it is the visible page, like status.robby.wang; never in the background. */
+    private final Handler ticker=new Handler(Looper.getMainLooper());
+    private final Runnable statusTick=()->{if(this.resumed&&"status".equals(this.selectedId)&&loggedIn()){FeatureCatalog.Feature f=find("status");if(f!=null)showFeature(f,true);}};
     private String group="总览",selectedId=null,project=null;
     private volatile int generation=0; private boolean resumed=false;
     private final Map<String,JSONObject> snapshots=new HashMap<>();
@@ -85,7 +88,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}
         // Back from the "install unknown apps" settings page: continue the update the person already started.
         if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}}
-    @Override protected void onPause(){resumed=false;if(coordinator!=null)coordinator.detach(this);super.onPause();}
+    @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){if(!resumed||isDestroyed())return;++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     @Override public void onAuthorizationReady(String url){
         if(!resumed||isDestroyed())return;
@@ -95,7 +98,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     @Override public void onAuthError(String message){if(resumed&&!isDestroyed()){build();error("登录未完成",message);}}
     private void build() {
-        saveViewport();viewportReady=false;++generation;dashboardResult=null;
+        ticker.removeCallbacks(statusTick);saveViewport();viewportReady=false;++generation;dashboardResult=null;
         boolean logged=loggedIn();
         if(!logged){navigation.clear();project=null;ledgerCursor=null;ledgerPages.clear();}
         DeviceAuthorization device=coordinator.deviceAuthorization();
@@ -232,6 +235,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         saveViewport();viewportReady=false;displayedRoute=routeKey();content.removeAllViews();heading.setText(f.title);
         leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));
         trailing.removeAllViews();trailing.addView(circle("refresh","刷新",()->showFeature(f,true)));if(refresh)spin();
+        ticker.removeCallbacks(statusTick);if("status".equals(f.id)&&loggedIn())ticker.postDelayed(statusTick,60_000);
         if(!loggedIn()){LinearLayout c=card();c.addView(text(f.title,17,INK,true));TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(6),0,dp(18));c.addView(t);Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);c.addView(passkey,new LinearLayout.LayoutParams(-1,-2));LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);c.addView(button("通过已有设备授权",this::deviceLogin),d);restoreViewport();return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
