@@ -77,7 +77,7 @@ public final class ConsoleTheme {
     }
     public Button button(String label,Runnable action){Button b=new Button(context);b.setText(label);button(b,false);b.setOnClickListener(v->action.run());return b;}
     private Drawable capsule(int color){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(99));return d;}
-    public LinearLayout card(LinearLayout root){LinearLayout c=new LinearLayout(context);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(18),dp(16),dp(18),dp(16));c.setBackground(card());c.setElevation(0);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(12);root.addView(c,p);return c;}
+    public LinearLayout card(LinearLayout root){LinearLayout c=new LinearLayout(context);c.setOrientation(LinearLayout.VERTICAL);c.setPadding(dp(16),dp(14),dp(16),dp(14));c.setBackground(card());c.setElevation(0);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(10);root.addView(c,p);return c;}
     /** Round glass control (48 dp) holding one symbol; used for header actions. */
     public FrameLayout circle(String symbol,String description,Runnable action){
         FrameLayout f=new FrameLayout(context);f.setBackground(ripple(glass(-1),-1));f.setContentDescription(description);f.setTooltipText(description);f.setFocusable(true);f.setClickable(true);

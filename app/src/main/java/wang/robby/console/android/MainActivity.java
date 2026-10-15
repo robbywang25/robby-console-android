@@ -90,11 +90,36 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}}
     @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){if(!resumed||isDestroyed())return;++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
+    private static final int AUTH_TAB=41;
+    /** After Chrome could not verify the app for the callback domain, later sign-ins use the plain browser + App Link. */
+    private boolean browserLogin;
     @Override public void onAuthorizationReady(String url){
         if(!resumed||isDestroyed())return;
-        session.setText("请在浏览器完成 Passkey 登录");
-        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));}
-        catch(ActivityNotFoundException e){error("无法打开登录","手机需要可处理 HTTPS 登录的浏览器。");}
+        session.setText(browserLogin?"请在浏览器完成 Passkey 登录":"请在登录页完成 Passkey 验证");
+        try{
+            if(browserLogin){startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));return;}
+            // Auth Tab (Chrome 137+): the sign-in page, and its Passkey sheet, open over the app; when it reaches the
+            // callback it closes and returns the URL as this activity's result, verified against god.robby.wang's
+            // assetlinks. Browsers without Auth Tab read the same intent as a Custom Tab or a normal page, and the
+            // existing App Link still delivers the callback. The extras are the AndroidX Auth Tab protocol keys.
+            Uri callback=Uri.parse(AuthSession.REDIRECT_URI);
+            Intent tab=new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE);
+            Bundle extras=new Bundle();extras.putBinder("android.support.customtabs.extra.SESSION",null);tab.putExtras(extras);
+            tab.putExtra("androidx.browser.auth.extra.LAUNCH_AUTH_TAB",true)
+                .putExtra("androidx.browser.auth.extra.HTTPS_REDIRECT_HOST",callback.getHost())
+                .putExtra("androidx.browser.auth.extra.HTTPS_REDIRECT_PATH",callback.getPath());
+            startActivityForResult(tab,AUTH_TAB);
+        }catch(ActivityNotFoundException e){error("无法打开登录","手机需要可处理 HTTPS 登录的浏览器。");}
+    }
+    @Override protected void onActivityResult(int request,int result,Intent data){
+        super.onActivityResult(request,result,data);
+        if(request!=AUTH_TAB||coordinator==null)return;
+        if(result==RESULT_OK&&data!=null&&data.getData()!=null){coordinator.callback(data.getData());return;}
+        // 2 and 3 are Auth Tab's verification failed / timed out: the tab could not prove this app owns the callback.
+        if(result==2||result==3){browserLogin=true;session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God 工作台");
+            show(new AlertDialog.Builder(this).setTitle("登录未完成").setMessage("应用内登录页暂时无法确认 God 工作台的身份。可以改用浏览器登录，完成后会自动回到应用。")
+                .setNegativeButton("取消",null).setPositiveButton("用浏览器登录",(d,w)->login()));}
+        // RESULT_CANCELED: the person closed the page, or a browser without tabs took over and the App Link will answer.
     }
     @Override public void onAuthError(String message){if(resumed&&!isDestroyed()){build();error("登录未完成",message);}}
     private void build() {
@@ -175,7 +200,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             LinearLayout welcome=card();welcome.setGravity(Gravity.CENTER_HORIZONTAL);welcome.setPadding(dp(22),dp(28),dp(22),dp(22));
             FrameLayout mark=new FrameLayout(this);mark.setBackground(theme.glass(-1));mark.addView(theme.tabIcon("grid",true,40),new FrameLayout.LayoutParams(dp(40),dp(40),Gravity.CENTER));welcome.addView(mark,new LinearLayout.LayoutParams(dp(80),dp(80)));
             TextView title=text("登录你的工作台",24,INK,true);title.setGravity(Gravity.CENTER);title.setPadding(0,dp(18),0,dp(8));welcome.addView(title);
-            TextView hint=text("使用 Passkey，安全查看你的数据与资产。",15,MUTED,false);hint.setGravity(Gravity.CENTER);hint.setPadding(0,0,0,dp(22));welcome.addView(hint);
+            TextView hint=text("在应用内用 Passkey 验证，安全查看你的数据与资产。",15,MUTED,false);hint.setGravity(Gravity.CENTER);hint.setPadding(0,0,0,dp(22));welcome.addView(hint);
             Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);welcome.addView(passkey,new LinearLayout.LayoutParams(-1,-2));
             Button device=button("通过已有设备授权",this::deviceLogin);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);welcome.addView(device,d);
         }else{

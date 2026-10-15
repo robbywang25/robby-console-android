@@ -135,3 +135,14 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
 - 停留在这一页且 App 在前台时，每 60 秒刷新一次；进入后台、切页或重建页面时取消。展开状态只保存在内存里。
 - 判断逻辑放在 `StatusPage`，由 JVM 测试覆盖；预览版带一组用 example.com 主机名构造的合成数据，覆盖所有状态。
 
+
+## v0.7.0：应用内登录、满版图标与信息密度（2026-10-15）
+
+- **登录**：`使用 Passkey 登录` 用 Auth Tab 协议打开登录页，使用的是 AndroidX 的 extra 键，不引入依赖：`LAUNCH_AUTH_TAB`、`HTTPS_REDIRECT_HOST/PATH`，以及一个空的 Custom Tabs session。Chrome 137+ 在应用内展示登录页和 Passkey 面板；到达 `https://god.robby.wang/mobile/android/callback` 时关闭登录页，以 activity result 把地址交还应用，再走原有的 PKCE 回调校验。Chrome 若无法通过 assetlinks 确认应用身份（结果码 2/3），会提示改用浏览器登录，之后本次进程内都走浏览器 + App Link。不支持 Auth Tab 的浏览器会把同一个 Intent 当作 Custom Tab 或普通页面打开，原有 App Link 继续兜底。
+- **图标**：改为 `mipmap-anydpi/ic_launcher.xml` 自适应图标，黑色背景铺满整个图标，白色光环人像缩放到 66dp 安全区内，并带 monochrome 层支持主题图标；`roundIcon` 指向同一个文件，原来带白底的矢量图标已删除。
+- **信息密度**：
+  - 列表类页面统一用 `UI.item`：标题、右侧关键值（状态词会带色点）、一行摘要；有更多字段时可就地展开，展开状态保存在内存中。覆盖实例、站点、模型用量、域名、维护站点、行情、OKX 资产与持仓、仓库与迭代日志、剪贴内容、账本（币种、成员、账目）、卡片、文章、目录、登录事件、图片、报告、凭据服务。
+  - 汇总数字改为 `UI.metrics` 网格，普通字号 3 列、大字号 2 列；数据来源改为一张卡片里一排可换行的胶囊（`FlowRow`）；空状态改成一行灰字。
+  - 键值行从 46dp 降到 38dp，标签和值字号各降 1sp；卡片内边距从 18/16dp 收紧到 16/14dp，卡片间距从 12dp 收紧到 10dp。
+
+验证：`check.sh` 全部通过，见提交信息。按维护者要求，这一版没有做预览版真机验收；Auth Tab 登录、图标在 Pixel 和 ColorOS 桌面上的效果，以及各页面在真实数据下的排版，都需要在真机上确认。

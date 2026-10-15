@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.7.0", "2026-10-15", "应用内登录与紧凑页面",
+            "Passkey 登录在应用内的登录页完成，验证后直接回到 God 工作台。",
+            "应用图标改为黑底满版，在 Pixel 等桌面上不再是白底上的小图标。",
+            "各功能页改成紧凑列表：一行一条，点开看完整字段，一屏能看到更多内容。",
+            "汇总数字改为多列排布，数据来源合并成一行标签，空状态只占一行。"),
         new Entry("0.6.0", "2026-10-15", "运行状态一眼看清",
             "运行状态页先给结论：全部符合预期，或有几项需要关注，并写明检测时间。",
             "公开页面、私有入口和官方上游分组显示，状态名称与网页版一致。",

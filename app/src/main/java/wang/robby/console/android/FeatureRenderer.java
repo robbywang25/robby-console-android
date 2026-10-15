@@ -141,13 +141,12 @@ public final class FeatureRenderer {
         u.freshness(p, 600); JSONObject cost = obj(p, "costSummary");
         LinearLayout c = u.card("费用参考"); u.row(c, "账单口径", flag(cost, "actualBill", "实际账单", "价格估算"));
         for (JSONObject m : rows(cost, "totals")) u.row(c, s(m, "currency"), number(m, "amount"));
-        for (JSONObject n : rows(p, "instances")) {
-            c = u.card(s(n, "name")); u.row(c, "状态", state(n, "state")); u.fields(c, n, "region", "区域", "cpuCores", "CPU 核数", "memoryGb", "内存 GB", "diskGb", "磁盘 GB");
-            JSONObject m = obj(n, "metrics"); u.row(c, "CPU", unit(m, "cpuUsage", "%"));
-            u.row(c, "内存", unit(m, "memoryUsage", "%")); u.row(c, "磁盘", unit(m, "diskUsage", "%"));
-            JSONObject price = obj(n, "monthlyPrice"); u.row(c, "月价", money(price, "amount", "currency"));
-            u.row(c, "到期", date(n, "expiresAt"));
-        }
+        LinearLayout g = u.list("实例");
+        for (JSONObject n : rows(p, "instances")) { JSONObject m = obj(n, "metrics"), price = obj(n, "monthlyPrice");
+            u.item(g, s(n, "name"), state(n, "state"), join(s(n, "region"), "CPU " + unit(m, "cpuUsage", "%"), "内存 " + unit(m, "memoryUsage", "%"), "磁盘 " + unit(m, "diskUsage", "%")),
+                "区域", s(n, "region"), "CPU 核数", s(n, "cpuCores"), "内存 GB", s(n, "memoryGb"), "磁盘 GB", s(n, "diskGb"),
+                "CPU", unit(m, "cpuUsage", "%"), "内存", unit(m, "memoryUsage", "%"), "磁盘", unit(m, "diskUsage", "%"),
+                "月价", money(price, "amount", "currency"), "到期", date(n, "expiresAt")); }
         empty(u, p, "instances", "暂无实例");
     }
     /**
@@ -220,27 +219,30 @@ public final class FeatureRenderer {
     }
     private static void observer(UI u, JSONObject p) {
         u.sources(obj(p, "sourceStatus"), "overview", "访问数据", "siteStatus", "站点探测", "analytics", "趋势数据");
-        LinearLayout c = u.card("所选时段"); JSONObject metrics = obj(p, "metrics");
-        u.fields(c, obj(metrics, "selectedRange"), "visitCount", "访问", "eventCount", "事件");
-        u.fields(c, obj(metrics, "sites"), "total", "站点", "checked", "已检查", "online", "在线");
-        for (JSONObject n : rows(p, "sites")) { c = u.card(s(n, "label")); u.paragraph(c, s(n, "hostname"));
-            u.fields(c, n, "visitCount", "访问", "eventCount", "事件"); u.row(c, "健康", flag(n, "online", "在线", "离线")); }
+        JSONObject metrics = obj(p, "metrics"), range = obj(metrics, "selectedRange"), sites = obj(metrics, "sites");
+        u.metrics(u.card("所选时段"), "访问", number(range, "visitCount"), "事件", number(range, "eventCount"),
+            "站点", number(sites, "total"), "已检查", number(sites, "checked"), "在线", number(sites, "online"));
+        LinearLayout g = u.list("站点");
+        for (JSONObject n : rows(p, "sites")) u.item(g, s(n, "label"), flag(n, "online", "在线", "离线"),
+            join(s(n, "hostname"), "访问 " + number(n, "visitCount"), "事件 " + number(n, "eventCount")),
+            "站点", s(n, "hostname"), "访问", number(n, "visitCount"), "事件", number(n, "eventCount"), "健康", flag(n, "online", "在线", "离线"));
+        empty(u, p, "sites", "暂无站点");
     }
     private static void umami(UI u, JSONObject p) {
         for (JSONObject n : rows(p, "sites")) { LinearLayout c = u.card(s(n, "name")); u.paragraph(c, s(n, "hostname"));
-            JSONObject status = obj(n, "sourceStatus"); u.row(c, "汇总来源", flag(status, "summary", "可用", "不可用"));
-            u.fields(c, obj(obj(n, "summary"), "current"), "pageviews", "浏览量", "visitors", "访客", "visits", "访问", "bounces", "跳出");
-            for (JSONObject item : rows(n, "paths")) u.row(c, s(item, "path"), unit(item, "visitorCount", " 位访客"));
-            for (JSONObject item : rows(n, "sources")) u.row(c, s(item, "hostname"), unit(item, "visitorCount", " 位访客"));
+            JSONObject status = obj(n, "sourceStatus"), current = obj(obj(n, "summary"), "current"); u.row(c, "汇总来源", flag(status, "summary", "可用", "不可用"));
+            u.metrics(c, "浏览量", number(current, "pageviews"), "访客", number(current, "visitors"), "访问", number(current, "visits"), "跳出", number(current, "bounces"));
+            if (arr(n, "paths").length() > 0) { u.subhead(c, "热门路径"); for (JSONObject item : rows(n, "paths")) u.row(c, s(item, "path"), unit(item, "visitorCount", " 位访客")); }
+            if (arr(n, "sources").length() > 0) { u.subhead(c, "来源"); for (JSONObject item : rows(n, "sources")) u.row(c, s(item, "hostname"), unit(item, "visitorCount", " 位访客")); }
         }
         empty(u, p, "sites", "暂无统计站点");
     }
     private static void posthog(UI u, JSONObject p) {
         u.sources(obj(p, "sourceStatus"), "eventTrend", "事件趋势", "funnel", "转化漏斗", "webVitals", "Web Vitals");
-        LinearLayout c = u.card(s(obj(p, "project"), "label"));
-        u.fields(c, obj(p, "summary"), "visibleEvents", "可见事件", "availableSections", "可用板块", "poorVitalCount", "较差体验指标");
-        u.row(c, "漏斗转化", unit(obj(p, "summary"), "funnelConversionPercent", "%"));
-        for (JSONObject n : rows(obj(p, "eventTrend"), "series")) u.row(c, s(n, "label"), number(n, "visibleTotal"));
+        JSONObject summary = obj(p, "summary"); LinearLayout c = u.card(s(obj(p, "project"), "label"));
+        u.metrics(c, "可见事件", number(summary, "visibleEvents"), "可用板块", number(summary, "availableSections"),
+            "较差体验指标", number(summary, "poorVitalCount"), "漏斗转化", unit(summary, "funnelConversionPercent", "%"));
+        if (arr(obj(p, "eventTrend"), "series").length() > 0) { u.subhead(c, "事件趋势"); for (JSONObject n : rows(obj(p, "eventTrend"), "series")) u.row(c, s(n, "label"), number(n, "visibleTotal")); }
         JSONObject funnel = obj(p, "funnel");
         if (funnel.length() > 0) { c = u.card(s(funnel, "label")); for (JSONObject n : rows(funnel, "steps"))
             u.row(c, s(n, "label"), Boolean.TRUE.equals(n.opt("suppressed")) ? "小样本隐藏" : number(n, "count")); }
@@ -249,82 +251,107 @@ public final class FeatureRenderer {
             u.row(c, s(n, "key"), unit(obj(n, "latest"), "value", " " + s(n, "unit")) + " · " + state(obj(n, "latest"), "rating")); }
     }
     private static void openai(UI u, JSONObject p) {
-        LinearLayout c = u.card("组织用量"); JSONObject totals = obj(p, "totals");
-        u.fields(c, totals, "requests", "请求", "inputTokens", "输入 Token", "outputTokens", "输出 Token", "cachedInputTokens", "缓存输入 Token");
-        JSONObject cost = obj(obj(p, "costStatus"), "total");
-        u.row(c, "成本 USD", Boolean.TRUE.equals(cost.opt("available")) ? number(totals, "costsUsd") : "暂不可用");
+        JSONObject totals = obj(p, "totals"), cost = obj(obj(p, "costStatus"), "total"); LinearLayout c = u.card("组织用量");
+        u.metrics(c, "请求", number(totals, "requests"), "输入 Token", number(totals, "inputTokens"), "输出 Token", number(totals, "outputTokens"),
+            "缓存输入 Token", number(totals, "cachedInputTokens"), "成本 USD", Boolean.TRUE.equals(cost.opt("available")) ? number(totals, "costsUsd") : "暂不可用");
         u.row(c, "用量 / 费用口径", flag(obj(p, "scope"), "directlyComparable", "可直接比较", "口径不同"));
         u.row(c, "当前周期", flag(obj(p, "scope"), "currentBucketMayBePartial", "可能尚未完整", "完整"));
         u.row(c, "缓存状态", state(obj(p, "cacheState"), "state"));
-        c = u.card("模型用量"); for (JSONObject n : rows(p, "models")) { u.row(c, s(n, "label"), unit(n, "requests", " 次请求"));
-            u.row(c, "输入 / 输出", number(n, "inputTokens") + " / " + number(n, "outputTokens")); }
+        LinearLayout g = u.list("模型用量");
+        for (JSONObject n : rows(p, "models")) u.item(g, s(n, "label"), unit(n, "requests", " 次请求"), "输入 " + number(n, "inputTokens") + " / 输出 " + number(n, "outputTokens"));
+        empty(u, p, "models", "暂无模型用量");
         // apiKeys and raw identifiers are deliberately never rendered.
     }
     private static void domains(UI u, JSONObject p) {
         u.sources(obj(p, "sources"), "dns", "DNS", "registration", "注册", "pricing", "价格", "icp", "备案");
-        LinearLayout c = u.card("域名概览"); u.fields(c, obj(p, "summary"), "domains", "域名", "registered", "账号内注册", "dnsManaged", "DNS 管理", "expiringWithin60Days", "60 天内到期");
-        for (JSONObject n : rows(p, "domains")) { c = u.card(s(n, "name")); JSONObject r = obj(n, "registration");
-            u.row(c, "注册", state(r, "status")); u.row(c, "到期", s(r, "expiresAt")); u.row(c, "剩余", unit(r, "expiryDays", " 天"));
-            u.row(c, "自动续费", flag(r, "autoRenew", "已开启", "未开启"));
-            u.row(c, "年续费参考", money(obj(r, "annualRenewalCost"), "amount", "currency"));
-            u.row(c, "DNS", flag(obj(n, "dns"), "managed", "已管理", "未管理"));
-            u.row(c, "备案匹配", flag(obj(n, "icp"), "matched", "已匹配", "未匹配，需官方核验")); }
+        JSONObject sum = obj(p, "summary");
+        u.metrics(u.card("域名概览"), "域名", number(sum, "domains"), "账号内注册", number(sum, "registered"), "DNS 管理", number(sum, "dnsManaged"), "60 天内到期", number(sum, "expiringWithin60Days"));
+        LinearLayout g = u.list("域名");
+        for (JSONObject n : rows(p, "domains")) { JSONObject r = obj(n, "registration"); String left = unit(r, "expiryDays", " 天");
+            u.item(g, s(n, "name"), left.equals(UNKNOWN) ? state(r, "status") : "剩余 " + left,
+                join("到期 " + s(r, "expiresAt"), flag(r, "autoRenew", "自动续费", "未开自动续费"), flag(obj(n, "dns"), "managed", "DNS 已管理", "DNS 未管理")),
+                "注册", state(r, "status"), "到期", s(r, "expiresAt"), "剩余", left, "自动续费", flag(r, "autoRenew", "已开启", "未开启"),
+                "年续费参考", money(obj(r, "annualRenewalCost"), "amount", "currency"), "DNS", flag(obj(n, "dns"), "managed", "已管理", "未管理"),
+                "备案匹配", flag(obj(n, "icp"), "matched", "已匹配", "未匹配，需官方核验")); }
+        empty(u, p, "domains", "暂无域名");
     }
     private static void maintenance(UI u, JSONObject p) {
         LinearLayout c = u.card("维护标记"); u.row(c, "一致性", flag(p, "stateHealthy", "正常", "需核对"));
-        for (JSONObject n : rows(p, "sites")) { c = u.card(s(n, "label")); u.paragraph(c, s(n, "hostname"));
-            u.row(c, "状态", state(n, "state")); u.paragraph(c, s(n, "impact")); u.row(c, "更新", date(n, "updatedAt")); }
+        LinearLayout g = u.list("站点");
+        for (JSONObject n : rows(p, "sites")) u.item(g, s(n, "label"), state(n, "state"), join(s(n, "hostname"), "更新 " + date(n, "updatedAt")),
+            "站点", s(n, "hostname"), "状态", state(n, "state"), "影响", s(n, "impact"), "更新", date(n, "updatedAt"));
+        empty(u, p, "sites", "暂无站点");
     }
     private static void market(UI u, JSONObject p) {
         u.sources(obj(p, "sourceStatus"), "watchlist", "关注行情", "history", "趋势", "sectors", "板块", "benchmarks", "基准", "aiUpstream", "AI 产业链");
-        for (String key : new String[]{"watchlist", "sectors", "benchmarks"}) for (JSONObject n : rows(p, key)) {
-            LinearLayout c = u.card(s(n, "label")); u.row(c, "价格", number(n, "price") + (n.has("currency") ? " " + s(n, "currency") : ""));
-            u.row(c, "涨跌", unit(n, "changePct", "%")); if (n.has("updatedAt")) u.row(c, "行情时间", date(n, "updatedAt")); }
+        String[][] groups = {{"watchlist", "关注行情"}, {"sectors", "板块"}, {"benchmarks", "市场基准"}};
+        for (String[] key : groups) { if (arr(p, key[0]).length() == 0) continue; LinearLayout g = u.list(key[1]);
+            for (JSONObject n : rows(p, key[0])) u.item(g, s(n, "label"), number(n, "price") + (n.has("currency") ? " " + s(n, "currency") : ""),
+                join("涨跌 " + unit(n, "changePct", "%"), n.has("updatedAt") ? "行情 " + date(n, "updatedAt") : "")); }
         for (JSONObject group : rows(p, "aiUpstream")) { LinearLayout c = u.card(s(group, "name")); for (JSONObject n : rows(group, "companies"))
             u.row(c, s(n, "name"), Boolean.TRUE.equals(n.opt("quoteAvailable")) ? number(n, "price") + " " + s(n, "currency") : "暂无报价"); }
-        u.message("行情说明", s(obj(p, "disclaimer"), "text"));
+        u.note(s(obj(p, "disclaimer"), "text"));
     }
     private static void okx(UI u, JSONObject p) {
-        LinearLayout c = u.card("账户摘要"); u.fields(c, p, "totalEquityUsd", "总权益 USD", "unrealizedPnlUsd", "未实现盈亏 USD", "notionalUsd", "名义价值 USD", "marginRatio", "保证金比率", "openPositionCount", "持仓数");
+        LinearLayout c = u.card("账户摘要");
+        u.metrics(c, "总权益 USD", number(p, "totalEquityUsd"), "未实现盈亏 USD", number(p, "unrealizedPnlUsd"), "名义价值 USD", number(p, "notionalUsd"),
+            "保证金比率", number(p, "marginRatio"), "持仓数", number(p, "openPositionCount"));
         u.row(c, "账户更新时间", date(p, "accountUpdatedAt"));
-        for (JSONObject n : rows(p, "assets")) { c = u.card(s(n, "currency")); u.fields(c, n, "equity", "权益", "available", "可用", "frozen", "冻结", "usdValue", "估值 USD"); }
-        for (JSONObject n : rows(p, "positions")) { c = u.card(s(n, "instrument")); u.row(c, "方向", state(n, "side"));
-            u.fields(c, n, "quantity", "数量", "averageEntryPrice", "开仓均价", "markPrice", "标记价格", "unrealizedPnl", "未实现盈亏", "leverage", "杠杆"); }
+        if (arr(p, "assets").length() > 0) { LinearLayout g = u.list("资产");
+            for (JSONObject n : rows(p, "assets")) u.item(g, s(n, "currency"), unit(n, "usdValue", " USD"),
+                join("权益 " + number(n, "equity"), "可用 " + number(n, "available"), "冻结 " + number(n, "frozen")),
+                "权益", number(n, "equity"), "可用", number(n, "available"), "冻结", number(n, "frozen"), "估值 USD", number(n, "usdValue")); }
+        if (arr(p, "positions").length() > 0) { LinearLayout g = u.list("持仓");
+            for (JSONObject n : rows(p, "positions")) u.item(g, s(n, "instrument"), state(n, "side"),
+                join("数量 " + number(n, "quantity"), "标记价 " + number(n, "markPrice"), "未实现 " + number(n, "unrealizedPnl")),
+                "方向", state(n, "side"), "数量", number(n, "quantity"), "开仓均价", number(n, "averageEntryPrice"), "标记价格", number(n, "markPrice"),
+                "未实现盈亏", number(n, "unrealizedPnl"), "杠杆", number(n, "leverage")); }
     }
     private static void engineering(UI u, JSONObject p) {
         JSONObject coverage = obj(p, "coverage");
         if (Boolean.TRUE.equals(coverage.opt("truncated"))) u.message("日志已截断", "当前返回 " + number(coverage, "returnedItems") + " 条；并非全部历史。");
-        for (JSONObject n : rows(p, "repositoryIndex")) { LinearLayout c = u.card(s(n, "name")); u.row(c, "状态", state(n, "state")); u.paragraph(c, s(n, "description")); }
-        for (JSONObject n : rows(p, "items")) { LinearLayout c = u.card(s(n, "summary")); u.row(c, "仓库", s(n, "repository")); u.row(c, "时间", date(n, "timestamp")); }
+        if (arr(p, "repositoryIndex").length() > 0) { LinearLayout g = u.list("仓库");
+            for (JSONObject n : rows(p, "repositoryIndex")) u.item(g, s(n, "name"), state(n, "state"), s(n, "description")); }
+        LinearLayout g = u.list("迭代日志");
+        for (JSONObject n : rows(p, "items")) u.item(g, s(n, "summary"), "", join(s(n, "repository"), date(n, "timestamp")));
+        empty(u, p, "items", "暂无迭代日志");
     }
     private static void clipboard(UI u, JSONObject p) {
-        u.message("剪贴板状态", source(obj(p, "sourceStatus")) + " · 仅显示元数据");
-        int i = 0; for (JSONObject n : rows(p, "items")) { LinearLayout c = u.card("剪贴内容 " + (++i));
-            u.row(c, "可见性", flag(n, "isPublic", "公开", "私密")); u.row(c, "创建", date(n, "createdAt")); u.row(c, "到期", date(n, "expiresAt")); }
+        u.note("来源 " + source(obj(p, "sourceStatus")) + " · 仅显示元数据，不读取正文");
+        LinearLayout g = u.list("剪贴内容"); int i = 0;
+        for (JSONObject n : rows(p, "items")) u.item(g, "剪贴内容 " + (++i), flag(n, "isPublic", "公开", "私密"), join("创建 " + date(n, "createdAt"), "到期 " + date(n, "expiresAt")),
+            "可见性", flag(n, "isPublic", "公开", "私密"), "创建", date(n, "createdAt"), "到期", date(n, "expiresAt"));
         empty(u, p, "items", "暂无剪贴内容");
     }
     private static void ledger(UI u, JSONObject p) {
         if (p.optJSONArray("projects") != null) {
-            for (JSONObject n : rows(p, "projects")) u.message(s(n, "name"), "选择账本后查看账目");
+            LinearLayout g = u.list("账本"); for (JSONObject n : rows(p, "projects")) u.item(g, s(n, "name"), "", "选择账本后查看账目");
             empty(u, p, "projects", "暂无可用账本"); return;
         }
         LinearLayout c = u.card(s(obj(p, "project"), "name")); JSONObject summary = obj(p, "summary");
-        u.fields(c, summary, "entryCount", "账目", "refundCount", "退款");
         u.amount(c, "人民币参考合计", unit(summary, "cnyTotal", " CNY"));
-        u.row(c, "汇率覆盖", flag(summary, "cnyComplete", "完整", "部分币种缺失"));
-        for (JSONObject n : rows(summary, "totals")) { c = u.card(s(n, "currency")); u.fields(c, n, "spent", "支出", "refunded", "退款", "net", "净支出"); }
-        for (JSONObject n : rows(p, "members")) { c = u.card(s(n, "displayName")); for (JSONObject total : rows(n, "totals")) {
-            u.row(c, s(total, "currency") + " 已付", s(total, "paid")); u.row(c, "应分摊 / 差额", s(total, "expense") + " / " + s(total, "net")); } }
-        u.message("分摊参考", "差额是账本计算结果，不代表实际还款。");
-        for (JSONObject n : rows(p, "entries")) { c = u.card(s(n, "merchant").equals(UNKNOWN) ? s(n, "category") : s(n, "merchant"));
-            u.amount(c, "金额", money(n, "amount", "currency")); u.row(c, "退款", money(n, "refundedAmount", "currency"));
-            u.row(c, "净额", money(n, "netAmount", "currency")); u.row(c, "类别", s(n, "category")); u.row(c, "付款人", s(n, "payer"));
-            u.row(c, "发生时间", s(n, "occurredAt")); }
-        JSONObject page = obj(p, "page"); u.message("账目分页", "总计 " + number(page, "total") + " 条 · " + flag(page, "hasMore", "还有下一页", "已到末页"));
+        u.metrics(c, "账目", number(summary, "entryCount"), "退款", number(summary, "refundCount"), "汇率覆盖", flag(summary, "cnyComplete", "完整", "部分币种缺失"));
+        if (arr(summary, "totals").length() > 0) { LinearLayout g = u.list("币种合计");
+            for (JSONObject n : rows(summary, "totals")) u.item(g, s(n, "currency"), "净支出 " + s(n, "net"), join("支出 " + s(n, "spent"), "退款 " + s(n, "refunded")),
+                "支出", s(n, "spent"), "退款", s(n, "refunded"), "净支出", s(n, "net")); }
+        if (arr(p, "members").length() > 0) { LinearLayout g = u.list("成员分摊");
+            for (JSONObject n : rows(p, "members")) { List<String> lines = new ArrayList<>(); List<String> details = new ArrayList<>();
+                for (JSONObject total : rows(n, "totals")) { String cur = s(total, "currency");
+                    lines.add(cur + " 已付 " + s(total, "paid") + " · 差额 " + s(total, "net"));
+                    details.add(cur + " 已付"); details.add(s(total, "paid")); details.add(cur + " 应分摊 / 差额"); details.add(s(total, "expense") + " / " + s(total, "net")); }
+                u.item(g, s(n, "displayName"), "", String.join("\n", lines), details.toArray(new String[0])); }
+            u.note("差额是账本计算结果，不代表实际还款。"); }
+        LinearLayout g = u.list("账目");
+        for (JSONObject n : rows(p, "entries")) u.item(g, s(n, "merchant").equals(UNKNOWN) ? s(n, "category") : s(n, "merchant"), money(n, "amount", "currency"),
+            join(s(n, "category"), s(n, "payer"), s(n, "occurredAt")),
+            "金额", money(n, "amount", "currency"), "退款", money(n, "refundedAmount", "currency"), "净额", money(n, "netAmount", "currency"),
+            "类别", s(n, "category"), "付款人", s(n, "payer"), "发生时间", s(n, "occurredAt"));
+        empty(u, p, "entries", "本页没有账目");
+        JSONObject page = obj(p, "page"); u.note("总计 " + number(page, "total") + " 条 · " + flag(page, "hasMore", "还有下一页", "已到末页"));
     }
     private static void cards(UI u, JSONObject p) {
-        for (JSONObject n : rows(p, "cards")) { LinearLayout c = u.card(s(n, "title")); u.paragraph(c, s(n, "description"));
-            u.row(c, "配置", flag(n, "customized", "自定义", "默认")); u.row(c, "更新", date(n, "updatedAt")); }
+        LinearLayout g = u.list("卡片");
+        for (JSONObject n : rows(p, "cards")) u.item(g, s(n, "title"), flag(n, "customized", "自定义", "默认"), join(s(n, "description"), "更新 " + date(n, "updatedAt")));
         empty(u, p, "cards", "暂无卡片");
     }
     private static void publishing(UI u, JSONObject p) {
@@ -332,21 +359,24 @@ public final class FeatureRenderer {
         JSONObject caps = obj(p, "capabilities");
         for (String k : new String[]{"drafts", "menu"}) { JSONObject n = obj(caps, k); u.row(c, k.equals("drafts") ? "草稿" : "菜单", Boolean.TRUE.equals(n.opt("available")) ? number(n, "count") : "暂不可用"); }
         JSONObject pub = obj(p, "published"); u.row(c, "已发布", Boolean.TRUE.equals(pub.opt("available")) ? number(pub, "totalCount") : "暂不可用");
-        for (JSONObject n : rows(p, "articles")) { c = u.card(s(n, "title")); u.row(c, "发布时间", date(n, "publishedAt")); }
-        for (JSONObject n : rows(p, "history")) { c = u.card(s(n, "title")); u.row(c, "草稿创建", date(n, "createdAt")); }
+        if (arr(p, "articles").length() > 0) { LinearLayout g = u.list("已发布文章"); for (JSONObject n : rows(p, "articles")) u.item(g, s(n, "title"), "", "发布 " + date(n, "publishedAt")); }
+        if (arr(p, "history").length() > 0) { LinearLayout g = u.list("草稿历史"); for (JSONObject n : rows(p, "history")) u.item(g, s(n, "title"), "", "创建 " + date(n, "createdAt")); }
     }
     private static void catalog(UI u, JSONObject p) {
         LinearLayout c = u.card("目录同步"); u.row(c, "版本", number(p, "catalogVersion")); u.row(c, "来源更新", date(p, "sourceGeneratedAt"));
         u.row(c, "个人资料", flag(obj(p, "profile"), "configured", "已配置", "未配置"));
-        for (JSONObject n : rows(p, "tools")) { c = u.card(s(n, "title")); u.row(c, "状态", state(n, "state")); u.row(c, "项目数", number(n, "itemCount"));
-            u.row(c, "来源", s(obj(n, "source"), "label")); }
+        LinearLayout g = u.list("目录");
+        for (JSONObject n : rows(p, "tools")) u.item(g, s(n, "title"), state(n, "state"), join("项目 " + number(n, "itemCount"), "来源 " + s(obj(n, "source"), "label")));
+        empty(u, p, "tools", "暂无目录");
     }
     private static void audit(UI u, JSONObject p) {
         LinearLayout c = u.card("管理员绑定"); JSONObject b = obj(p, "binding"); u.row(c, "绑定", flag(b, "configured", "已绑定", "未绑定"));
         u.row(c, "待处理绑定", flag(b, "pending", "有", "无")); u.row(c, "活跃会话", number(b, "activeSessionCount"));
-        c = u.card("登录概览"); u.fields(c, obj(p, "summary"), "successCount", "成功", "deniedCount", "拒绝", "returnedEventCount", "返回事件");
-        for (JSONObject n : rows(p, "events")) { c = u.card(state(n, "type")); u.row(c, "结果", state(n, "result"));
-            u.row(c, "时间", date(n, "occurredAt")); if (!n.isNull("reason")) u.row(c, "原因", state(n, "reason")); }
+        JSONObject sum = obj(p, "summary");
+        u.metrics(u.card("登录概览"), "成功", number(sum, "successCount"), "拒绝", number(sum, "deniedCount"), "返回事件", number(sum, "returnedEventCount"));
+        LinearLayout g = u.list("登录事件");
+        for (JSONObject n : rows(p, "events")) u.item(g, state(n, "type"), state(n, "result"), join(date(n, "occurredAt"), n.isNull("reason") ? "" : "原因 " + state(n, "reason")));
+        empty(u, p, "events", "暂无登录事件");
     }
     private static void prompts(UI u, JSONObject p) {
         LinearLayout c = u.card("资产日报 Prompt"); u.fields(c, p, "task", "任务", "model", "模型", "version", "版本");
@@ -354,22 +384,33 @@ public final class FeatureRenderer {
         // Template, hashes, receipts and request fingerprints stay outside the metadata screen.
     }
     private static void images(UI u, JSONObject p) {
-        JSONObject status = obj(p, "status"); LinearLayout c = u.card("图片工坊状态");
+        JSONObject status = obj(p, "status"), inventory = obj(p, "inventory"); LinearLayout c = u.card("图片工坊状态");
         u.row(c, "凭据配置", flag(status, "credentialConfigured", "已配置", "未配置")); u.row(c, "处理服务", flag(status, "processingAvailable", "可用", "不可用"));
-        JSONObject inventory = obj(p, "inventory"); u.fields(c, inventory, "total", "图片总数", "returned", "当前返回");
+        u.metrics(c, "图片总数", number(inventory, "total"), "当前返回", number(inventory, "returned"));
         if (Boolean.TRUE.equals(inventory.opt("truncated"))) u.paragraph(c, "库存已截断");
-        for (JSONObject n : rows(inventory, "assets")) { c = u.card("图片 " + number(n, "sequence")); u.row(c, "更新", date(n, "updatedAt"));
-            for (JSONObject d : rows(n, "derivatives")) u.row(c, state(d, "role"), number(d, "width") + " × " + number(d, "height") + " · " + unit(d, "bytes", " B")); }
+        if (arr(inventory, "assets").length() > 0) { LinearLayout g = u.list("图片");
+            for (JSONObject n : rows(inventory, "assets")) { List<String> details = new ArrayList<>(); int count = 0;
+                for (JSONObject d : rows(n, "derivatives")) { count++; details.add(state(d, "role")); details.add(number(d, "width") + " × " + number(d, "height") + " · " + unit(d, "bytes", " B")); }
+                u.item(g, "图片 " + number(n, "sequence"), "", join("更新 " + date(n, "updatedAt"), count + " 个派生图"), details.toArray(new String[0])); } }
     }
     private static void reports(UI u, JSONObject p) {
-        for (JSONObject n : rows(p, "reports")) { LinearLayout c = u.card(n.isNull("title") ? s(n, "hostname") : s(n, "title"));
-            u.row(c, "站点", s(n, "hostname")); u.row(c, "状态", state(n, "status")); u.fields(c, n, "visitCount", "访问", "eventCount", "事件");
-            u.row(c, "生成时间", date(n, "createdAt")); }
+        LinearLayout g = u.list("报告");
+        for (JSONObject n : rows(p, "reports")) u.item(g, n.isNull("title") ? s(n, "hostname") : s(n, "title"), state(n, "status"),
+            join(s(n, "hostname"), "访问 " + number(n, "visitCount"), "事件 " + number(n, "eventCount"), date(n, "createdAt")),
+            "站点", s(n, "hostname"), "状态", state(n, "status"), "访问", number(n, "visitCount"), "事件", number(n, "eventCount"), "生成时间", date(n, "createdAt"));
         empty(u, p, "reports", "暂无归档报告");
     }
     private static void secrets(UI u, JSONObject p) {
-        for (JSONObject n : rows(p, "services")) { LinearLayout c = u.card(s(n, "label"));
-            u.row(c, "配置", flag(n, "configured", "已配置", "未配置")); u.row(c, "更新", date(n, "updatedAt")); }
+        LinearLayout g = u.list("服务");
+        for (JSONObject n : rows(p, "services")) u.item(g, s(n, "label"), flag(n, "configured", "已配置", "未配置"), "更新 " + date(n, "updatedAt"));
+        empty(u, p, "services", "暂无服务");
+    }
+    /** " · "-joined summary of the parts that carry a value; unknown parts stay visible in the expanded details. */
+    private static String join(String... parts) {
+        StringBuilder b = new StringBuilder();
+        for (String part : parts) { if (part == null || part.isEmpty() || part.equals(UNKNOWN) || part.endsWith(" " + UNKNOWN) || part.endsWith(" " + UNKNOWN + "%")) continue;
+            if (b.length() > 0) b.append(" · "); b.append(part); }
+        return b.toString();
     }
 
     private static JSONObject obj(JSONObject p, String key) { JSONObject o = p.optJSONObject(key); return o == null ? new JSONObject() : o; }
@@ -380,7 +421,7 @@ public final class FeatureRenderer {
         return out;
     }
     private static int limit(UI u, JSONArray a) { if (a.length() > MAX_ROWS) u.message("显示范围", "当前最多显示 " + MAX_ROWS + " 项"); return Math.min(MAX_ROWS, a.length()); }
-    private static void empty(UI u, JSONObject p, String key, String text) { if (arr(p, key).length() == 0) u.message(text, ""); }
+    private static void empty(UI u, JSONObject p, String key, String text) { if (arr(p, key).length() == 0) u.emptyLine(text); }
     private static String s(JSONObject p, String key) {
         Object v = p.opt(key); if (v == null || v == JSONObject.NULL) return UNKNOWN;
         if (v instanceof String) { String text = ((String) v).trim(); if (text.isEmpty()) return UNKNOWN;
@@ -467,7 +508,50 @@ public final class FeatureRenderer {
         UI(Context c, LinearLayout r) { context=c;root=r;theme=new ConsoleTheme(c);ink=theme.ink;muted=theme.muted;background=theme.surface;border=theme.line; }
         int dp(float n) { return Math.round(n * context.getResources().getDisplayMetrics().density); }
         TextView text(String value, int size, boolean bold) {return theme.text(value,size,bold);}
-        LinearLayout card(String title) {LinearLayout c=theme.card(root);TextView heading=text(title,16,true);heading.setAccessibilityHeading(true);heading.setPadding(0,0,0,dp(6));c.addView(heading);return c;}
+        LinearLayout card(String title) {LinearLayout c=theme.card(root);TextView heading=text(title,15,true);heading.setAccessibilityHeading(true);heading.setPadding(0,0,0,dp(4));c.addView(heading);return c;}
+        /** Section heading plus one grouped list card. */
+        LinearLayout list(String title){heading(title,null);return group();}
+        void subhead(LinearLayout c,String title){TextView t=text(title,12,false);t.setTextColor(theme.faint);t.setPadding(0,dp(10),0,dp(2));c.addView(t);}
+        void note(String value){if(value==null||value.isEmpty()||value.equals(UNKNOWN))return;TextView t=text(value,12,false);t.setTextColor(theme.faint);t.setPadding(dp(6),dp(2),dp(6),dp(10));root.addView(t);}
+        void emptyLine(String value){LinearLayout c=group();TextView t=text(value,14,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(14),dp(12),dp(14));c.addView(t);}
+        /** Short figures as a grid: three columns normally, two with large text; values wrap instead of shrinking. */
+        void metrics(LinearLayout c,String... pairs){
+            boolean wide=context.getResources().getConfiguration().screenWidthDp>=360&&context.getResources().getConfiguration().fontScale<1.3f;int columns=wide?3:2;
+            LinearLayout band=null;
+            for(int i=0;i+1<pairs.length;i+=2){int index=i/2;
+                if(index%columns==0){band=new LinearLayout(context);band.setOrientation(LinearLayout.HORIZONTAL);LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,-2);bp.topMargin=dp(index==0?4:8);c.addView(band,bp);}
+                LinearLayout cell=new LinearLayout(context);cell.setOrientation(LinearLayout.VERTICAL);cell.setPadding(0,0,dp(8),0);
+                cell.addView(text(pairs[i],12,false));TextView v=text(pairs[i+1],17,true);v.setPadding(0,dp(1),0,0);cell.addView(v);cell.setContentDescription(pairs[i]+" "+pairs[i+1]);
+                band.addView(cell,new LinearLayout.LayoutParams(0,-2,1));}
+            if(band!=null)for(int k=band.getChildCount();k<columns;k++)band.addView(new View(context),new LinearLayout.LayoutParams(0,1,1));
+        }
+        /**
+         * Compact list row: title, trailing value, one summary line. Label/value pairs, when given, expand in place.
+         * A status word in the trailing value gets its colour dot; the word itself always stays visible.
+         */
+        void item(LinearLayout group,String title,String trailing,String meta,String... details){
+            if(group.getChildCount()>0){View d=new View(context);d.setBackgroundColor(border);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(.5f));lp.setMargins(dp(14),0,dp(12),0);group.addView(d,lp);}
+            LinearLayout box=new LinearLayout(context);box.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout head=new LinearLayout(context);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(dp(14),dp(9),dp(10),dp(9));head.setMinimumHeight(dp(48));
+            int tone=theme.status(trailing);
+            LinearLayout texts=new LinearLayout(context);texts.setOrientation(LinearLayout.VERTICAL);TextView t=text(title,15,false);t.setTextColor(theme.ink);texts.addView(t);
+            if(meta!=null&&!meta.isEmpty()){TextView m=text(meta,12,false);m.setPadding(0,dp(2),0,0);texts.addView(m);}
+            head.addView(texts,new LinearLayout.LayoutParams(0,-2,1));
+            if(trailing!=null&&!trailing.isEmpty()){LinearLayout right=new LinearLayout(context);right.setGravity(Gravity.CENTER_VERTICAL);right.setPadding(dp(10),0,0,0);
+                if(tone!=0){View dot=theme.dot(tone,6);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(5);right.addView(dot);}
+                TextView v=text(trailing,14,true);v.setGravity(Gravity.END);right.addView(v);head.addView(right);}
+            box.addView(head);
+            String description=title+(trailing==null||trailing.isEmpty()?"":"，"+trailing)+(meta==null||meta.isEmpty()?"":"，"+meta);head.setContentDescription(description);
+            if(details.length>=2){
+                LinearLayout body=details();body.setPadding(dp(14),0,dp(16),dp(8));for(int i=0;i+1<details.length;i+=2)detail(body,details[i],details[i+1],StatusPage.NONE);
+                String key=title+"|"+meta;boolean open=OPEN.contains(key);body.setVisibility(open?View.VISIBLE:View.GONE);box.addView(body);
+                ImageView chevron=theme.icon("chevron",theme.muted,12);chevron.setAlpha(.4f);chevron.setRotation(open?-90:90);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(12),dp(12));cp.leftMargin=dp(6);head.addView(chevron,cp);
+                head.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,16),16));head.setFocusable(true);head.setClickable(true);head.setStateDescription(open?"已展开":"已收起");
+                head.setOnClickListener(v->{boolean show=body.getVisibility()!=View.VISIBLE;if(show)OPEN.add(key);else OPEN.remove(key);body.setVisibility(show?View.VISIBLE:View.GONE);head.setStateDescription(show?"已展开":"已收起");
+                    if(theme.effects)chevron.animate().rotation(show?-90:90).setDuration(200).start();else chevron.setRotation(show?-90:90);});
+            }
+            group.addView(box);
+        }
         /** Figure card with label and tinted symbol; opens {@code target} when the host supports it. */
         LinearLayout tile(String label,String symbol,String target){return tile(label,symbol,target,root);}
         LinearLayout tile(String label,String symbol,String target,LinearLayout parent){
@@ -560,8 +644,8 @@ public final class FeatureRenderer {
         void row(LinearLayout c, String label, String value) {
             boolean stack=context.getResources().getConfiguration().fontScale>=1.3f||context.getResources().getConfiguration().screenWidthDp<350||value.length()>36;
             if(c.getChildCount()>0&&"row".equals(c.getChildAt(c.getChildCount()-1).getTag()))divider(c);
-            LinearLayout r=new LinearLayout(context);r.setTag("row");r.setOrientation(stack?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);r.setGravity(Gravity.CENTER_VERTICAL);r.setMinimumHeight(dp(46));r.setPadding(0,dp(8),0,dp(8));
-            TextView k=text(label,14,false),v=text(value,15,true);v.setTextDirection(android.view.View.TEXT_DIRECTION_FIRST_STRONG);v.setGravity(stack?Gravity.START:Gravity.END);
+            LinearLayout r=new LinearLayout(context);r.setTag("row");r.setOrientation(stack?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);r.setGravity(Gravity.CENTER_VERTICAL);r.setMinimumHeight(dp(38));r.setPadding(0,dp(6),0,dp(6));
+            TextView k=text(label,13,false),v=text(value,14,true);v.setTextDirection(android.view.View.TEXT_DIRECTION_FIRST_STRONG);v.setGravity(stack?Gravity.START:Gravity.END);
             int tone=theme.status(value);
             LinearLayout shown=new LinearLayout(context);shown.setGravity(Gravity.CENTER_VERTICAL|(stack?Gravity.START:Gravity.END));shown.setPadding(stack?0:dp(12),stack?dp(4):0,0,0);
             if(tone!=0){View dot=theme.dot(tone,7);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(7);shown.addView(dot);}
@@ -575,7 +659,16 @@ public final class FeatureRenderer {
         void fields(LinearLayout c, JSONObject p, String... pairs) { for (int i = 0; i + 1 < pairs.length; i += 2) row(c, pairs[i + 1], s(p, pairs[i])); }
         void paragraph(LinearLayout c, String value) { if (value.isEmpty() || value.equals(UNKNOWN)) return; TextView t = text(value, 14, false); t.setPadding(0, dp(4), 0, dp(4)); c.addView(t); }
         void message(String title, String value) { paragraph(card(title), value); }
-        void sources(JSONObject p, String... pairs) { LinearLayout c = card("数据来源"); for (int i = 0; i + 1 < pairs.length; i += 2) row(c, pairs[i + 1], source(obj(p, pairs[i]))); }
+        /** Data sources as one wrapping chip row; each chip keeps its name and state text. */
+        void sources(JSONObject p, String... pairs) {
+            LinearLayout c=theme.card(root);c.setPadding(dp(14),dp(10),dp(14),dp(10));TextView h=text("数据来源",12,false);h.setTextColor(theme.faint);h.setPadding(0,0,0,dp(6));c.addView(h);
+            FlowRow flow=new FlowRow(context,dp(6),dp(6));
+            for(int i=0;i+1<pairs.length;i+=2){String value=source(obj(p,pairs[i]));int tone=theme.status(value);
+                LinearLayout chip=new LinearLayout(context);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(9),dp(4),dp(10),dp(4));chip.setBackground(theme.shape(theme.soft,99));
+                if(tone!=0){View dot=theme.dot(tone,6);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(5);chip.addView(dot);}
+                TextView t=text(pairs[i+1]+" "+value,12,false);t.setTextColor(theme.ink);chip.addView(t);chip.setContentDescription(pairs[i+1]+"，"+value);flow.addView(chip);}
+            c.addView(flow);
+        }
         void freshness(JSONObject p, int maxSeconds) {
             String state = "更新时间未知"; Object generated = p.opt("generatedAt"); int tone = theme.faint;
             if (generated instanceof String) try {
