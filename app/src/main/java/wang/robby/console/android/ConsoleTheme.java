@@ -72,7 +72,7 @@ public final class ConsoleTheme {
         b.setTextSize(15);b.setAllCaps(false);b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         b.setMinHeight(dp(48));b.setMinimumHeight(dp(48));b.setMinWidth(0);b.setMinimumWidth(0);
         b.setPadding(dp(20),dp(10),dp(20),dp(10));b.setElevation(0);b.setStateListAnimator(null);
-        b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{faint,prominent?Color.WHITE:accent}));
+        b.setTextColor(new ColorStateList(new int[][]{new int[]{-android.R.attr.state_enabled},new int[]{}},new int[]{prominent?0x99ffffff:faint,prominent?Color.WHITE:accent}));
         b.setBackground(ripple(prominent?capsule(accentStrong):glass(-1),-1));press(b);
     }
     public Button button(String label,Runnable action){Button b=new Button(context);b.setText(label);button(b,false);b.setOnClickListener(v->action.run());return b;}

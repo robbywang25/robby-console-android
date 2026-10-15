@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.5.0", "2026-10-15", "在 App 里直接更新",
+            "打开「我 → 关于」会自动检查新版本，有新版本时点「立即更新」就在 App 里下载安装。",
+            "安装包下载后先核对校验值和签名，再交给系统确认安装，登录和数据都保留。",
+            "第一次更新需要在系统设置里允许本应用安装应用，返回后会自动继续。"),
         new Entry("0.4.0", "2026-10-15", "全新 Liquid Glass 外观",
             "界面换上玻璃质感：天空渐变背景、半透明卡片，底部导航悬浮并显示文字。",
             "首页先告诉你服务是否都在线、有几项需要处理，点数字直接看详情。",

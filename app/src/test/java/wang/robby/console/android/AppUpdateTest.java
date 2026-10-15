@@ -1,0 +1,53 @@
+package wang.robby.console.android;
+
+import static org.junit.Assert.*;
+import java.net.URL;
+import java.util.List;
+import org.junit.Test;
+
+/** The pure decisions behind in-app update: which release, which bytes, which hosts. */
+public final class AppUpdateTest {
+    private static AppUpdate.Release r(String v) { return new AppUpdate.Release(v, "t", "", "2026-10-15", "robby-console-android-" + v + ".apk", "https://github.com/x", 1000, "https://github.com/y"); }
+
+    @Test public void onlyPlainAppTagsAreReleases() {
+        assertEquals("0.4.1", AppUpdate.version("v0.4.1"));
+        assertNull(AppUpdate.version("billing-lab-v0.1.0"));
+        assertNull(AppUpdate.version("v0.4.1-rc1"));
+        assertNull(AppUpdate.version("0.4.1"));
+        assertNull(AppUpdate.version(null));
+    }
+    @Test public void versionsCompareNumerically() {
+        assertTrue(AppUpdate.compare("0.10.0", "0.9.9") > 0);
+        assertTrue(AppUpdate.compare("1.0.0", "0.99.99") > 0);
+        assertEquals(0, AppUpdate.compare("0.4.0", "0.4.0"));
+    }
+    @Test public void picksTheNewestStrictlyNewerRelease() {
+        List<AppUpdate.Release> all = List.of(r("0.3.6"), r("0.5.1"), r("0.4.0"), r("0.5.0"));
+        assertEquals("0.5.1", AppUpdate.pick(all, "0.4.0").version);
+        assertNull("already newest", AppUpdate.pick(all, "0.5.1"));
+        assertNull("a newer local build never downgrades", AppUpdate.pick(all, "0.6.0"));
+        assertNull("unknown local version", AppUpdate.pick(all, ""));
+    }
+    @Test public void checksumLineMustNameTheExactFile() {
+        String hash = "4df68091ce8af11b5312842e6ab8359ab06cac22b39fc67de07624f9e28fb8be";
+        String sums = hash.toUpperCase() + "  robby-console-android-0.4.0.apk\n" + "0".repeat(64) + "  other.apk\n";
+        assertEquals(hash, AppUpdate.expectedSha(sums, "robby-console-android-0.4.0.apk"));
+        assertEquals(hash, AppUpdate.expectedSha(hash + " *robby-console-android-0.4.0.apk", "robby-console-android-0.4.0.apk"));
+        assertNull(AppUpdate.expectedSha(sums, "robby-console-android-0.4.1.apk"));
+        assertNull(AppUpdate.expectedSha("abc  robby-console-android-0.4.0.apk", "robby-console-android-0.4.0.apk"));
+    }
+    @Test public void downloadsStayOnGitHubOverHttps() throws Exception {
+        assertTrue(AppUpdate.allowed(new URL("https://api.github.com/repos/a/b/releases")));
+        assertTrue(AppUpdate.allowed(new URL("https://release-assets.githubusercontent.com/x?sig=1")));
+        assertFalse(AppUpdate.allowed(new URL("http://github.com/a")));
+        assertFalse(AppUpdate.allowed(new URL("https://github.com.evil.example/a")));
+        assertFalse(AppUpdate.allowed(new URL("https://user@github.com/a")));
+        assertFalse(AppUpdate.allowed(new URL("https://github.com:8443/a")));
+    }
+    @Test public void titleAndSummaryAreShortPlainText() {
+        assertEquals("Liquid Glass 外观与更新记录", AppUpdate.theme("v0.4.0 · Liquid Glass 外观与更新记录", "0.4.0"));
+        assertEquals("0.4.0", AppUpdate.theme(null, "0.4.0"));
+        assertEquals("整体换成 Liquid Glass 风格，见 FEATURE-PARITY。", AppUpdate.summary("整体换成 **Liquid Glass** 风格，见 [FEATURE-PARITY](docs/x.md)。\n\n- 外观"));
+        assertTrue(AppUpdate.summary("字".repeat(300)).length() <= 120);
+    }
+}

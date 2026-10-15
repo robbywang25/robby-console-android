@@ -30,6 +30,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private static final String ABOUT="about";
     /** Release-note cards the reader expanded; process memory only, like the other reading context. */
     private final Set<String> expandedNotes=new HashSet<>();
+    /** In-app update for the 关于 page. State is process memory only; network work runs off the UI thread. */
+    private final ExecutorService updater=Executors.newSingleThreadExecutor();
+    private final java.util.concurrent.atomic.AtomicBoolean updateCancel=new java.util.concurrent.atomic.AtomicBoolean();
+    private final UpdateReceiver.Listener updateListener=this::onUpdateStatus;
+    private volatile AppUpdate.Release update; private volatile String updateState="idle",updateNote; private volatile int updatePercent=-1;
+    private boolean awaitingInstallPermission; private LinearLayout updateBox;
     private String group="总览",selectedId=null,project=null;
     private volatile int generation=0; private boolean resumed=false;
     private final Map<String,JSONObject> snapshots=new HashMap<>();
@@ -65,6 +71,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // Intent. Its one-time OAuth callback was already consumed, so replaying it only produced a
         // spurious "登录未完成或已过期" error. Fresh callbacks always arrive as a new launch or onNewIntent.
         if(state==null&&!launchedFromHistory(getIntent()))handle(getIntent()); else getIntent().setData(null);
+        UpdateReceiver.listener=updateListener;
         if(Build.VERSION.SDK_INT>=33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::goBack);
     }
     @Override protected void onSaveInstanceState(Bundle state) {super.onSaveInstanceState(state);state.putString("group",group);state.putString("feature",selectedId);state.putString("project",project);saveViewport();state.putInt("scroll",ledgerCursor==null?navigation.offset(routeKey()):0);}
@@ -75,7 +82,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         Uri uri=intent.getData(); if(uri==null)return;
         intent.setData(null); coordinator.callback(uri);
     }
-    @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}}
+    @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}
+        // Back from the "install unknown apps" settings page: continue the update the person already started.
+        if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}}
     @Override protected void onPause(){resumed=false;if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){if(!resumed||isDestroyed())return;++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     @Override public void onAuthorizationReady(String url){
@@ -316,7 +325,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         FrameLayout mark=new FrameLayout(this);mark.setBackground(theme.glass(-1));mark.addView(theme.tabIcon("grid",true,38),new FrameLayout.LayoutParams(dp(38),dp(38),Gravity.CENTER));hero.addView(mark,new LinearLayout.LayoutParams(dp(76),dp(76)));
         TextView name=text("God 工作台",22,INK,true);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(14),0,dp(4));hero.addView(name);
         TextView build=text(version.isEmpty()?"Android":"Android "+version,14,MUTED,false);build.setGravity(Gravity.CENTER);hero.addView(build);content.addView(hero);
-        LinearLayout links=groupCard();featureRow("获取新版本","GitHub Releases · 覆盖安装保留数据","download",links,this::openReleases);
+        // Update lives right under the version, like 关于微信: the check runs once when the page first opens.
+        updateBox=new LinearLayout(this);updateBox.setOrientation(LinearLayout.VERTICAL);content.addView(updateBox);renderUpdate();
+        if(updateState.equals("idle"))checkUpdate();
         // The installed version reads as its own card; every other version is one row in a single grouped list,
         // like WeChat's 功能介绍, so ten releases scan as a list instead of a stack of cards.
         if(expandedNotes.isEmpty()&&!version.isEmpty())expandedNotes.add(version);
@@ -360,9 +371,82 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             if(theme.effects)chevron.animate().rotation(show?-90:90).setDuration(200).start();else chevron.setRotation(show?-90:90);
         });
     }
-    private void openReleases(){
-        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/robbywang25/robby-console-android/releases")).addCategory(Intent.CATEGORY_BROWSABLE));}
-        catch(ActivityNotFoundException e){error("无法打开浏览器","手机需要可以打开 HTTPS 链接的浏览器。");}
+    private boolean updateBusy(){String s=updateState;return s.equals("checking")||s.equals("downloading")||s.equals("installing");}
+    private void checkUpdate(){
+        if(updateBusy())return;updateState="checking";updateNote=null;renderUpdate();String current=versionName();
+        updater.execute(()->{
+            try{AppUpdate.Release found;String real=PreviewMode.realUpdateAs();
+                if(PreviewMode.isBuild()&&real==null){Thread.sleep(700);found=PreviewMode.update();}else found=AppUpdate.check(real!=null?real:current);
+                runOnUiThread(()->{update=found;updateState=found==null?"latest":"available";renderUpdate();});}
+            catch(Exception e){runOnUiThread(()->{updateState="failed";updateNote=updateError(e);renderUpdate();});}
+        });
+    }
+    /** 立即更新: download, verify, then the system installer asks the person to confirm. */
+    private void startUpdate(){
+        AppUpdate.Release r=update;if(r==null||updateBusy())return;
+        if(!getPackageManager().canRequestPackageInstalls()){
+            show(new AlertDialog.Builder(this).setTitle("允许安装更新").setMessage("Android 需要你允许 God 工作台安装应用。在设置里打开「允许来自此来源的应用」，返回后会自动继续更新。")
+                .setNegativeButton("取消",null).setPositiveButton("去设置",(d,w)->{awaitingInstallPermission=true;
+                    try{startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())));}
+                    catch(ActivityNotFoundException e){awaitingInstallPermission=false;error("无法打开设置","请在系统设置里允许本应用安装应用。");}}));
+            return;
+        }
+        updateState="downloading";updatePercent=0;updateNote=null;updateCancel.set(false);renderUpdate();
+        updater.execute(()->{
+            try{
+                java.io.File apk=PreviewMode.isBuild()&&PreviewMode.realUpdateAs()==null?previewPackage():AppUpdate.download(this,r,(done,total)->{int p=total>0?(int)Math.min(100,done*100/total):-1;if(p!=updatePercent){updatePercent=p;runOnUiThread(this::renderUpdate);}},updateCancel);
+                runOnUiThread(()->{updateState="installing";updateNote="正在交给系统安装…";renderUpdate();});
+                AppUpdate.install(this,apk);
+            }catch(Exception e){runOnUiThread(()->{updateState="error";updateNote=updateError(e);renderUpdate();});}
+        });
+    }
+    /**
+     * Preview builds never download: they fake the progress, then reinstall their own APK so the real installer
+     * session, confirmation screen and status callback can be exercised on a device.
+     */
+    private java.io.File previewPackage()throws Exception{
+        for(int p=0;p<=100;p+=10){updatePercent=p;runOnUiThread(this::renderUpdate);Thread.sleep(90);}
+        java.io.File dir=new java.io.File(getCacheDir(),"updates");AppUpdate.clear(dir);if(!dir.mkdirs()&&!dir.isDirectory())throw new java.io.IOException("无法写入缓存");
+        java.io.File copy=new java.io.File(dir,"preview.apk");
+        try(java.io.InputStream in=new java.io.FileInputStream(getApplicationInfo().sourceDir);java.io.OutputStream out=new java.io.FileOutputStream(copy)){byte[] b=new byte[65536];int n;while((n=in.read(b))>0)out.write(b,0,n);}
+        return copy;
+    }
+    private void onUpdateStatus(int status){runOnUiThread(()->{
+        if(isDestroyed())return;
+        if(status==android.content.pm.PackageInstaller.STATUS_PENDING_USER_ACTION){updateState="installing";updateNote="请在系统弹窗中确认安装";}
+        else if(status==android.content.pm.PackageInstaller.STATUS_SUCCESS){updateState="installing";updateNote="安装完成，应用将重新启动";}
+        else{updateState="error";updateNote=UpdateReceiver.message(status);}
+        renderUpdate();
+    });}
+    private static String updateError(Exception e){String m=e.getMessage();return m!=null&&m.length()<=40&&m.matches(".*\\p{IsHan}.*")?m:"网络连接失败，请稍后重试";}
+    private static String fileSize(long bytes){return bytes>=1048576?String.format(Locale.ROOT,"%.1f MB",bytes/1048576.0):Math.max(1,Math.round(bytes/1024.0))+" KB";}
+    /** Redraws only the update area of the 关于 page; a no-op on any other page. */
+    private void renderUpdate(){
+        LinearLayout box=updateBox;if(box==null||!ABOUT.equals(selectedId)||!box.isAttachedToWindow()&&box.getParent()==null)return;box.removeAllViews();
+        AppUpdate.Release r=update;String state=updateState;
+        if(r==null){
+            LinearLayout group=theme.card(box);group.setPadding(dp(4),dp(4),dp(4),dp(4));
+            String sub=switch(state){case "checking"->"正在检查…";case "latest"->"已是最新版本";case "failed"->(updateNote==null?"检查失败":updateNote)+"，点按重试";default->"点按检查";};
+            featureRow("检查新版本",sub,"download",group,state.equals("checking")?null:this::checkUpdate);return;
+        }
+        LinearLayout c=theme.card(box);c.setPadding(dp(18),dp(16),dp(18),dp(18));
+        LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView badge=text("发现新版本",12,ACCENT,true);badge.setPadding(dp(8),dp(2),dp(8),dp(2));badge.setBackground(theme.shape((ACCENT&0x00ffffff)|0x1f000000,99));top.addView(badge);
+        top.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));top.addView(text(r.date.isEmpty()?"":ReleaseNotes.dateLabel(r.date,java.time.LocalDate.now())+"发布",12,theme.faint,false));c.addView(top);
+        TextView version=text(r.version,26,INK,true);version.setPadding(0,dp(10),0,0);c.addView(version);
+        TextView title=text(r.title,16,INK,false);title.setPadding(0,dp(2),0,0);c.addView(title);
+        if(!r.summary.isEmpty()){TextView summary=text(r.summary,14,MUTED,false);summary.setPadding(0,dp(8),0,0);c.addView(summary);}
+        TextView meta=text("安装包 "+fileSize(r.size)+" · 校验 SHA256 与签名后安装，保留登录和数据",12,theme.faint,false);meta.setPadding(0,dp(8),0,0);c.addView(meta);
+        int p=updatePercent;
+        if(state.equals("downloading")){
+            ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(100);bar.setIndeterminate(p<0);bar.setProgress(Math.max(0,p));
+            bar.setProgressTintList(android.content.res.ColorStateList.valueOf(ACCENT));bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(theme.soft));
+            LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(6));bp.topMargin=dp(14);c.addView(bar,bp);
+            TextView t=text(p>=100?"正在校验安装包…":p<0?"正在下载…":"正在下载 "+p+"%",13,MUTED,false);t.setPadding(0,dp(6),0,0);c.addView(t);
+        }else if(updateNote!=null){TextView t=text(updateNote,13,state.equals("error")?theme.danger:MUTED,false);t.setPadding(0,dp(12),0,0);c.addView(t);}
+        String label=switch(state){case "downloading"->p>=100?"正在校验…":"正在下载…";case "installing"->"等待系统安装";case "error"->"重试更新";default->"立即更新";};
+        Button go=button(label,this::startUpdate);theme.button(go,true);go.setEnabled(!updateBusy());
+        LinearLayout.LayoutParams gp=new LinearLayout.LayoutParams(-1,-2);gp.topMargin=dp(16);c.addView(go,gp);
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){
@@ -392,7 +476,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}
     @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();dashboardResult=null;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God 工作台",24,INK,true));}}
-    @Override protected void onDestroy(){++generation;if(ledger!=null)ledger.dispose();worker.shutdownNow();super.onDestroy();}
+    @Override protected void onDestroy(){++generation;if(ledger!=null)ledger.dispose();worker.shutdownNow();updateCancel.set(true);updater.shutdownNow();if(UpdateReceiver.listener==updateListener)UpdateReceiver.listener=null;super.onDestroy();}
     private FeatureCatalog.Feature find(String id){return FeatureCatalog.all().stream().filter(f->f.id.equals(id)).findFirst().orElse(null);}
     private void section(String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(18),0,dp(10));content.addView(t);}
     private LinearLayout card(){return theme.card(content);}

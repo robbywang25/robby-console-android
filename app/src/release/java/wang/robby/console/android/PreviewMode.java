@@ -7,4 +7,6 @@ final class PreviewMode {
  static boolean loggedIn(){return false;}
  static void configure(android.app.Activity activity,Intent ignored){}
  static JSONObject data(String ignored){throw new IllegalStateException();}
+ static AppUpdate.Release update(){return null;}
+ static String realUpdateAs(){return null;}
 }
