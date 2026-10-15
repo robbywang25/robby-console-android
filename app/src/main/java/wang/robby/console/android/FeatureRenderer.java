@@ -67,6 +67,81 @@ public final class FeatureRenderer {
         }
     }
 
+    /** Feature whose contract a dashboard read must satisfy; several 总览 cards share the overview read. */
+    static FeatureCatalog.Feature byPath(String path) {
+        if ("overview".equals(path)) return FeatureCatalog.find("overview");
+        for (FeatureCatalog.Feature f : FeatureCatalog.all()) if (f.path.equals(path)) return f;
+        return null;
+    }
+    /** Empty dashboard card (header only) sized by {@code params}; the body is filled by {@link #widget}. */
+    static LinearLayout widgetShell(Context context, LinearLayout parent, Dashboard.Card card, LinearLayout.LayoutParams params) {
+        UI u = new UI(context, parent); LinearLayout c = new LinearLayout(context); c.setOrientation(LinearLayout.VERTICAL); c.setPadding(u.dp(14), u.dp(12), u.dp(14), u.dp(12));
+        c.setTag(card.id); LinearLayout head = new LinearLayout(context); head.setGravity(Gravity.CENTER_VERTICAL);
+        head.addView(u.theme.tile(card.symbol, 22), new LinearLayout.LayoutParams(u.dp(22), u.dp(22)));
+        TextView t = u.text(card.title, 13, false); t.setPadding(u.dp(8), 0, 0, 0); head.addView(t, new LinearLayout.LayoutParams(0, -2, 1));
+        if (card.target != null && context instanceof Opener && FeatureCatalog.find(card.target) != null) {
+            ImageView chevron = u.theme.icon("chevron", u.theme.muted, 12); chevron.setAlpha(.4f); head.addView(chevron, new LinearLayout.LayoutParams(u.dp(12), u.dp(12)));
+            c.setBackground(u.theme.ripple(u.theme.card(), 24)); c.setFocusable(true); c.setClickable(true); u.theme.press(c);
+            c.setOnClickListener(v -> ((Opener) context).openFeature(card.target));
+        } else c.setBackground(u.theme.card());
+        c.addView(head); parent.addView(c, params); return c;
+    }
+    /** A one-line body for loading and failures, so a broken source never blanks the whole 看板. */
+    static void widgetMessage(Context context, LinearLayout shell, String message) {
+        UI u = new UI(context, shell); while (shell.getChildCount() > 1) shell.removeViewAt(1);
+        TextView t = u.text(message, 13, false); t.setTextColor(u.theme.faint); t.setPadding(0, u.dp(10), 0, u.dp(2)); shell.addView(t);
+    }
+    /** The few figures each 看板 card shows; everything else stays one tap away in its feature. */
+    static void widget(Context context, LinearLayout shell, Dashboard.Card card, JSONObject p) {
+        UI u = new UI(context, shell); while (shell.getChildCount() > 1) shell.removeViewAt(1);
+        FeatureCatalog.Feature contract = byPath(card.path);
+        if (contract == null || !isCompatible(contract, p)) { widgetMessage(context, shell, "数据格式与当前版本不匹配"); return; }
+        JSONObject s = obj(p, "summary");
+        switch (card.id) {
+            case "services": {
+                SpannableStringBuilder figure = new SpannableStringBuilder(number(s, "servicesOnline"));
+                if (!number(s, "servicesTotal").equals(UNKNOWN)) { int from = figure.length(); figure.append(" / ").append(number(s, "servicesTotal"));
+                    figure.setSpan(new AbsoluteSizeSpan(15, true), from, figure.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    figure.setSpan(new ForegroundColorSpan(u.theme.muted), from, figure.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); }
+                u.big(figure, "在线服务 · 已知 " + number(s, "servicesKnown"));
+                FlowRow chips = new FlowRow(context, u.dp(6), u.dp(6)); chips.setPadding(0, u.dp(8), 0, 0); shell.addView(chips);
+                Object online = s.opt("servicesOnline"), known = s.opt("servicesKnown"), total = s.opt("servicesTotal");
+                if (online instanceof Number && known instanceof Number && total instanceof Number) {
+                    long down = ((Number) known).longValue() - ((Number) online).longValue(), unknown = ((Number) total).longValue() - ((Number) known).longValue();
+                    if (down <= 0 && unknown <= 0) u.pill(chips, "全部在线", u.theme.success);
+                    if (down > 0) u.pill(chips, down + " 项未在线", u.theme.danger);
+                    if (unknown > 0) u.pill(chips, unknown + " 项状态未知", u.theme.warning);
+                } else u.pill(chips, "服务状态未知", u.theme.faint);
+                String[] fresh = u.fresh(p, 600); u.pill(chips, fresh[0], fresh[1].equals("ok") ? u.theme.success : fresh[1].equals("warn") ? u.theme.warning : u.theme.faint);
+                break; }
+            case "reminders": {
+                JSONArray notices = arr(p, "notices");
+                if (notices.length() == 0) { LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(10), 0, u.dp(2));
+                    r.addView(u.theme.dot(u.theme.success, 7)); TextView t = u.text("暂无提醒", 14, false); t.setTextColor(u.theme.ink); t.setPadding(u.dp(8), 0, 0, 0); r.addView(t); shell.addView(r); break; }
+                for (int i = 0; i < Math.min(3, notices.length()); i++) { JSONObject n = notices.optJSONObject(i); if (n == null) continue; String level = state(n, "severity");
+                    u.notice(shell, s(n, "title"), s(n, "detail"), "级别 " + level + (n.has("expiresAt") ? " · 到期 " + date(n, "expiresAt") : ""), level); }
+                if (notices.length() > 3) { TextView more = u.text("另有 " + (notices.length() - 3) + " 条提醒", 12, false); more.setTextColor(u.theme.faint); shell.addView(more); }
+                break; }
+            case "instances": u.big(number(s, "infrastructureInstances"), "台实例"); break;
+            case "domains": u.big(number(s, "domainAssets"), "个已登记域名"); break;
+            case "openai": { JSONObject totals = obj(p, "totals"); boolean cost = Boolean.TRUE.equals(obj(obj(p, "costStatus"), "total").opt("available"));
+                u.big(number(totals, "requests"), cost ? "次请求 · 成本 " + number(totals, "costsUsd") + " USD" : "次请求 · 输入 " + number(totals, "inputTokens") + " Token"); break; }
+            case "visits": { JSONObject m = obj(p, "metrics"), range = obj(m, "selectedRange"), sites = obj(m, "sites");
+                u.big(number(range, "visitCount"), "次访问 · 事件 " + number(range, "eventCount") + " · 在线 " + number(sites, "online") + "/" + number(sites, "total")); break; }
+            case "okx": u.big(number(p, "totalEquityUsd"), "总权益 USD · 持仓 " + number(p, "openPositionCount")); break;
+            case "clipboard": u.big(String.valueOf(arr(p, "items").length()), "条剪贴内容 · 来源 " + source(obj(p, "sourceStatus"))); break;
+            case "market": {
+                JSONArray list = arr(p, "watchlist"); if (list.length() == 0) { widgetMessage(context, shell, "关注列表为空"); break; }
+                for (int i = 0; i < Math.min(4, list.length()); i++) { JSONObject n = list.optJSONObject(i); if (n == null) continue;
+                    LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(i == 0 ? 8 : 5), 0, 0);
+                    TextView name = u.text(s(n, "label"), 14, false); name.setTextColor(u.theme.ink); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+                    r.addView(u.text(unit(n, "changePct", "%"), 12, false)); TextView price = u.text(number(n, "price") + (n.has("currency") ? " " + s(n, "currency") : ""), 14, true); price.setPadding(u.dp(10), 0, 0, 0); r.addView(price);
+                    shell.addView(r); }
+                break; }
+            default: widgetMessage(context, shell, "暂不支持这张卡片");
+        }
+    }
+
     /** Version and minimum container checks; deeper server contract validation is a separate concern. */
     public static boolean isCompatible(FeatureCatalog.Feature f, JSONObject p) {
         if (f == null || p == null) return false;
@@ -578,6 +653,8 @@ public final class FeatureRenderer {
             LinearLayout chip=new LinearLayout(context);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(9),dp(4),dp(10),dp(4));chip.setBackground(theme.shape(theme.soft,99));
             chip.addView(theme.dot(color,6));TextView t=text(label,12,false);t.setTextColor(theme.ink);t.setPadding(dp(5),0,0,0);chip.addView(t);parent.addView(chip);
         }
+        /** Large figure with a one-line caption under it, for 看板 cards. */
+        void big(CharSequence value,String caption){TextView v=text("",24,true);v.setText(value);v.setPadding(0,dp(8),0,0);root.addView(v);TextView c=text(caption,12,false);c.setPadding(0,dp(1),0,0);root.addView(c);}
         void chip(LinearLayout parent,String label,int color){
             LinearLayout chip=new LinearLayout(context);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(10),dp(5),dp(12),dp(5));chip.setBackground(theme.shape(theme.soft,99));
             chip.addView(theme.dot(color,7));TextView t=text(label,13,true);t.setPadding(dp(6),0,0,0);chip.addView(t);

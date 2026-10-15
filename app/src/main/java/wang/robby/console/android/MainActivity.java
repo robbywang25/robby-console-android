@@ -28,6 +28,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private int shownTab=-1; private int enterFrom=0; private View refreshIcon;
     /** Pseudo feature id for 关于 God; it has no API path and lives in the 设置 tab's reading context. */
     private static final String ABOUT="about";
+    /** Pseudo feature id for the 看板 editor, in the 总览 tab's reading context. */
+    private static final String BOARD="board";
     /** Release-note cards the reader expanded; process memory only, like the other reading context. */
     private final Set<String> expandedNotes=new HashSet<>();
     /** In-app update for the 关于 page. State is process memory only; network work runs off the UI thread. */
@@ -129,7 +131,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     @Override public void onAuthError(String message){if(resumed&&!isDestroyed()){build();error("登录未完成",message);}}
     private void build() {
-        ticker.removeCallbacks(statusTick);saveViewport();viewportReady=false;++generation;dashboardResult=null;
+        ticker.removeCallbacks(statusTick);saveViewport();viewportReady=false;++generation;board=null;
         boolean logged=loggedIn();
         if(!logged){navigation.clear();project=null;ledgerCursor=null;ledgerPages.clear();}
         DeviceAuthorization device=coordinator.deviceAuthorization();
@@ -142,8 +144,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // The stage holds the sky and the page. The floating dock blurs the stage, never itself.
         FrameLayout stage=new FrameLayout(this);stage.setBackground(theme.backdrop());root.addView(stage,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);stage.addView(body,new FrameLayout.LayoutParams(-1,-1));
-        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId);if(detail==null&&!about)selectedId=null;
-        boolean nested=device!=null||detail!=null||about;
+        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId);if(detail==null&&!about&&!boardEdit)selectedId=null;
+        boolean nested=device!=null||detail!=null||about||boardEdit;
         // Opening 关于 reads this version's notes, so the red dots must already be gone in this frame's dock.
         if(about&&!versionName().isEmpty())prefs().edit().putString("notesSeen",versionName()).apply();
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
@@ -193,6 +195,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             page.setPadding(dp(16),dp(4),dp(16),bars.bottom+(bar.getVisibility()==View.GONE?dp(24):dockHeight+dp(10+24)));return insets;});root.requestApplyInsets();
         if(device!=null){nav.setVisibility(View.GONE);showDeviceAuthorization(device);}
         else if(about)about();
+        else if(boardEdit)boardEditor();
         else if(detail!=null)showFeature(detail,false);
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else catalog(group);
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
@@ -210,11 +213,82 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);welcome.addView(passkey,new LinearLayout.LayoutParams(-1,-2));
             Button device=button("通过已有设备授权",this::deviceLogin);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);welcome.addView(device,d);
         }else{
-            trailing.addView(circle("refresh","刷新概览",()->dashboard(true)));
-            dashboardResult=new LinearLayout(this);dashboardResult.setOrientation(LinearLayout.VERTICAL);content.addView(dashboardResult,new LinearLayout.LayoutParams(-1,-2));dashboard(false);
+            // 总览 is only 看板 and 常用: the board is the person's own combination of feature cards.
+            trailing.addView(circle("refresh","刷新看板",()->loadBoard(true)));
+            sectionAction("看板","编辑",this::openBoardEditor);
+            board=new LinearLayout(this);board.setOrientation(LinearLayout.VERTICAL);content.addView(board,new LinearLayout.LayoutParams(-1,-2));loadBoard(false);
         }
         section("常用");quick(List.of("travel-ledger","clipboard","openai","domains"));
-        if(!loggedIn()||snapshots.containsKey("overview"))restoreViewport();
+        restoreViewport();
+    }
+    private void sectionAction(String title,String action,Runnable run){
+        LinearLayout r=new LinearLayout(this);r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(dp(6),dp(8),0,dp(2));
+        TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);r.addView(t,new LinearLayout.LayoutParams(0,-2,1));
+        TextView a=text(action,14,ACCENT,true);a.setPadding(dp(12),dp(10),dp(8),dp(10));a.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,14),14));a.setFocusable(true);a.setClickable(true);a.setContentDescription(action+title);a.setOnClickListener(v->run.run());r.addView(a);
+        content.addView(r);
+    }
+    private List<String> boardCards(){return Dashboard.parse(prefs().getString("dashboard",null));}
+    private void saveBoard(List<String> ids){prefs().edit().putString("dashboard",Dashboard.serialize(ids)).apply();}
+    private void openBoardEditor(){++generation;selectedId=BOARD;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
+    /**
+     * Lays out the chosen cards (wide ones on their own row, small ones two to a row), shows any cached reads at
+     * once, and fetches each distinct API path a single time. A failing source only blanks its own cards.
+     */
+    private void loadBoard(boolean refresh){
+        final LinearLayout box=board;if(box==null||!resumed)return;box.removeAllViews();
+        List<String> ids=boardCards();
+        if(ids.isEmpty()){LinearLayout c=theme.card(box);c.setBackground(theme.ripple(theme.card(),24));c.setFocusable(true);c.setClickable(true);c.setOnClickListener(v->openBoardEditor());
+            c.addView(text("看板是空的",15,INK,true));TextView t=text("点「编辑」添加想在这里看到的功能卡片。",13,MUTED,false);t.setPadding(0,dp(4),0,0);c.addView(t);return;}
+        final Map<String,List<LinearLayout>> shells=new HashMap<>();LinearLayout row=null;
+        for(String id:ids){Dashboard.Card card=Dashboard.find(id);if(card==null)continue;LinearLayout shell;
+            if(card.wide){row=null;LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(10);shell=FeatureRenderer.widgetShell(this,box,card,lp);}
+            else{if(row==null||row.getChildCount()>=2){row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(10);box.addView(row,rp);}
+                LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);if(row.getChildCount()==1)lp.leftMargin=dp(10);shell=FeatureRenderer.widgetShell(this,row,card,lp);}
+            shells.computeIfAbsent(card.path,k->new ArrayList<>()).add(shell);}
+        // Keep a lone small card at half width instead of stretching it across the row.
+        for(int i=0;i<box.getChildCount();i++){View v=box.getChildAt(i);if(v instanceof LinearLayout&&((LinearLayout)v).getOrientation()==LinearLayout.HORIZONTAL&&((LinearLayout)v).getChildCount()==1){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,1,1);lp.leftMargin=dp(10);((LinearLayout)v).addView(new View(this),lp);}}
+        if(refresh)spin();final int epoch=++generation;
+        for(String path:Dashboard.paths(ids)){final List<LinearLayout> targets=shells.get(path);JSONObject cached=snapshots.get(path);
+            if(cached!=null)fillBoard(targets,cached);else for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"正在读取…");
+            if(cached!=null&&!refresh)continue;
+            worker.execute(()->{if(epoch!=generation)return;
+                try{JSONObject data=read(path);runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);fillBoard(targets,data);restoreViewport();});}
+                catch(Exception e){runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;
+                    // A refresh may have invalidated the stored session: show sign-in instead of a board that can only fail.
+                    if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
+                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"暂不可读："+safeError(e));});}});}
+    }
+    private void fillBoard(List<LinearLayout> shells,JSONObject data){for(LinearLayout shell:shells){Dashboard.Card card=Dashboard.find(String.valueOf(shell.getTag()));if(card!=null)FeatureRenderer.widget(this,shell,card,data);}}
+    /** 编辑看板: switch cards on or off and order them; changes apply at once and survive restarts (layout only). */
+    private void boardEditor(){
+        heading.setText("编辑看板");
+        leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));
+        List<String> ids=boardCards();
+        TextView hint=text("打开的卡片会按顺序显示在总览，用箭头调整顺序。",13,MUTED,false);hint.setPadding(dp(6),dp(4),dp(6),dp(4));content.addView(hint);
+        section("已添加");LinearLayout on=groupCard();
+        for(int i=0;i<ids.size();i++){Dashboard.Card card=Dashboard.find(ids.get(i));if(card!=null)boardRow(on,card,true,i>0,i<ids.size()-1);}
+        if(ids.isEmpty()){TextView t=text("还没有添加卡片",14,MUTED,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(14),dp(12),dp(14));on.addView(t);}
+        List<Dashboard.Card> rest=new ArrayList<>();for(Dashboard.Card card:Dashboard.ALL)if(!ids.contains(card.id))rest.add(card);
+        if(!rest.isEmpty()){section("可添加");LinearLayout off=groupCard();for(Dashboard.Card card:rest)boardRow(off,card,false,false,false);}
+        LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.topMargin=dp(6);content.addView(button("恢复默认组合",()->{saveBoard(Dashboard.DEFAULT);build();}),rp);
+        restoreViewport();
+    }
+    private void boardRow(LinearLayout group,Dashboard.Card card,boolean added,boolean canUp,boolean canDown){
+        if(group.getChildCount()>0){View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(62),0,dp(14),0);group.addView(divider,d);}
+        LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(8),dp(8),dp(8));row.setMinimumHeight(dp(60));
+        row.addView(theme.tile(card.symbol,36),new LinearLayout.LayoutParams(dp(36),dp(36)));
+        LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(14),0,dp(6),0);labels.addView(text(card.title,15,INK,false));
+        TextView sub=text(card.subtitle+(card.wide?" · 整行":" · 半宽"),12,MUTED,false);sub.setPadding(0,dp(2),0,0);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
+        if(added){row.addView(arrow(card,-1,canUp));row.addView(arrow(card,1,canDown));}
+        Switch toggle=new Switch(this);toggle.setChecked(added);toggle.setContentDescription((added?"移除":"添加")+card.title);toggle.setMinimumHeight(dp(48));
+        toggle.setOnCheckedChangeListener((b,checked)->{saveBoard(Dashboard.toggle(boardCards(),card.id));b.post(this::build);});
+        row.addView(toggle);group.addView(row);
+    }
+    private View arrow(Dashboard.Card card,int delta,boolean enabled){
+        FrameLayout f=new FrameLayout(this);ImageView icon=theme.icon("chevron",INK,14);icon.setRotation(delta<0?-90:90);f.addView(icon,new FrameLayout.LayoutParams(dp(14),dp(14),Gravity.CENTER));
+        f.setContentDescription((delta<0?"上移":"下移")+card.title);f.setEnabled(enabled);f.setAlpha(enabled?1f:.25f);
+        if(enabled){f.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,20),20));f.setFocusable(true);f.setClickable(true);f.setOnClickListener(v->{saveBoard(Dashboard.move(boardCards(),card.id,delta));build();});}
+        f.setLayoutParams(new LinearLayout.LayoutParams(dp(40),dp(48)));return f;
     }
     /** One-tap shortcuts in a single glass card, like WeChat's Discover entries: icon first, short name below. */
     private void quick(List<String> ids){
@@ -226,20 +300,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             TextView name=text(f.title,12,INK,false);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setPadding(0,dp(6),0,0);cell.addView(name);
             grid.addView(cell,new LinearLayout.LayoutParams(0,-2,1));}
     }
-    private LinearLayout dashboardResult;
-    private void dashboard(boolean refresh){
-        if(!resumed)return;
-        final LinearLayout target=dashboardResult;if(target==null)return;JSONObject cached=snapshots.get("overview");
-        if(cached!=null)FeatureRenderer.render(this,target,find("overview"),cached);
-        else {target.removeAllViews();TextView loading=text("正在更新概览…",14,MUTED,false);loading.setPadding(0,dp(12),0,dp(16));target.addView(loading);}
-        if(cached!=null&&!refresh)return;if(refresh)spin();int epoch=++generation;
-        worker.execute(()->{if(epoch!=generation)return;try{JSONObject data=read("overview");runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put("overview",data);FeatureRenderer.render(this,target,find("overview"),data);restoreViewport();});}
-        catch(Exception e){runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;
-            // The refresh may have invalidated the stored session; show the sign-in card instead of a
-            // signed-in home that can only ever fail (same handling as feature screens).
-            if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
-            if(cached==null)target.removeAllViews();LinearLayout c=theme.card(target);c.addView(text("概览暂未更新",17,INK,true));c.addView(text(safeError(e),14,MUTED,false));c.addView(button("重试",()->dashboard(true)));restoreViewport();});}});
-    }
+    private LinearLayout board;
     private void catalog(String category) {LinearLayout list=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals(category))featureRow(f,list);restoreViewport();}
     private void featureRow(FeatureCatalog.Feature f){featureRow(f,groupCard());}
     private void featureRow(FeatureCatalog.Feature f,LinearLayout list){featureRow(f.title,f.subtitle,ConsoleTheme.symbol(f.id),list,()->open(f));}
@@ -537,7 +598,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}
-    @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();dashboardResult=null;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God",24,INK,true));}}
+    @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();board=null;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God",24,INK,true));}}
     @Override protected void onDestroy(){++generation;if(ledger!=null)ledger.dispose();worker.shutdownNow();updateCancel.set(true);updater.shutdownNow();if(UpdateReceiver.listener==updateListener)UpdateReceiver.listener=null;super.onDestroy();}
     private FeatureCatalog.Feature find(String id){return FeatureCatalog.all().stream().filter(f->f.id.equals(id)).findFirst().orElse(null);}
     private void section(String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));content.addView(t);}

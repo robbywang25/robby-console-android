@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.9.0", "2026-10-15", "自己组合的看板",
+            "总览只保留「看板」和「常用」两块。",
+            "看板可以自由组合服务状态、提醒、实例、域名、OpenAI、访问、OKX、剪贴板和行情卡片。",
+            "点「编辑」开关卡片、调整顺序，随时可以恢复默认组合。",
+            "卡片点一下进入对应详情；某个来源读取失败只影响它自己的卡片。"),
         new Entry("0.8.0", "2026-10-15", "改名 God，支持个人头像",
             "应用名称改为 God。",
             "在「我」里点头像即可从相册选择个人头像，「我」这一栏也会显示它；头像只保存在本机。",
