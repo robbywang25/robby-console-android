@@ -38,7 +38,8 @@ public final class FeatureRenderer {
             ui.message("数据暂不可用", "响应版本或结构不兼容，请刷新重试。");
             return;
         }
-        ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : 600);
+        // 总览 carries its snapshot time inside the summary card instead of a separate row.
+        if (!feature.id.equals("overview")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : 600);
         switch (feature.id) {
             case "overview": overview(ui, payload); break;
             case "infrastructure": infrastructure(ui, obj(payload, "infrastructure")); break;
@@ -104,37 +105,37 @@ public final class FeatureRenderer {
      * Answer first: one hero sentence about service health, two figures that open their detail screen,
      * then reminders. Counts are only derived when all three numbers are present; otherwise it says 未知.
      */
+    /**
+     * 总览 in one card: the three figures side by side (each opens its detail), then service health, snapshot time and
+     * the reminder count as chips. Reminders get their own compact card only when there are any.
+     */
     private static void overview(UI u, JSONObject p) {
         JSONObject s = obj(p, "summary");
-        boolean wide=u.context.getResources().getConfiguration().screenWidthDp>=360&&u.context.getResources().getConfiguration().fontScale<1.3f;
-        LinearLayout hero = u.tile("在线服务", "pulse", "status");
-        SpannableStringBuilder figure = new SpannableStringBuilder(number(s, "servicesOnline"));
-        if (!number(s, "servicesTotal").equals(UNKNOWN)) { int from = figure.length(); figure.append(" / ").append(number(s, "servicesTotal"));
-            figure.setSpan(new AbsoluteSizeSpan(22, true), from, figure.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-            figure.setSpan(new ForegroundColorSpan(u.theme.muted), from, figure.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); }
-        TextView value = u.text("", 44, true); value.setText(figure); value.setPadding(0, u.dp(4), 0, u.dp(2)); hero.addView(value);
-        hero.addView(u.text("已知 " + number(s, "servicesKnown") + " / 总计 " + number(s, "servicesTotal"), 13, false));
-        LinearLayout chips = new LinearLayout(u.context); chips.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL); chips.setPadding(0, u.dp(12), 0, 0);
+        LinearLayout c = u.theme.card(u.root); c.setPadding(u.dp(10), u.dp(10), u.dp(10), u.dp(12));
+        boolean wide = u.context.getResources().getConfiguration().fontScale < 1.3f;
+        LinearLayout band = new LinearLayout(u.context); band.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL); c.addView(band);
+        SpannableStringBuilder services = new SpannableStringBuilder(number(s, "servicesOnline"));
+        if (!number(s, "servicesTotal").equals(UNKNOWN)) { int from = services.length(); services.append(" / ").append(number(s, "servicesTotal"));
+            services.setSpan(new AbsoluteSizeSpan(16, true), from, services.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            services.setSpan(new ForegroundColorSpan(u.theme.muted), from, services.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); }
+        u.figure(band, "在线服务", services, "已知 " + number(s, "servicesKnown"), "status", wide);
+        u.figure(band, "云实例", number(s, "infrastructureInstances"), "基础设施", "infrastructure", wide);
+        u.figure(band, "域名资产", number(s, "domainAssets"), "已登记", "domains", wide);
+        FlowRow chips = new FlowRow(u.context, u.dp(6), u.dp(6)); chips.setPadding(u.dp(6), u.dp(10), u.dp(6), 0); c.addView(chips);
         Object online = s.opt("servicesOnline"), known = s.opt("servicesKnown"), total = s.opt("servicesTotal");
         if (online instanceof Number && known instanceof Number && total instanceof Number) {
             long down = ((Number) known).longValue() - ((Number) online).longValue(), unknown = ((Number) total).longValue() - ((Number) known).longValue();
-            if (down <= 0 && unknown <= 0) u.chip(chips, "全部在线", u.theme.success);
-            if (down > 0) u.chip(chips, down + " 项未在线", u.theme.danger);
-            if (unknown > 0) u.chip(chips, unknown + " 项状态未知", u.theme.warning);
-        } else u.chip(chips, "状态未知", u.theme.faint);
-        hero.addView(chips);
-        LinearLayout band = new LinearLayout(u.context); band.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL); u.root.addView(band, new LinearLayout.LayoutParams(-1, -2));
-        String[][] figures = {{"云实例", "infrastructureInstances", "基础设施", "server", "infrastructure"}, {"域名资产", "domainAssets", "已登记域名", "globe", "domains"}};
-        for (int i = 0; i < figures.length; i++) {
-            LinearLayout tile = u.tile(figures[i][0], figures[i][3], figures[i][4], band);
-            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) tile.getLayoutParams(); if (wide) { lp.width = 0; lp.weight = 1; if (i == 0) lp.rightMargin = u.dp(12); }
-            TextView v = u.text(number(s, figures[i][1]), 30, true); v.setPadding(0, u.dp(4), 0, u.dp(2)); tile.addView(v); tile.addView(u.text(figures[i][2], 12, false));
-        }
+            if (down <= 0 && unknown <= 0) u.pill(chips, "全部在线", u.theme.success);
+            if (down > 0) u.pill(chips, down + " 项未在线", u.theme.danger);
+            if (unknown > 0) u.pill(chips, unknown + " 项状态未知", u.theme.warning);
+        } else u.pill(chips, "服务状态未知", u.theme.faint);
         JSONArray notices = arr(p, "notices");
-        LinearLayout c = u.card("待办提醒");
-        if (notices.length() == 0) u.paragraph(c, "暂无提醒");
+        u.pill(chips, notices.length() == 0 ? "暂无提醒" : notices.length() + " 条提醒", notices.length() == 0 ? u.theme.success : u.theme.warning);
+        String[] fresh = u.fresh(p, 600); u.pill(chips, fresh[0], fresh[1].equals("ok") ? u.theme.success : fresh[1].equals("warn") ? u.theme.warning : u.theme.faint);
+        if (notices.length() == 0) return;
+        LinearLayout list = u.card("待办提醒");
         for (int i = 0; i < limit(u, notices); i++) { JSONObject n = notices.optJSONObject(i); if (n == null) continue;
-            String level = state(n, "severity"); u.notice(c, s(n, "title"), s(n, "detail"), "级别 " + level + (n.has("expiresAt") ? " · 到期 " + date(n, "expiresAt") : ""), level); }
+            String level = state(n, "severity"); u.notice(list, s(n, "title"), s(n, "detail"), "级别 " + level + (n.has("expiresAt") ? " · 到期 " + date(n, "expiresAt") : ""), level); }
     }
     private static void infrastructure(UI u, JSONObject p) {
         if (p.length() == 0) { u.message("基础设施", "当前快照未提供实例数据"); return; }
@@ -565,6 +566,18 @@ public final class FeatureRenderer {
             } else t.setBackground(theme.card());
             return t;
         }
+        /** One overview figure column; opens {@code target} when the host can navigate. */
+        void figure(LinearLayout band,String label,CharSequence value,String caption,String target,boolean wide){
+            LinearLayout f=new LinearLayout(context);f.setOrientation(LinearLayout.VERTICAL);f.setPadding(dp(8),dp(6),dp(6),dp(6));
+            f.addView(text(label,12,false));TextView v=text("",24,true);v.setText(value);v.setPadding(0,dp(2),0,dp(1));f.addView(v);TextView cap=text(caption,11,false);cap.setTextColor(theme.faint);f.addView(cap);
+            if(context instanceof Opener&&FeatureCatalog.find(target)!=null){f.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,14),14));f.setFocusable(true);f.setClickable(true);f.setOnClickListener(x->((Opener)context).openFeature(target));theme.press(f);
+                f.setContentDescription(label+" "+value+"，"+caption+"，查看"+FeatureCatalog.find(target).title);}
+            band.addView(f,wide?new LinearLayout.LayoutParams(0,-2,1):new LinearLayout.LayoutParams(-1,-2));
+        }
+        void pill(android.view.ViewGroup parent,String label,int color){
+            LinearLayout chip=new LinearLayout(context);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(9),dp(4),dp(10),dp(4));chip.setBackground(theme.shape(theme.soft,99));
+            chip.addView(theme.dot(color,6));TextView t=text(label,12,false);t.setTextColor(theme.ink);t.setPadding(dp(5),0,0,0);chip.addView(t);parent.addView(chip);
+        }
         void chip(LinearLayout parent,String label,int color){
             LinearLayout chip=new LinearLayout(context);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(10),dp(5),dp(12),dp(5));chip.setBackground(theme.shape(theme.soft,99));
             chip.addView(theme.dot(color,7));TextView t=text(label,13,true);t.setPadding(dp(6),0,0,0);chip.addView(t);
@@ -573,11 +586,11 @@ public final class FeatureRenderer {
         /** One reminder line inside a card: severity dot, title, detail and meta. The level stays as text. */
         void notice(LinearLayout c,String title,String detail,String meta,String level){
             if(c.getChildCount()>1)divider(c);
-            LinearLayout r=new LinearLayout(context);r.setPadding(0,dp(10),0,dp(10));
-            int color=theme.status(level);View dot=theme.dot(color==0?theme.accent:color,8);LinearLayout.LayoutParams dp8=(LinearLayout.LayoutParams)dot.getLayoutParams();dp8.topMargin=dp(7);dp8.rightMargin=dp(12);r.addView(dot,dp8);
-            LinearLayout texts=new LinearLayout(context);texts.setOrientation(LinearLayout.VERTICAL);texts.addView(text(title,15,true));
-            if(!detail.equals(UNKNOWN)){TextView d=text(detail,14,false);d.setPadding(0,dp(3),0,0);texts.addView(d);}
-            TextView m=text(meta,12,false);m.setTextColor(theme.faint);m.setPadding(0,dp(4),0,0);texts.addView(m);r.addView(texts,new LinearLayout.LayoutParams(0,-2,1));c.addView(r);
+            LinearLayout r=new LinearLayout(context);r.setPadding(0,dp(7),0,dp(7));
+            int color=theme.status(level);View dot=theme.dot(color==0?theme.accent:color,7);LinearLayout.LayoutParams dp8=(LinearLayout.LayoutParams)dot.getLayoutParams();dp8.topMargin=dp(6);dp8.rightMargin=dp(10);r.addView(dot,dp8);
+            LinearLayout texts=new LinearLayout(context);texts.setOrientation(LinearLayout.VERTICAL);texts.addView(text(title,14,true));
+            if(!detail.equals(UNKNOWN)){TextView d=text(detail,13,false);d.setPadding(0,dp(2),0,0);texts.addView(d);}
+            TextView m=text(meta,11,false);m.setTextColor(theme.faint);m.setPadding(0,dp(2),0,0);texts.addView(m);r.addView(texts,new LinearLayout.LayoutParams(0,-2,1));c.addView(r);
         }
         int tone(int t){return t==StatusPage.OK?theme.success:t==StatusPage.WARN?theme.warning:t==StatusPage.BAD?theme.danger:theme.faint;}
         void heading(String title,String note){TextView h=text(title,15,true);h.setAccessibilityHeading(true);h.setPadding(dp(6),dp(18),0,note==null?dp(10):dp(2));root.addView(h);
@@ -669,18 +682,23 @@ public final class FeatureRenderer {
                 TextView t=text(pairs[i+1]+" "+value,12,false);t.setTextColor(theme.ink);chip.addView(t);chip.setContentDescription(pairs[i+1]+"，"+value);flow.addView(chip);}
             c.addView(flow);
         }
-        void freshness(JSONObject p, int maxSeconds) {
-            String state = "更新时间未知"; Object generated = p.opt("generatedAt"); int tone = theme.faint;
+        /** Snapshot age as {text, "ok" | "warn" | "none"}; stale or partial sources never read as fresh. */
+        String[] fresh(JSONObject p, int maxSeconds) {
+            String state = "更新时间未知", tone = "none"; Object generated = p.opt("generatedAt");
             if (generated instanceof String) try {
                 long age = java.time.Duration.between(Instant.parse((String) generated), Instant.now()).getSeconds();
-                state = age < -5 ? "快照时间异常" : age > maxSeconds ? "快照已过期" : "快照时间 " + date(p, "generatedAt");
-                tone = age < -5 || age > maxSeconds ? theme.warning : theme.success;
-            } catch (RuntimeException ignored) { state = "更新时间异常"; tone = theme.warning; }
-            if (Boolean.TRUE.equals(p.opt("stale"))) { state += " · 来源数据陈旧"; tone = theme.warning; }
-            if (Boolean.TRUE.equals(p.opt("partial"))) { state += " · 部分数据"; tone = theme.warning; }
-            LinearLayout pill = new LinearLayout(context); pill.setGravity(Gravity.CENTER_VERTICAL); pill.setPadding(dp(10), dp(6), dp(12), dp(6)); pill.setBackground(theme.glass(-1));
-            pill.addView(theme.dot(tone, 7)); TextView label = text(state, 12, false); label.setPadding(dp(6), 0, 0, 0); pill.addView(label);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.bottomMargin = dp(12); lp.leftMargin = dp(2); root.addView(pill, lp);
+                state = age < -5 ? "快照时间异常" : age > maxSeconds ? "快照已过期" : "快照 " + date(p, "generatedAt");
+                tone = age < -5 || age > maxSeconds ? "warn" : "ok";
+            } catch (RuntimeException ignored) { state = "更新时间异常"; tone = "warn"; }
+            if (Boolean.TRUE.equals(p.opt("stale"))) { state += " · 来源数据陈旧"; tone = "warn"; }
+            if (Boolean.TRUE.equals(p.opt("partial"))) { state += " · 部分数据"; tone = "warn"; }
+            return new String[]{state, tone};
+        }
+        void freshness(JSONObject p, int maxSeconds) {
+            String[] f = fresh(p, maxSeconds); int tone = f[1].equals("ok") ? theme.success : f[1].equals("warn") ? theme.warning : theme.faint;
+            LinearLayout pill = new LinearLayout(context); pill.setGravity(Gravity.CENTER_VERTICAL); pill.setPadding(dp(10), dp(5), dp(12), dp(5)); pill.setBackground(theme.glass(-1));
+            pill.addView(theme.dot(tone, 7)); TextView label = text(f[0].startsWith("快照 ") ? "快照时间 " + f[0].substring(3) : f[0], 12, false); label.setPadding(dp(6), 0, 0, 0); pill.addView(label);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.bottomMargin = dp(10); lp.leftMargin = dp(2); root.addView(pill, lp);
         }
     }
 }

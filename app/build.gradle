@@ -9,8 +9,8 @@ android {
   applicationId 'wang.robby.console.android'
   minSdk 30
   targetSdk 36
-  versionCode 15
-  versionName '0.7.0'
+  versionCode 16
+  versionName '0.8.0'
   testInstrumentationRunner (project.hasProperty('liveAcceptance') ? 'wang.robby.console.android.LiveReadAcceptance' : 'android.test.InstrumentationTestRunner')
  }
  signingConfigs {

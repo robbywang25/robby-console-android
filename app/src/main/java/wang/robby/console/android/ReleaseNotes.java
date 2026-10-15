@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.8.0", "2026-10-15", "改名 God，支持个人头像",
+            "应用名称改为 God。",
+            "在「我」里点头像即可从相册选择个人头像，「我」这一栏也会显示它；头像只保存在本机。",
+            "总览把三项核心数字放进一张卡片，状态、提醒和快照时间收成一行标签。",
+            "去掉总览里与底部导航重复的「全部功能」，常用入口更紧凑。"),
         new Entry("0.7.0", "2026-10-15", "应用内登录与紧凑页面",
             "Passkey 登录在应用内的登录页完成，验证后直接回到 God 工作台。",
             "应用图标改为黑底满版，在 Pixel 等桌面上不再是白底上的小图标。",

@@ -3,7 +3,7 @@
  <uses-permission android:name="android.permission.INTERNET" />
  <!-- In-app update hands a verified APK of this same app to the system installer, which asks the person to confirm. -->
  <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
- <application android:label="God 工作台" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
+ <application android:label="God" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
   <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
    <intent-filter android:autoVerify="true">

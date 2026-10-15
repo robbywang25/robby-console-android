@@ -26,7 +26,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private static final List<String> TABS=List.of("总览","洞察","资产","工具","设置");
     /** Tab whose lens was last drawn, so the lens can glide from it; -1 before the first frame. */
     private int shownTab=-1; private int enterFrom=0; private View refreshIcon;
-    /** Pseudo feature id for 关于 God 工作台; it has no API path and lives in the 设置 tab's reading context. */
+    /** Pseudo feature id for 关于 God; it has no API path and lives in the 设置 tab's reading context. */
     private static final String ABOUT="about";
     /** Release-note cards the reader expanded; process memory only, like the other reading context. */
     private final Set<String> expandedNotes=new HashSet<>();
@@ -113,11 +113,17 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
+        if(request==PICK_AVATAR){
+            if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri picked=data.getData();
+            updater.execute(()->{try{Avatar.save(this,picked);runOnUiThread(()->{if(!isDestroyed())build();});}
+                catch(Exception e){runOnUiThread(()->error("头像未更新","无法读取这张图片，请换一张试试。"));}});
+            return;
+        }
         if(request!=AUTH_TAB||coordinator==null)return;
         if(result==RESULT_OK&&data!=null&&data.getData()!=null){coordinator.callback(data.getData());return;}
         // 2 and 3 are Auth Tab's verification failed / timed out: the tab could not prove this app owns the callback.
-        if(result==2||result==3){browserLogin=true;session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God 工作台");
-            show(new AlertDialog.Builder(this).setTitle("登录未完成").setMessage("应用内登录页暂时无法确认 God 工作台的身份。可以改用浏览器登录，完成后会自动回到应用。")
+        if(result==2||result==3){browserLogin=true;session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");
+            show(new AlertDialog.Builder(this).setTitle("登录未完成").setMessage("应用内登录页暂时无法确认 God的身份。可以改用浏览器登录，完成后会自动回到应用。")
                 .setNegativeButton("取消",null).setPositiveButton("用浏览器登录",(d,w)->login()));}
         // RESULT_CANCELED: the person closed the page, or a browser without tabs took over and the App Link will answer.
     }
@@ -143,7 +149,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
         leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);refreshIcon=null;
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
-        session=text(PreviewMode.isBuild()?"界面预览 · 合成数据":!nested&&group.equals("总览")?today():"God 工作台",12,MUTED,false);
+        session=text(PreviewMode.isBuild()?"界面预览 · 合成数据":!nested&&group.equals("总览")?today():"God",12,MUTED,false);
         if(nested){
             // Detail pages: WeChat-style centred title between two round glass controls of equal width.
             heading=text("",17,INK,true);heading.setMaxLines(2);heading.setEllipsize(android.text.TextUtils.TruncateAt.END);heading.setGravity(Gravity.CENTER);heading.setAccessibilityHeading(true);
@@ -171,10 +177,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             boolean selected=group.equals(label);String name=ConsoleTheme.tabLabel(label);LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);
             tab.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,0),-1));tab.setSelected(selected);tab.setFocusable(true);tab.setClickable(true);tab.setContentDescription(name+(selected?"，已选中":""));tab.setTooltipText(name);
             if(label.equals("设置")&&notesUnread()){
-                FrameLayout badge=new FrameLayout(this);badge.addView(theme.tabIcon(ConsoleTheme.symbol(label),selected,24),new FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER));
+                FrameLayout badge=new FrameLayout(this);badge.addView(tabGlyph(label,selected),new FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER));
                 badge.addView(theme.dot(theme.unread,8),new FrameLayout.LayoutParams(dp(8),dp(8),Gravity.TOP|Gravity.END));tab.addView(badge,new LinearLayout.LayoutParams(dp(32),dp(26)));
                 tab.setContentDescription(name+(selected?"，已选中":"")+"，有新版本说明");
-            }else tab.addView(theme.tabIcon(ConsoleTheme.symbol(label),selected,24));
+            }else tab.addView(tabGlyph(label,selected));
             TextView caption=text(name,11,selected?INK:MUTED,selected);caption.setPadding(0,dp(2),0,0);caption.setSingleLine(true);caption.setGravity(Gravity.CENTER);caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tab.addView(caption);
             tab.setOnClickListener(v->{if(!group.equals(label))v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);switchTab(label);});theme.press(tab);
             tabs.addView(tab,new LinearLayout.LayoutParams(0,-1,1));
@@ -208,18 +214,16 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             dashboardResult=new LinearLayout(this);dashboardResult.setOrientation(LinearLayout.VERTICAL);content.addView(dashboardResult,new LinearLayout.LayoutParams(-1,-2));dashboard(false);
         }
         section("常用");quick(List.of("travel-ledger","clipboard","openai","domains"));
-        section("全部功能");LinearLayout all=groupCard();
-        for(String label:List.of("洞察","资产","工具"))featureRow(label,label.equals("洞察")?"访问、行情与用量":label.equals("资产")?"基础设施、域名与运行状态":"账本、图片与内容管理",ConsoleTheme.symbol(label),all,()->switchTab(label));
         if(!loggedIn()||snapshots.containsKey("overview"))restoreViewport();
     }
     /** One-tap shortcuts in a single glass card, like WeChat's Discover entries: icon first, short name below. */
     private void quick(List<String> ids){
-        LinearLayout grid=card();grid.setOrientation(LinearLayout.HORIZONTAL);grid.setPadding(dp(6),dp(14),dp(6),dp(12));
+        LinearLayout grid=card();grid.setOrientation(LinearLayout.HORIZONTAL);grid.setPadding(dp(4),dp(10),dp(4),dp(8));
         for(String id:ids){FeatureCatalog.Feature f=find(id);if(f==null)continue;
             LinearLayout cell=new LinearLayout(this);cell.setOrientation(LinearLayout.VERTICAL);cell.setGravity(Gravity.CENTER_HORIZONTAL);cell.setPadding(dp(2),dp(4),dp(2),dp(4));
             cell.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,16),16));cell.setFocusable(true);cell.setClickable(true);cell.setContentDescription(f.title+"，"+f.subtitle);cell.setOnClickListener(v->open(f));theme.press(cell);
-            cell.addView(theme.tile(ConsoleTheme.symbol(f.id),48),new LinearLayout.LayoutParams(dp(48),dp(48)));
-            TextView name=text(f.title,12,INK,false);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setPadding(0,dp(8),0,0);cell.addView(name);
+            cell.addView(theme.tile(ConsoleTheme.symbol(f.id),40),new LinearLayout.LayoutParams(dp(40),dp(40)));
+            TextView name=text(f.title,12,INK,false);name.setGravity(Gravity.CENTER);name.setMaxLines(2);name.setPadding(0,dp(6),0,0);cell.addView(name);
             grid.addView(cell,new LinearLayout.LayoutParams(0,-2,1));}
     }
     private LinearLayout dashboardResult;
@@ -271,7 +275,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(cached!=null&&!refresh)return;
         if(!resumed)return;
         int epoch=++generation;
-        worker.execute(()->{if(epoch!=generation)return;try{JSONObject data=read(key);runOnUiThread(()->{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God 工作台");render(f,result,data);restoreViewport();});}
+        worker.execute(()->{if(epoch!=generation)return;try{JSONObject data=read(key);runOnUiThread(()->{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");render(f,result,data);restoreViewport();});}
         catch(Exception e){runOnUiThread(()->{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);TextView warning=text(safeError(e),15,theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();});}});
     }
     private void render(FeatureCatalog.Feature f,LinearLayout result,JSONObject data) {
@@ -319,18 +323,47 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");LinearLayout about=groupCard();
         featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
-        String version=versionName();LinearLayout info=featureRow("God 工作台",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
+        String version=versionName();LinearLayout info=featureRow("God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
         if(notesUnread()){View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);info.setContentDescription(info.getContentDescription()+"，有新版本说明");}
         restoreViewport();
     }
     /** Account card at the top of 我, in WeChat's profile position; opens the same sign-in / sign-out choices as before. */
     private void profile(){
         boolean logged=loggedIn();LinearLayout c=card();c.setOrientation(LinearLayout.HORIZONTAL);c.setGravity(Gravity.CENTER_VERTICAL);c.setPadding(dp(16),dp(18),dp(14),dp(18));
-        c.setBackground(theme.ripple(theme.card(),24));c.setFocusable(true);c.setClickable(true);c.setContentDescription(logged?"账号与退出登录":"登录 God 工作台");c.setOnClickListener(v->account());theme.press(c);
-        FrameLayout avatar=new FrameLayout(this);avatar.setBackground(theme.glass(-1));avatar.addView(theme.icon("user",INK,28),new FrameLayout.LayoutParams(dp(28),dp(28),Gravity.CENTER));c.addView(avatar,new LinearLayout.LayoutParams(dp(60),dp(60)));
+        c.setBackground(theme.ripple(theme.card(),24));c.setFocusable(true);c.setClickable(true);c.setContentDescription(logged?"账号与退出登录":"登录 God");c.setOnClickListener(v->account());theme.press(c);
+        // The avatar is its own tap target (更换头像); the rest of the card keeps opening the account choices.
+        android.graphics.Bitmap picture=Avatar.get(this);FrameLayout avatar=new FrameLayout(this);
+        if(picture==null){avatar.setBackground(theme.glass(-1));avatar.addView(theme.icon("user",INK,28),new FrameLayout.LayoutParams(dp(28),dp(28),Gravity.CENTER));}
+        else avatar.addView(Avatar.view(this,picture),new FrameLayout.LayoutParams(-1,-1));
+        FrameLayout edit=new FrameLayout(this);edit.setBackground(theme.glass(-1));edit.addView(theme.icon("edit",INK,11),new FrameLayout.LayoutParams(dp(11),dp(11),Gravity.CENTER));
+        avatar.addView(edit,new FrameLayout.LayoutParams(dp(22),dp(22),Gravity.BOTTOM|Gravity.END));
+        avatar.setFocusable(true);avatar.setClickable(true);avatar.setContentDescription(picture==null?"设置头像":"更换头像");avatar.setOnClickListener(v->avatarMenu());theme.press(avatar);
+        c.addView(avatar,new LinearLayout.LayoutParams(dp(60),dp(60)));
         LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(16),0,dp(8),0);labels.addView(text(logged?"已登录":"尚未登录",20,INK,true));
         TextView detail=text(logged?"Passkey · 设备加密存储":"使用 Passkey 或已有设备登录",13,MUTED,false);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
         c.addView(labels,new LinearLayout.LayoutParams(0,-2,1));ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);c.addView(chevron);
+    }
+    private static final int PICK_AVATAR=42;
+    /** 我 tab glyph: the avatar when one is set (ringed when selected), otherwise the person symbol. */
+    private View tabGlyph(String label,boolean selected){
+        android.graphics.Bitmap picture=label.equals("设置")?Avatar.get(this):null;
+        if(picture==null)return theme.tabIcon(ConsoleTheme.symbol(label),selected,24);
+        FrameLayout f=new FrameLayout(this);int inner=selected?20:24;f.addView(Avatar.view(this,picture),new FrameLayout.LayoutParams(dp(inner),dp(inner),Gravity.CENTER));
+        if(selected){GradientDrawable ring=new GradientDrawable();ring.setShape(GradientDrawable.OVAL);ring.setStroke(dp(1.5f),INK);f.setBackground(ring);}
+        f.setLayoutParams(new LinearLayout.LayoutParams(dp(24),dp(24)));return f;
+    }
+    private void avatarMenu(){
+        boolean has=Avatar.get(this)!=null;
+        show(new AlertDialog.Builder(this).setTitle("个人头像").setItems(has?new String[]{"从相册选择","移除头像"}:new String[]{"从相册选择"},(d,w)->{
+            if(w==0)pickAvatar();else{Avatar.clear(this);build();}
+        }).setNegativeButton("取消",null));
+    }
+    /** System photo picker where available (no storage permission); otherwise any app that offers an image. */
+    private void pickAvatar(){
+        // Launch directly: package visibility hides the picker from resolveActivity() on Android 11+.
+        try{startActivityForResult(new Intent("android.provider.action.PICK_IMAGES").setType("image/*"),PICK_AVATAR);return;}catch(ActivityNotFoundException ignored){}
+        try{startActivityForResult(new Intent(Intent.ACTION_GET_CONTENT).setType("image/*").addCategory(Intent.CATEGORY_OPENABLE),PICK_AVATAR);}
+        catch(ActivityNotFoundException e){error("无法选择图片","手机上没有可以选择图片的应用。");}
     }
     private void openAbout(){++generation;selectedId=ABOUT;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
     private android.content.SharedPreferences prefs(){return getSharedPreferences("god-ui",MODE_PRIVATE);}
@@ -342,7 +375,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         return ReleaseNotes.unread(prefs().getString("notesSeen",null),versionName(),upgraded);
     }
     /**
-     * 关于 God 工作台, modelled on WeChat's 关于微信: brand and version first, one way to get a newer build,
+     * 关于 God, modelled on WeChat's 关于微信: brand and version first, one way to get a newer build,
      * then 更新记录 newest first. The installed version is expanded and marked; older ones show their one-line
      * theme until tapped, so the page scans like a list and reads like notes.
      */
@@ -352,7 +385,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         String version=versionName();
         LinearLayout hero=new LinearLayout(this);hero.setOrientation(LinearLayout.VERTICAL);hero.setGravity(Gravity.CENTER_HORIZONTAL);hero.setPadding(0,dp(10),0,dp(22));
         FrameLayout mark=new FrameLayout(this);mark.setBackground(theme.glass(-1));mark.addView(theme.tabIcon("grid",true,38),new FrameLayout.LayoutParams(dp(38),dp(38),Gravity.CENTER));hero.addView(mark,new LinearLayout.LayoutParams(dp(76),dp(76)));
-        TextView name=text("God 工作台",22,INK,true);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(14),0,dp(4));hero.addView(name);
+        TextView name=text("God",22,INK,true);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(14),0,dp(4));hero.addView(name);
         TextView build=text(version.isEmpty()?"Android":"Android "+version,14,MUTED,false);build.setGravity(Gravity.CENTER);hero.addView(build);content.addView(hero);
         // Update lives right under the version, like 关于微信: the check runs once when the page first opens.
         updateBox=new LinearLayout(this);updateBox.setOrientation(LinearLayout.VERTICAL);content.addView(updateBox);renderUpdate();
@@ -414,7 +447,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void startUpdate(){
         AppUpdate.Release r=update;if(r==null||updateBusy())return;
         if(!getPackageManager().canRequestPackageInstalls()){
-            show(new AlertDialog.Builder(this).setTitle("允许安装更新").setMessage("Android 需要你允许 God 工作台安装应用。在设置里打开「允许来自此来源的应用」，返回后会自动继续更新。")
+            show(new AlertDialog.Builder(this).setTitle("允许安装更新").setMessage("Android 需要你允许 God安装应用。在设置里打开「允许来自此来源的应用」，返回后会自动继续更新。")
                 .setNegativeButton("取消",null).setPositiveButton("去设置",(d,w)->{awaitingInstallPermission=true;
                     try{startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:"+getPackageName())));}
                     catch(ActivityNotFoundException e){awaitingInstallPermission=false;error("无法打开设置","请在系统设置里允许本应用安装应用。");}}));
@@ -487,7 +520,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         c=step(2,"输入这组一次性代码");
         TextView code=text(info.userCode,30,INK,true);code.setLetterSpacing(0.12f);code.setPadding(0,dp(18),0,dp(18));code.setGravity(Gravity.CENTER);code.setBackground(theme.shape(theme.soft,18));
         LinearLayout.LayoutParams box=new LinearLayout.LayoutParams(-1,-2);box.topMargin=dp(14);box.bottomMargin=dp(14);c.addView(code,box);
-        c.addView(text("核对应用为 God 工作台 Android，再确认授权。不要把代码发给其他人。",14,MUTED,false));
+        c.addView(text("核对应用为「God 工作台 Android」，再确认授权。不要把代码发给其他人。",14,MUTED,false));
         c=step(3,"完成后自动进入工作台");
         TextView note=text("代码仅在本次验证有效；请保持两台设备联网。",14,MUTED,false);note.setPadding(0,dp(10),0,0);c.addView(note);
         LinearLayout.LayoutParams cancel=new LinearLayout.LayoutParams(-1,-2);cancel.topMargin=dp(4);content.addView(button("取消验证",()->{coordinator.cancelDeviceLogin();build();}),cancel);restoreViewport();
@@ -499,15 +532,15 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     private void deviceLogin(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy())return;coordinator.loginWithDevice();}
     private void login(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy())return;session.setText("正在准备安全登录…");coordinator.login();}
-    private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){show(new AlertDialog.Builder(this).setTitle("登录 God 工作台").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录"},(d,w)->{if(w==0)deviceLogin();else login();}).setNegativeButton("取消",null));return;}show(new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->{++generation;snapshots.clear();navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}));}
+    private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){show(new AlertDialog.Builder(this).setTitle("登录 God").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录"},(d,w)->{if(w==0)deviceLogin();else login();}).setNegativeButton("取消",null));return;}show(new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->{++generation;snapshots.clear();navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}));}
     private void goBack(){if(coordinator==null){finish();return;}if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){saveViewport();++generation;if(project!=null){project=null;ledgerCursor=null;ledgerPages.clear();showFeature(find(selectedId),true);}else{selectedId=null;enterFrom=-1;build();}}else if(!group.equals("总览")){switchTab("总览");}else moveTaskToBack(true);}
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}
-    @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();dashboardResult=null;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God 工作台",24,INK,true));}}
+    @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();dashboardResult=null;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God",24,INK,true));}}
     @Override protected void onDestroy(){++generation;if(ledger!=null)ledger.dispose();worker.shutdownNow();updateCancel.set(true);updater.shutdownNow();if(UpdateReceiver.listener==updateListener)UpdateReceiver.listener=null;super.onDestroy();}
     private FeatureCatalog.Feature find(String id){return FeatureCatalog.all().stream().filter(f->f.id.equals(id)).findFirst().orElse(null);}
-    private void section(String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(18),0,dp(10));content.addView(t);}
+    private void section(String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));content.addView(t);}
     private LinearLayout card(){return theme.card(content);}
     private TextView text(String s,int size,int color,boolean bold){TextView t=theme.text(s,size,bold);t.setTextColor(color);return t;}
     private Button button(String label,Runnable action){return theme.button(label,action);}
