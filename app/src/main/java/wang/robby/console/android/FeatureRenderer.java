@@ -4,7 +4,12 @@ import android.content.Context;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.AbsoluteSizeSpan;
+import android.text.style.ForegroundColorSpan;
 import android.view.Gravity;
+import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import org.json.JSONArray;
@@ -18,6 +23,8 @@ import java.util.Locale;
 /** Explicit presentation allowlists. Never traverses or prints arbitrary JSON, credentials or clipboard content. */
 public final class FeatureRenderer {
     private FeatureRenderer() {}
+    /** Implemented by the host so overview figures can open their detail screen. */
+    public interface Opener { void openFeature(String id); }
     private static final String UNKNOWN = "未知";
     private static final int MAX_ROWS = 100;
 
@@ -90,24 +97,41 @@ public final class FeatureRenderer {
     private static boolean version(JSONObject p, int n) {
         Object value = p.opt("schemaVersion"); return value instanceof Number && ((Number) value).doubleValue() == n;
     }
+    /**
+     * Answer first: one hero sentence about service health, two figures that open their detail screen,
+     * then reminders. Counts are only derived when all three numbers are present; otherwise it says 未知.
+     */
     private static void overview(UI u, JSONObject p) {
         JSONObject s = obj(p, "summary");
         boolean wide=u.context.getResources().getConfiguration().screenWidthDp>=360&&u.context.getResources().getConfiguration().fontScale<1.3f;
-        String[][] metrics={{"在线服务",number(s,"servicesOnline"),"已知 "+number(s,"servicesKnown")+" / 总计 "+number(s,"servicesTotal"),"pulse"},{"云实例",number(s,"infrastructureInstances"),"基础设施","server"},{"域名资产",number(s,"domainAssets"),"已登记域名","globe"}};
-        LinearLayout band=null;
-        for(int i=0;i<metrics.length;i++){
-            if(i==0||i==1||!wide){band=new LinearLayout(u.context);band.setOrientation(LinearLayout.HORIZONTAL);u.root.addView(band,new LinearLayout.LayoutParams(-1,-2));}
-            LinearLayout tile=new LinearLayout(u.context);tile.setOrientation(LinearLayout.VERTICAL);tile.setPadding(u.dp(18),u.dp(16),u.dp(18),u.dp(16));tile.setBackground(u.theme.card());
-            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.bottomMargin=u.dp(12);if(i==1&&wide)lp.rightMargin=u.dp(10);band.addView(tile,lp);
-            LinearLayout line=new LinearLayout(u.context);line.setGravity(Gravity.CENTER_VERTICAL);TextView label=u.text(metrics[i][0],14,false);line.addView(label,new LinearLayout.LayoutParams(0,-2,1));line.addView(u.theme.icon(metrics[i][3],u.theme.accent,20));tile.addView(line);
-            TextView value=u.text(metrics[i][1],i==0?34:28,true);value.setPadding(0,u.dp(6),0,u.dp(2));tile.addView(value);tile.addView(u.text(metrics[i][2],12,false));
+        LinearLayout hero = u.tile("在线服务", "pulse", "status");
+        SpannableStringBuilder figure = new SpannableStringBuilder(number(s, "servicesOnline"));
+        if (!number(s, "servicesTotal").equals(UNKNOWN)) { int from = figure.length(); figure.append(" / ").append(number(s, "servicesTotal"));
+            figure.setSpan(new AbsoluteSizeSpan(22, true), from, figure.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            figure.setSpan(new ForegroundColorSpan(u.theme.muted), from, figure.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE); }
+        TextView value = u.text("", 44, true); value.setText(figure); value.setPadding(0, u.dp(4), 0, u.dp(2)); hero.addView(value);
+        hero.addView(u.text("已知 " + number(s, "servicesKnown") + " / 总计 " + number(s, "servicesTotal"), 13, false));
+        LinearLayout chips = new LinearLayout(u.context); chips.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL); chips.setPadding(0, u.dp(12), 0, 0);
+        Object online = s.opt("servicesOnline"), known = s.opt("servicesKnown"), total = s.opt("servicesTotal");
+        if (online instanceof Number && known instanceof Number && total instanceof Number) {
+            long down = ((Number) known).longValue() - ((Number) online).longValue(), unknown = ((Number) total).longValue() - ((Number) known).longValue();
+            if (down <= 0 && unknown <= 0) u.chip(chips, "全部在线", u.theme.success);
+            if (down > 0) u.chip(chips, down + " 项未在线", u.theme.danger);
+            if (unknown > 0) u.chip(chips, unknown + " 项状态未知", u.theme.warning);
+        } else u.chip(chips, "状态未知", u.theme.faint);
+        hero.addView(chips);
+        LinearLayout band = new LinearLayout(u.context); band.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL); u.root.addView(band, new LinearLayout.LayoutParams(-1, -2));
+        String[][] figures = {{"云实例", "infrastructureInstances", "基础设施", "server", "infrastructure"}, {"域名资产", "domainAssets", "已登记域名", "globe", "domains"}};
+        for (int i = 0; i < figures.length; i++) {
+            LinearLayout tile = u.tile(figures[i][0], figures[i][3], figures[i][4], band);
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) tile.getLayoutParams(); if (wide) { lp.width = 0; lp.weight = 1; if (i == 0) lp.rightMargin = u.dp(12); }
+            TextView v = u.text(number(s, figures[i][1]), 30, true); v.setPadding(0, u.dp(4), 0, u.dp(2)); tile.addView(v); tile.addView(u.text(figures[i][2], 12, false));
         }
-        LinearLayout c;
         JSONArray notices = arr(p, "notices");
-        if (notices.length() == 0) u.message("待办提醒", "暂无提醒");
+        LinearLayout c = u.card("待办提醒");
+        if (notices.length() == 0) u.paragraph(c, "暂无提醒");
         for (int i = 0; i < limit(u, notices); i++) { JSONObject n = notices.optJSONObject(i); if (n == null) continue;
-            c = u.card(s(n, "title")); u.row(c, "级别", state(n, "severity")); u.paragraph(c, s(n, "detail"));
-            if (n.has("expiresAt")) u.row(c, "到期", date(n, "expiresAt")); }
+            String level = state(n, "severity"); u.notice(c, s(n, "title"), s(n, "detail"), "级别 " + level + (n.has("expiresAt") ? " · 到期 " + date(n, "expiresAt") : ""), level); }
     }
     private static void infrastructure(UI u, JSONObject p) {
         if (p.length() == 0) { u.message("基础设施", "当前快照未提供实例数据"); return; }
@@ -385,30 +409,66 @@ public final class FeatureRenderer {
         UI(Context c, LinearLayout r) { context=c;root=r;theme=new ConsoleTheme(c);ink=theme.ink;muted=theme.muted;background=theme.surface;border=theme.line; }
         int dp(float n) { return Math.round(n * context.getResources().getDisplayMetrics().density); }
         TextView text(String value, int size, boolean bold) {return theme.text(value,size,bold);}
-        LinearLayout card(String title) {LinearLayout c=theme.card(root);TextView heading=text(title,17,true);heading.setAccessibilityHeading(true);heading.setPadding(0,0,0,dp(10));c.addView(heading);return c;}
+        LinearLayout card(String title) {LinearLayout c=theme.card(root);TextView heading=text(title,16,true);heading.setAccessibilityHeading(true);heading.setPadding(0,0,0,dp(6));c.addView(heading);return c;}
+        /** Figure card with label and tinted symbol; opens {@code target} when the host supports it. */
+        LinearLayout tile(String label,String symbol,String target){return tile(label,symbol,target,root);}
+        LinearLayout tile(String label,String symbol,String target,LinearLayout parent){
+            LinearLayout t=new LinearLayout(context);t.setOrientation(LinearLayout.VERTICAL);t.setPadding(dp(18),dp(16),dp(18),dp(16));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(12);parent.addView(t,lp);
+            LinearLayout line=new LinearLayout(context);line.setGravity(Gravity.CENTER_VERTICAL);line.addView(text(label,14,false),new LinearLayout.LayoutParams(0,-2,1));
+            line.addView(theme.tile(symbol,32),new LinearLayout.LayoutParams(dp(32),dp(32)));t.addView(line);
+            if(context instanceof Opener&&FeatureCatalog.find(target)!=null){
+                t.setBackground(theme.ripple(theme.card(),24));t.setFocusable(true);t.setClickable(true);t.setOnClickListener(v->((Opener)context).openFeature(target));theme.press(t);
+                t.setContentDescription(label+"，查看"+FeatureCatalog.find(target).title);
+            } else t.setBackground(theme.card());
+            return t;
+        }
+        void chip(LinearLayout parent,String label,int color){
+            LinearLayout chip=new LinearLayout(context);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(10),dp(5),dp(12),dp(5));chip.setBackground(theme.shape(theme.soft,99));
+            chip.addView(theme.dot(color,7));TextView t=text(label,13,true);t.setPadding(dp(6),0,0,0);chip.addView(t);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-2,-2);lp.rightMargin=dp(8);lp.bottomMargin=dp(6);parent.addView(chip,lp);
+        }
+        /** One reminder line inside a card: severity dot, title, detail and meta. The level stays as text. */
+        void notice(LinearLayout c,String title,String detail,String meta,String level){
+            if(c.getChildCount()>1)divider(c);
+            LinearLayout r=new LinearLayout(context);r.setPadding(0,dp(10),0,dp(10));
+            int color=theme.status(level);View dot=theme.dot(color==0?theme.accent:color,8);LinearLayout.LayoutParams dp8=(LinearLayout.LayoutParams)dot.getLayoutParams();dp8.topMargin=dp(7);dp8.rightMargin=dp(12);r.addView(dot,dp8);
+            LinearLayout texts=new LinearLayout(context);texts.setOrientation(LinearLayout.VERTICAL);texts.addView(text(title,15,true));
+            if(!detail.equals(UNKNOWN)){TextView d=text(detail,14,false);d.setPadding(0,dp(3),0,0);texts.addView(d);}
+            TextView m=text(meta,12,false);m.setTextColor(theme.faint);m.setPadding(0,dp(4),0,0);texts.addView(m);r.addView(texts,new LinearLayout.LayoutParams(0,-2,1));c.addView(r);
+        }
+        void divider(LinearLayout c){View d=new View(context);d.setBackgroundColor(border);c.addView(d,new LinearLayout.LayoutParams(-1,dp(.5f)));}
         void row(LinearLayout c, String label, String value) {
             boolean stack=context.getResources().getConfiguration().fontScale>=1.3f||context.getResources().getConfiguration().screenWidthDp<350||value.length()>36;
-            LinearLayout r=new LinearLayout(context);r.setOrientation(stack?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);r.setGravity(Gravity.CENTER_VERTICAL);r.setMinimumHeight(dp(44));r.setPadding(0,dp(7),0,dp(7));
-            TextView k=text(label,13,false),v=text(value,15,true);v.setTextDirection(android.view.View.TEXT_DIRECTION_FIRST_STRONG);v.setGravity(stack?Gravity.START:Gravity.END);v.setPadding(stack?0:dp(12),stack?dp(4):0,0,0);
-            if(stack){r.addView(k);r.addView(v);}else{r.addView(k,new LinearLayout.LayoutParams(0,-2,1));r.addView(v,new LinearLayout.LayoutParams(0,-2,1.4f));}c.addView(r);
+            if(c.getChildCount()>0&&"row".equals(c.getChildAt(c.getChildCount()-1).getTag()))divider(c);
+            LinearLayout r=new LinearLayout(context);r.setTag("row");r.setOrientation(stack?LinearLayout.VERTICAL:LinearLayout.HORIZONTAL);r.setGravity(Gravity.CENTER_VERTICAL);r.setMinimumHeight(dp(46));r.setPadding(0,dp(8),0,dp(8));
+            TextView k=text(label,14,false),v=text(value,15,true);v.setTextDirection(android.view.View.TEXT_DIRECTION_FIRST_STRONG);v.setGravity(stack?Gravity.START:Gravity.END);
+            int tone=theme.status(value);
+            LinearLayout shown=new LinearLayout(context);shown.setGravity(Gravity.CENTER_VERTICAL|(stack?Gravity.START:Gravity.END));shown.setPadding(stack?0:dp(12),stack?dp(4):0,0,0);
+            if(tone!=0){View dot=theme.dot(tone,7);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(7);shown.addView(dot);}
+            shown.addView(v,new LinearLayout.LayoutParams(stack||tone!=0?-2:-1,-2));
+            if(stack){r.addView(k);r.addView(shown);}else{r.addView(k,new LinearLayout.LayoutParams(0,-2,1));r.addView(shown,new LinearLayout.LayoutParams(0,-2,1.4f));}c.addView(r);
         }
         void amount(LinearLayout c,String label,String value){
             TextView k=text(label,12,false);k.setPadding(0,dp(8),0,dp(3));c.addView(k);
-            TextView v=text(value,26,true);v.setTextColor(theme.ink);v.setPadding(0,0,0,dp(12));c.addView(v);
+            TextView v=text(value,28,true);v.setTextColor(theme.ink);v.setPadding(0,0,0,dp(12));c.addView(v);
         }
         void fields(LinearLayout c, JSONObject p, String... pairs) { for (int i = 0; i + 1 < pairs.length; i += 2) row(c, pairs[i + 1], s(p, pairs[i])); }
-        void paragraph(LinearLayout c, String value) { if (value.isEmpty() || value.equals(UNKNOWN)) return; TextView t = text(value, 14, false); t.setPadding(0, dp(2), 0, dp(8)); c.addView(t); }
+        void paragraph(LinearLayout c, String value) { if (value.isEmpty() || value.equals(UNKNOWN)) return; TextView t = text(value, 14, false); t.setPadding(0, dp(4), 0, dp(4)); c.addView(t); }
         void message(String title, String value) { paragraph(card(title), value); }
         void sources(JSONObject p, String... pairs) { LinearLayout c = card("数据来源"); for (int i = 0; i + 1 < pairs.length; i += 2) row(c, pairs[i + 1], source(obj(p, pairs[i]))); }
         void freshness(JSONObject p, int maxSeconds) {
-            String state = "更新时间未知"; Object generated = p.opt("generatedAt");
+            String state = "更新时间未知"; Object generated = p.opt("generatedAt"); int tone = theme.faint;
             if (generated instanceof String) try {
                 long age = java.time.Duration.between(Instant.parse((String) generated), Instant.now()).getSeconds();
                 state = age < -5 ? "快照时间异常" : age > maxSeconds ? "快照已过期" : "快照时间 " + date(p, "generatedAt");
-            } catch (RuntimeException ignored) { state = "更新时间异常"; }
-            if (Boolean.TRUE.equals(p.opt("stale"))) state += " · 来源数据陈旧";
-            if (Boolean.TRUE.equals(p.opt("partial"))) state += " · 部分数据";
-            TextView label = text(state, 12, false); label.setPadding(dp(3), dp(3), dp(3), dp(14)); root.addView(label);
+                tone = age < -5 || age > maxSeconds ? theme.warning : theme.success;
+            } catch (RuntimeException ignored) { state = "更新时间异常"; tone = theme.warning; }
+            if (Boolean.TRUE.equals(p.opt("stale"))) { state += " · 来源数据陈旧"; tone = theme.warning; }
+            if (Boolean.TRUE.equals(p.opt("partial"))) { state += " · 部分数据"; tone = theme.warning; }
+            LinearLayout pill = new LinearLayout(context); pill.setGravity(Gravity.CENTER_VERTICAL); pill.setPadding(dp(10), dp(6), dp(12), dp(6)); pill.setBackground(theme.glass(-1));
+            pill.addView(theme.dot(tone, 7)); TextView label = text(state, 12, false); label.setPadding(dp(6), 0, 0, 0); pill.addView(label);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.bottomMargin = dp(12); lp.leftMargin = dp(2); root.addView(pill, lp);
         }
     }
 }
