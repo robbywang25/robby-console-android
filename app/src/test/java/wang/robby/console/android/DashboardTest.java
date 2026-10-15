@@ -28,7 +28,7 @@ public final class DashboardTest {
         assertEquals(ids, Dashboard.move(ids, "market", 1));
     }
     @Test public void sharedReadsHappenOnce() {
-        assertEquals(List.of("overview"), Dashboard.paths(Dashboard.DEFAULT));
+        assertEquals(List.of("overview", "tokens/quotas"), Dashboard.paths(Dashboard.DEFAULT));
         assertEquals(List.of("overview", "openai/usage", "market"), Dashboard.paths(List.of("services", "openai", "domains", "market")));
     }
     @Test public void everyCardReadsAReleasedFeature() {

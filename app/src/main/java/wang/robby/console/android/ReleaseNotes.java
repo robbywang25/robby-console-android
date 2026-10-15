@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.10.1", "2026-10-15", "Token 额度可以读取了",
+            "Token 额度页和看板卡片现在显示各账号真实的剩余额度与重置时间。",
+            "升级后需要重新登录一次：新版本多申请了 Token 额度的读取权限。",
+            "没有改过看板的话，默认组合会多一张 Token 额度卡片。"),
         new Entry("0.10.0", "2026-10-15", "Token 额度与网页同款排版",
             "接入 tokens.robby.wang：各 AI 账号的剩余额度、重置倒计时、点数与重置卡。",
             "额度快用完、或即将重置却还剩很多时会提醒；过期读数只作参考，不当成当前余额。",

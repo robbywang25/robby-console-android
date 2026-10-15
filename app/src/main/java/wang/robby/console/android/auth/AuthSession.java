@@ -33,7 +33,7 @@ public final class AuthSession {
             + "god.mobile.travel.read god.mobile.travel.current.read god.mobile.analytics.read "
             + "god.mobile.sites.health.read god.mobile.domains.read god.mobile.okx.read "
             + "god.mobile.wechat.read god.mobile.prompts.read "
-            + "god.mobile.travel.entries.write god.mobile.travel.people.write";
+            + "god.mobile.travel.entries.write god.mobile.travel.people.write god.mobile.tokens.read";
     private static final Object STATE_LOCK = new Object();
     private static final Object REFRESH_LOCK = new Object();
     private static long generation;

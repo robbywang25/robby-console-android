@@ -610,11 +610,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private JSONObject read(String path)throws Exception{return PreviewMode.isBuild()?PreviewMode.data(path):api.get(path);}
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
     /**
-     * Token 额度 needs god.mobile.tokens.read, which the server has not granted the Android client yet. A 403 there
-     * means "not opened for Android", not "your account lacks it", so say exactly that.
+     * Token 额度 needs god.mobile.tokens.read, requested since 0.10.1. Sessions stored before then fail the exact-scope
+     * check and sign in again, so a 403 here means the grant on the server side is missing; say how to recover.
      */
     private String explain(String path,Exception e){
-        if("tokens/quotas".equals(path)&&e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==403)return "服务端还没给 Android 开放 Token 额度读取权限，开放后更新应用即可显示。";
+        if("tokens/quotas".equals(path)&&e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==403)return "这次登录没有 Token 额度读取权限，请在「我」里退出后重新登录。";
         return safeError(e);
     }
     private String safeError(Exception e){String m=e.getMessage();return m!=null&&m.matches("[\\p{IsHan}，。、；：！？ ·…A-Za-z0-9-]{1,100}")?m:"连接未完成，请检查网络后重试";}

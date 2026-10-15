@@ -30,7 +30,7 @@ final class Dashboard {
         new Card("market", "关注行情", "关注列表的前几项报价", "trend", "market", "market", true),
         new Card("tokens", "Token 额度", "各账号最紧张的额度与重置倒计时", "gauge", "tokens/quotas", "tokens", true)
     );
-    static final List<String> DEFAULT = List.of("services", "instances", "domains", "reminders");
+    static final List<String> DEFAULT = List.of("services", "instances", "domains", "reminders", "tokens");
 
     static Card find(String id) { for (Card c : ALL) if (c.id.equals(id)) return c; return null; }
     /** Saved value to an ordered combination: unknown and repeated ids are dropped; null (never saved) is the default set. */
