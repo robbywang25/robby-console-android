@@ -9,8 +9,8 @@ android {
   applicationId 'wang.robby.console.android'
   minSdk 30
   targetSdk 36
-  versionCode 19
-  versionName '0.10.1'
+  versionCode 20
+  versionName '0.11.0'
   testInstrumentationRunner (project.hasProperty('liveAcceptance') ? 'wang.robby.console.android.LiveReadAcceptance' : 'android.test.InstrumentationTestRunner')
  }
  signingConfigs {
@@ -33,4 +33,8 @@ android {
  testOptions { unitTests.returnDefaultValues = true }
  lint { abortOnError true }
 }
-dependencies { testImplementation 'junit:junit:4.13.2' }
+dependencies {
+ testImplementation 'junit:junit:4.13.2'
+ // android.jar only stubs org.json for JVM tests; the native Passkey policy parses real JSON.
+ testImplementation 'org.json:json:20260814'
+}

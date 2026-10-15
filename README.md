@@ -12,7 +12,7 @@ God 私人工作台的原生 Android 客户端，桌面上的应用名是 **God*
 - Release APK 使用独立持久签名；每个 Release 附 SHA-256 校验文件。
 - 不需要 root、Google 账号或应用商店；Passkey 可用性取决于浏览器、设备与已登记凭据。
 - **没有本机 Passkey：**选择「通过已有设备授权」，在已经能登录 God 的电脑或另一台手机打开验证页，输入 Find 显示的一次性代码，并亲自核对应用名和确认。代码不需要发给维护者。
-- **已有本机 Passkey：**也可直接使用 Passkey 登录。登录页在应用内打开（Chrome 的 Auth Tab），验证完成后直接回到应用；浏览器不支持时会退回 Custom Tab 或系统浏览器，再通过 HTTPS App Link 返回。
+- **已有本机 Passkey：**也可直接使用 Passkey 登录。Android 14 及以上由系统 Credential Manager 弹出通行密钥，确认授权也是应用内的提示框，全程不打开网页（与 iPhone 版相同）；Android 13 及更早的系统在应用内的登录页（Chrome 的 Auth Tab）完成，浏览器不支持时退回 Custom Tab 或系统浏览器，再通过 HTTPS App Link 返回。原生登录失败时可以选择改用网页登录。
 - 如果登录后没有返回，请在系统「应用 → God 工作台 → 默认打开」允许打开支持的链接，再重试登录。
 
 ## 功能
@@ -30,7 +30,8 @@ God 私人工作台的原生 Android 客户端，桌面上的应用名是 **God*
 - 设备授权仅由用户主动发起，轮询有间隔和截止时间；短码与 device code 只在内存中，取消和退出阻止迟到授权复活。
 - 固定 HTTPS API，拒绝重定向；服务端继续执行账户、scope、资源与 owner 校验。
 - 应用内更新只访问 GitHub Release，可跟随的跳转仅限 GitHub 附件域名；安装包要先通过 SHA-256 和签名校验，再由系统安装器请你确认。为此需要「安装未知应用」权限。
-- 登录页由 Chrome 在应用内渲染（Auth Tab），应用读不到页面内容，不读取密码、Passkey 私钥或浏览器 Cookie；回调地址由 Chrome 按 god.robby.wang 的 Digital Asset Links 校验后交还应用。
+- 原生 Passkey 登录（Android 14+）：应用只调用 God 认证服务固定的三个 JSON 接口（取挑战、提交断言、确认授权），系统按 auth.god.robby.wang 的 Digital Asset Links（`get_login_creds`）确认本应用后才提供通行密钥；应用只拿到一次性签名结果，私钥不出系统。认证服务验证签名和来源（本应用签名证书的 `android:apk-key-hash`），授权码仍走原有的 PKCE 交换。认证会话 Cookie 只在本次登录的内存中，结束即丢弃。
+- 网页登录（Android 13 及更早，或主动改用）：登录页由 Chrome 在应用内渲染（Auth Tab），应用读不到页面内容，不读取密码、Passkey 私钥或浏览器 Cookie；回调地址由 Chrome 按 god.robby.wang 的 Digital Asset Links 校验后交还应用。
 - 会话使用 Android Keystore AES-GCM 加密，禁止云备份和设备迁移。
 - 业务内容仅在内存展示；进入后台清除。登录后屏蔽截屏和最近任务预览。
 - 退出立即清除本机凭据，后台尝试服务端令牌吊销。

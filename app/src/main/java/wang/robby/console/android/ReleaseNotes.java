@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.11.0", "2026-10-16", "通行密钥登录不再打开网页",
+            "Android 14 及以上点「使用 Passkey 登录」，直接弹出系统通行密钥完成验证。",
+            "确认授权改为应用内的提示框，和 iPhone 版一致；不再打开登录网页。",
+            "系统里找不到可用的通行密钥时会说明原因，也可以改用网页登录。",
+            "Android 13 及更早的系统仍在应用内的登录页完成。"),
         new Entry("0.10.1", "2026-10-15", "Token 额度可以读取了",
             "Token 额度页和看板卡片现在显示各账号真实的剩余额度与重置时间。",
             "升级后需要重新登录一次：新版本多申请了 Token 额度的读取权限。",

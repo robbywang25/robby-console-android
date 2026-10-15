@@ -15,6 +15,7 @@ import java.util.concurrent.*;
 import wang.robby.console.android.auth.AuthSession;
 import wang.robby.console.android.auth.AuthCoordinator;
 import wang.robby.console.android.auth.DeviceAuthorization;
+import wang.robby.console.android.auth.NativePasskeyFlow;
 
 /** Native client. No embedded web content, demo balances, or service credentials. */
 public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener {
@@ -95,8 +96,29 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private static final int AUTH_TAB=41;
     /** After Chrome could not verify the app for the callback domain, later sign-ins use the plain browser + App Link. */
     private boolean browserLogin;
+    /** One sign-in on the web page, chosen after a native attempt failed. */
+    private boolean webOnce;
+    /** Android 14+: the system Passkey sheet and a native consent prompt, no web page; the callback then takes the usual PKCE path. */
+    private final NativeLogin nativeLogin=new NativeLogin(this,new NativeLogin.Host(){
+        @Override public void consent(java.util.function.Consumer<Boolean> answer){
+            boolean[] answered={false};
+            show(new AlertDialog.Builder(MainActivity.this).setTitle("允许 God 访问你的工作台？").setMessage("用于读取额度与资产、管理已接入的工作台功能，并在此设备保持登录。")
+                .setNegativeButton("取消",null).setPositiveButton("允许",(d,w)->{if(!answered[0]){answered[0]=true;answer.accept(true);}})
+                .setOnDismissListener(d->{if(!answered[0]){answered[0]=true;answer.accept(false);}}));
+        }
+        @Override public void finished(String callback,NativePasskeyFlow.Failure failure){
+            if(isDestroyed())return;
+            if(callback!=null){coordinator.callback(Uri.parse(callback));return;}
+            build();
+            if(failure==null||failure.cancelled)return;
+            show(new AlertDialog.Builder(MainActivity.this).setTitle("登录未完成").setMessage(failure.getMessage())
+                .setNegativeButton("知道了",null).setPositiveButton("改用网页登录",(d,w)->{webOnce=true;login();}));
+        }
+    });
     @Override public void onAuthorizationReady(String url){
         if(!resumed||isDestroyed())return;
+        boolean web=webOnce;webOnce=false;
+        if(!web&&!browserLogin&&NativeLogin.supported(this)){session.setText("正在用通行密钥登录…");nativeLogin.start(url);return;}
         session.setText(browserLogin?"请在浏览器完成 Passkey 登录":"请在登录页完成 Passkey 验证");
         try{
             if(browserLogin){startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));return;}
@@ -383,7 +405,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         profile();
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");LinearLayout about=groupCard();
-        featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
+        featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
         String version=versionName();LinearLayout info=featureRow("God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
         if(notesUnread()){View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);info.setContentDescription(info.getContentDescription()+"，有新版本说明");}
         restoreViewport();
@@ -592,14 +614,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         TextView h=text(title,18,INK,true);h.setAccessibilityHeading(true);h.setContentDescription(n+"  "+title);h.setPadding(dp(12),0,0,0);top.addView(h,new LinearLayout.LayoutParams(0,-2,1));c.addView(top);return c;
     }
     private void deviceLogin(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy())return;coordinator.loginWithDevice();}
-    private void login(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy())return;session.setText("正在准备安全登录…");coordinator.login();}
+    private void login(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy()||nativeLogin.running())return;session.setText("正在准备安全登录…");coordinator.login();}
     private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){show(new AlertDialog.Builder(this).setTitle("登录 God").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录"},(d,w)->{if(w==0)deviceLogin();else login();}).setNegativeButton("取消",null));return;}show(new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->{++generation;snapshots.clear();navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}));}
     private void goBack(){if(coordinator==null){finish();return;}if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){saveViewport();++generation;if(project!=null){project=null;ledgerCursor=null;ledgerPages.clear();showFeature(find(selectedId),true);}else{selectedId=null;enterFrom=-1;build();}}else if(!group.equals("总览")){switchTab("总览");}else moveTaskToBack(true);}
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}
     @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();board=null;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God",24,INK,true));}}
-    @Override protected void onDestroy(){++generation;if(ledger!=null)ledger.dispose();worker.shutdownNow();updateCancel.set(true);updater.shutdownNow();if(UpdateReceiver.listener==updateListener)UpdateReceiver.listener=null;super.onDestroy();}
+    @Override protected void onDestroy(){++generation;nativeLogin.dispose();if(ledger!=null)ledger.dispose();worker.shutdownNow();updateCancel.set(true);updater.shutdownNow();if(UpdateReceiver.listener==updateListener)UpdateReceiver.listener=null;super.onDestroy();}
     private FeatureCatalog.Feature find(String id){return FeatureCatalog.all().stream().filter(f->f.id.equals(id)).findFirst().orElse(null);}
     private void section(String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));content.addView(t);}
     private LinearLayout card(){return theme.card(content);}
