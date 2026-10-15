@@ -91,7 +91,7 @@ public final class ConsoleTheme {
     }
     private static int hue(String symbol){return switch(symbol){
         case "chart","trend"->0xff3b82f6;case "ledger","plus","edit"->0xfff59e0b;case "globe","server"->0xff14b8a6;case "pulse"->0xff22c55e;
-        case "clipboard","document","history"->0xff8b5cf6;case "chat"->0xff07c160;case "image"->0xffec4899;case "shield","key","user","people","download"->0xff0052d9;
+        case "clipboard","document","history","gauge"->0xff8b5cf6;case "chat"->0xff07c160;case "image"->0xffec4899;case "shield","key","user","people","download"->0xff0052d9;
         case "trash"->0xffef4444;default->0xff64748b;};}
     public ImageView icon(String name,int color,int size){if("grid".equals(name))return tabIcon(name,true,size);ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,ink));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     public ImageView tabIcon(String name,boolean selected,int size){
@@ -107,7 +107,7 @@ public final class ConsoleTheme {
     }
     public static String symbol(String id){return switch(id){
         case "总览","overview"->"grid";case "洞察","observer","umami","posthog","openai"->"chart";
-        case "资产","domains"->"globe";case "工具"->"tools";case "设置"->"me";
+        case "资产","domains"->"globe";case "tokens"->"gauge";case "工具"->"tools";case "设置"->"me";
         case "travel-ledger"->"ledger";case "clipboard"->"clipboard";case "infrastructure"->"server";
         case "status","site-maintenance"->"pulse";case "market","okx"->"trend";
         case "engineering"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog"->"chat";
@@ -204,6 +204,7 @@ public final class ConsoleTheme {
                 case "history":c.drawCircle(12,12,8.5f,p);line(c,12,7.5f,12,12,15,14);break;
                 case "swap":line(c,4,8,18,8);line(c,15,5,18,8,15,11);line(c,20,16,6,16);line(c,9,13,6,16,9,19);break;
                 case "info":c.drawCircle(12,12,9,p);line(c,12,11,12,16.5f);line(c,12,7.6f,12,7.7f);break;
+                case "gauge":c.drawArc(3,5,21,23,180,180,false,p);line(c,12,14,16.5f,8.5f);c.drawCircle(12,14,1.2f,p);break;
                 case "download":line(c,12,4,12,15);line(c,7,10,12,15,17,10);line(c,5,20,19,20);break;
                 default: c.drawCircle(12,12,8,p);
             }c.restoreToCount(s);

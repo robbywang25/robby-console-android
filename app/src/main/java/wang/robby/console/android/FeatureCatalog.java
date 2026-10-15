@@ -29,6 +29,7 @@ public final class FeatureCatalog {
         f("market", "市场看板", "关注行情、板块与市场基准", "洞察", "market", "god.mobile.read"),
         f("okx", "OKX 账户", "资产、持仓与风险摘要", "洞察", "okx/overview", "god.mobile.okx.read"),
         f("openai", "OpenAI 用量", "Token、请求与成本", "洞察", "openai/usage", "god.mobile.read"),
+        f("tokens", "Token 额度", "多账号剩余额度与重置时间", "洞察", "tokens/quotas", "god.mobile.tokens.read"),
         f("infrastructure", "基础设施", "实例、资源指标与月价", "资产", "overview", "god.mobile.read"),
         f("domains", "域名资产", "注册、到期、解析与备案", "资产", "domains/overview", "god.mobile.domains.read"),
         f("status", "运行状态", "站点健康与上游服务", "资产", "overview", "god.mobile.read"),

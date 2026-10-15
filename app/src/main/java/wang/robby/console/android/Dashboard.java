@@ -27,7 +27,8 @@ final class Dashboard {
         new Card("visits", "访问", "所选时段访问与事件", "chart", "analytics/overview", "observer", false),
         new Card("okx", "OKX 账户", "总权益与持仓", "trend", "okx/overview", "okx", false),
         new Card("clipboard", "云剪贴板", "剪贴内容条数", "clipboard", "clipboard", "clipboard", false),
-        new Card("market", "关注行情", "关注列表的前几项报价", "trend", "market", "market", true)
+        new Card("market", "关注行情", "关注列表的前几项报价", "trend", "market", "market", true),
+        new Card("tokens", "Token 额度", "各账号最紧张的额度与重置倒计时", "gauge", "tokens/quotas", "tokens", true)
     );
     static final List<String> DEFAULT = List.of("services", "instances", "domains", "reminders");
 

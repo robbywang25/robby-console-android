@@ -39,7 +39,7 @@ public final class FeatureRenderer {
             return;
         }
         // 总览 carries its snapshot time inside the summary card instead of a separate row.
-        if (!feature.id.equals("overview")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : 600);
+        if (!feature.id.equals("overview")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.id.equals("tokens") ? 120 : 600);
         switch (feature.id) {
             case "overview": overview(ui, payload); break;
             case "infrastructure": infrastructure(ui, obj(payload, "infrastructure")); break;
@@ -63,6 +63,7 @@ public final class FeatureRenderer {
             case "image-workshop": images(ui, payload); break;
             case "visit-insight-reports": reports(ui, payload); break;
             case "secrets": secrets(ui, payload); break;
+            case "tokens": tokens(ui, payload); break;
             default: ui.message("暂未接入", "此功能尚无原生数据视图。");
         }
     }
@@ -130,6 +131,21 @@ public final class FeatureRenderer {
                 u.big(number(range, "visitCount"), "次访问 · 事件 " + number(range, "eventCount") + " · 在线 " + number(sites, "online") + "/" + number(sites, "total")); break; }
             case "okx": u.big(number(p, "totalEquityUsd"), "总权益 USD · 持仓 " + number(p, "openPositionCount")); break;
             case "clipboard": u.big(String.valueOf(arr(p, "items").length()), "条剪贴内容 · 来源 " + source(obj(p, "sourceStatus"))); break;
+            case "tokens": {
+                long now = System.currentTimeMillis(); int shown = 0, idle = 0;
+                for (JSONObject a : rows(p, "accounts")) { String st = a.optString("status");
+                    if ("not_configured".equals(st)) { idle++; continue; } if (shown >= 5) continue; shown++;
+                    Double min = null; long reset = 0; for (JSONObject w : rows(a, "windows")) { Double pc = percent(w); if (pc != null && (min == null || pc < min)) { min = pc; reset = millis(w, "resetsAt"); } }
+                    LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(shown == 1 ? 8 : 5), 0, 0);
+                    boolean fresh = "connected".equals(st); int level = fresh ? TokensModel.level(min) : 0;
+                    r.addView(u.theme.dot(level == 1 ? u.theme.success : level == 2 ? u.theme.warning : level == 3 ? u.theme.danger : u.theme.faint, 7));
+                    TextView name = u.text(s(a, "label"), 14, false); name.setTextColor(u.theme.ink); name.setPadding(u.dp(8), 0, 0, 0); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+                    String cd = fresh ? TokensModel.countdown(reset, now) : null; if (cd != null) r.addView(u.text(cd, 11, false));
+                    TextView val = u.text(min == null ? TokensModel.status(st) : (fresh ? "" : "上次 ") + new java.text.DecimalFormat("0").format(min) + "%", 14, true); val.setPadding(u.dp(10), 0, 0, 0); r.addView(val);
+                    shell.addView(r); }
+                if (shown == 0) widgetMessage(context, shell, "还没有已接入的账号");
+                else if (idle > 0) { TextView more = u.text(idle + " 个账号未接入", 12, false); more.setTextColor(u.theme.faint); more.setPadding(0, u.dp(6), 0, 0); shell.addView(more); }
+                break; }
             case "market": {
                 JSONArray list = arr(p, "watchlist"); if (list.length() == 0) { widgetMessage(context, shell, "关注列表为空"); break; }
                 for (int i = 0; i < Math.min(4, list.length()); i++) { JSONObject n = list.optJSONObject(i); if (n == null) continue;
@@ -157,6 +173,7 @@ public final class FeatureRenderer {
             case "engineering": return api(p) && p.optJSONArray("repositoryIndex") != null && p.optJSONArray("items") != null;
             case "clipboard": return api(p) && p.optJSONArray("items") != null && p.optJSONObject("sourceStatus") != null;
             case "secrets": return api(p) && p.optJSONArray("services") != null;
+            case "tokens": return version(p, 1) && p.optJSONArray("accounts") != null;
             case "travel-ledger": return version(p, 1) && (p.optJSONArray("projects") != null ||
                 (p.optJSONObject("project") != null && p.optJSONObject("summary") != null && p.optJSONArray("entries") != null));
             case "domains": return version(p, 1) && p.optJSONArray("domains") != null;
@@ -212,11 +229,15 @@ public final class FeatureRenderer {
         for (int i = 0; i < limit(u, notices); i++) { JSONObject n = notices.optJSONObject(i); if (n == null) continue;
             String level = state(n, "severity"); u.notice(list, s(n, "title"), s(n, "detail"), "级别 " + level + (n.has("expiresAt") ? " · 到期 " + date(n, "expiresAt") : ""), level); }
     }
+    /** Mirrors the infrastructure web page: instance and running counts with the monthly cost first, then instances. */
     private static void infrastructure(UI u, JSONObject p) {
         if (p.length() == 0) { u.message("基础设施", "当前快照未提供实例数据"); return; }
-        u.freshness(p, 600); JSONObject cost = obj(p, "costSummary");
-        LinearLayout c = u.card("费用参考"); u.row(c, "账单口径", flag(cost, "actualBill", "实际账单", "价格估算"));
-        for (JSONObject m : rows(cost, "totals")) u.row(c, s(m, "currency"), number(m, "amount"));
+        u.freshness(p, 600); JSONObject cost = obj(p, "costSummary"); int total = 0, running = 0;
+        for (JSONObject n : rows(p, "instances")) { total++; if (state(n, "state").matches("运行中|正常")) running++; }
+        List<String> costs = new ArrayList<>(); for (JSONObject m : rows(cost, "totals")) costs.add(number(m, "amount") + " " + s(m, "currency"));
+        LinearLayout c = u.card("概览");
+        u.metrics(c, "实例", String.valueOf(total), "运行中", String.valueOf(running), "月成本", costs.isEmpty() ? UNKNOWN : String.join("\n", costs));
+        u.row(c, "账单口径", flag(cost, "actualBill", "实际账单", "价格估算"));
         LinearLayout g = u.list("实例");
         for (JSONObject n : rows(p, "instances")) { JSONObject m = obj(n, "metrics"), price = obj(n, "monthlyPrice");
             u.item(g, s(n, "name"), state(n, "state"), join(s(n, "region"), "CPU " + unit(m, "cpuUsage", "%"), "内存 " + unit(m, "memoryUsage", "%"), "磁盘 " + unit(m, "diskUsage", "%")),
@@ -293,16 +314,27 @@ public final class FeatureRenderer {
             : off.isEmpty() ? count + " 个关注组件正常" : String.join("、", off.subList(0, Math.min(2, off.size()))) + (off.size() > 2 ? " 等 " + off.size() + " 项" : "");
         return u.statusRow(group, "up:" + s(n, "id"), upTone(n), s(n, "name"), upState(n), meta, d);
     }
+    /** Mirrors the Visit Observer web page: range figures with all-time totals, the daily trend, sites, then regions. */
     private static void observer(UI u, JSONObject p) {
         u.sources(obj(p, "sourceStatus"), "overview", "访问数据", "siteStatus", "站点探测", "analytics", "趋势数据");
-        JSONObject metrics = obj(p, "metrics"), range = obj(metrics, "selectedRange"), sites = obj(metrics, "sites");
-        u.metrics(u.card("所选时段"), "访问", number(range, "visitCount"), "事件", number(range, "eventCount"),
-            "站点", number(sites, "total"), "已检查", number(sites, "checked"), "在线", number(sites, "online"));
+        JSONObject metrics = obj(p, "metrics"), range = obj(metrics, "selectedRange"), all = obj(metrics, "allTime"), sites = obj(metrics, "sites");
+        String days = number(obj(p, "range"), "days");
+        LinearLayout c = u.card(days.equals(UNKNOWN) ? "所选时段" : "近 " + days + " 天");
+        u.metrics(c, "访问", number(range, "visitCount"), "事件", number(range, "eventCount"), "站点在线", number(sites, "online") + " / " + number(sites, "total"),
+            "累计访问", number(all, "visitCount"), "累计事件", number(all, "eventCount"), "已检查", number(sites, "checked"));
+        JSONArray daily = arr(p, "daily");
+        if (daily.length() > 1) { double[] v = new double[daily.length()];
+            for (int i = 0; i < v.length; i++) { JSONObject d = daily.optJSONObject(i); Object x = d == null ? null : d.opt("visitCount"); v[i] = x instanceof Number ? ((Number) x).doubleValue() : Double.NaN; }
+            u.trend(c, "每日访问", v, dayLabel(daily.optJSONObject(0), "day"), dayLabel(daily.optJSONObject(daily.length() - 1), "day")); }
         LinearLayout g = u.list("站点");
         for (JSONObject n : rows(p, "sites")) u.item(g, s(n, "label"), flag(n, "online", "在线", "离线"),
-            join(s(n, "hostname"), "访问 " + number(n, "visitCount"), "事件 " + number(n, "eventCount")),
-            "站点", s(n, "hostname"), "访问", number(n, "visitCount"), "事件", number(n, "eventCount"), "健康", flag(n, "online", "在线", "离线"));
+            join(s(n, "hostname"), "访问 " + number(n, "visitCount"), "事件 " + number(n, "eventCount"), n.opt("httpStatus") instanceof Number ? "HTTP " + number(n, "httpStatus") : "", unit(n, "latencyMs", " ms")),
+            "站点", s(n, "hostname"), "访问", number(n, "visitCount"), "事件", number(n, "eventCount"), "DNS", flag(n, "dnsResolved", "已解析", "未解析"),
+            "HTTP", number(n, "httpStatus"), "延迟", unit(n, "latencyMs", " ms"), "健康", flag(n, "online", "在线", "离线"));
         empty(u, p, "sites", "暂无站点");
+        if (arr(p, "regions").length() > 0) { g = u.list("地区");
+            for (JSONObject n : rows(p, "regions")) { String region = s(n, "region"), code = s(n, "countryCode");
+                u.item(g, region.equals(UNKNOWN) ? code : region, unit(n, "visitCount", " 次访问"), region.equals(UNKNOWN) || code.equals(UNKNOWN) ? "" : code); } }
     }
     private static void umami(UI u, JSONObject p) {
         for (JSONObject n : rows(p, "sites")) { LinearLayout c = u.card(s(n, "name")); u.paragraph(c, s(n, "hostname"));
@@ -326,17 +358,56 @@ public final class FeatureRenderer {
         if (vitals.length() > 0) { c = u.card("Web Vitals"); for (JSONObject n : rows(vitals, "metrics"))
             u.row(c, s(n, "key"), unit(obj(n, "latest"), "value", " " + s(n, "unit")) + " · " + state(obj(n, "latest"), "rating")); }
     }
+    /** Mirrors the OpenAI web page: period figures, the daily token trend, the 7-day insight block, then models. */
     private static void openai(UI u, JSONObject p) {
-        JSONObject totals = obj(p, "totals"), cost = obj(obj(p, "costStatus"), "total"); LinearLayout c = u.card("组织用量");
-        u.metrics(c, "请求", number(totals, "requests"), "输入 Token", number(totals, "inputTokens"), "输出 Token", number(totals, "outputTokens"),
-            "缓存输入 Token", number(totals, "cachedInputTokens"), "成本 USD", Boolean.TRUE.equals(cost.opt("available")) ? number(totals, "costsUsd") : "暂不可用");
+        JSONObject totals = obj(p, "totals"), cost = obj(obj(p, "costStatus"), "total"), ins = obj(p, "insights");
+        String days = number(p, "periodDays");
+        LinearLayout c = u.card(days.equals(UNKNOWN) ? "组织用量" : "近 " + days + " 天用量");
+        u.metrics(c, "Token", sum(totals, "inputTokens", "outputTokens"), "请求", number(totals, "requests"),
+            "成本 USD", Boolean.TRUE.equals(cost.opt("available")) ? number(totals, "costsUsd") : "暂不可用",
+            "输入 Token", number(totals, "inputTokens"), "输出 Token", number(totals, "outputTokens"), "缓存输入 Token", number(totals, "cachedInputTokens"));
+        JSONArray daily = arr(p, "daily");
+        if (daily.length() > 1) { double[] v = new double[daily.length()];
+            for (int i = 0; i < v.length; i++) { JSONObject d = daily.optJSONObject(i); Object in = d == null ? null : d.opt("inputTokens"), out = d == null ? null : d.opt("outputTokens");
+                v[i] = in instanceof Number && out instanceof Number ? ((Number) in).doubleValue() + ((Number) out).doubleValue() : Double.NaN; }
+            u.trend(c, "每日 Token", v, epochDay(daily.optJSONObject(0)), epochDay(daily.optJSONObject(daily.length() - 1))); }
         u.row(c, "用量 / 费用口径", flag(obj(p, "scope"), "directlyComparable", "可直接比较", "口径不同"));
         u.row(c, "当前周期", flag(obj(p, "scope"), "currentBucketMayBePartial", "可能尚未完整", "完整"));
         u.row(c, "缓存状态", state(obj(p, "cacheState"), "state"));
+        if (ins.length() > 0) {
+            LinearLayout k = u.card("近 7 个完整日");
+            u.row(k, "Token", change(obj(ins, "tokens7d")));
+            u.row(k, "请求", change(obj(ins, "requests7d")));
+            u.row(k, "成本 USD", change(obj(ins, "costs7d")));
+            u.row(k, "缓存输入占比", unit(ins, "cachedInputShare", "%"));
+            JSONObject peak = obj(ins, "peakDay"); if (peak.length() > 0) u.row(k, "用量最高日", epochDay(peak) + " · " + number(peak, "tokens") + " Token");
+            JSONObject top = obj(ins, "topModel"); if (top.length() > 0) u.row(k, "主要模型", s(top, "label") + " · " + unit(top, "share", "%"));
+        }
         LinearLayout g = u.list("模型用量");
         for (JSONObject n : rows(p, "models")) u.item(g, s(n, "label"), unit(n, "requests", " 次请求"), "输入 " + number(n, "inputTokens") + " / 输出 " + number(n, "outputTokens"));
         empty(u, p, "models", "暂无模型用量");
         // apiKeys and raw identifiers are deliberately never rendered.
+    }
+    /** "12,345 · 上升 18%" for one 7-day insight; unavailable comparisons say so instead of showing zero. */
+    private static String change(JSONObject x) {
+        String current = number(x, "current"), trend;
+        switch (x.optString("trend")) { case "up": trend = "上升"; break; case "down": trend = "下降"; break; case "flat": trend = "持平"; break;
+            case "new_activity": trend = "新出现"; break; case "partial": trend = "数据不完整"; break; default: trend = "暂无对比"; }
+        String pct = x.opt("changePercent") instanceof Number ? " " + new java.text.DecimalFormat("0.#").format(Math.abs(((Number) x.opt("changePercent")).doubleValue())) + "%" : "";
+        return current.equals(UNKNOWN) ? trend : current + " · " + trend + (x.optString("trend").matches("up|down") ? pct : "");
+    }
+    private static String sum(JSONObject p, String a, String b) {
+        Object x = p.opt(a), y = p.opt(b); if (!(x instanceof Number) || !(y instanceof Number)) return UNKNOWN;
+        NumberFormat f = NumberFormat.getNumberInstance(Locale.SIMPLIFIED_CHINESE); f.setMaximumFractionDigits(0); return f.format(((Number) x).doubleValue() + ((Number) y).doubleValue());
+    }
+    /** "10-15" from a {startTime: epoch seconds} bucket. */
+    private static String epochDay(JSONObject d) {
+        if (d == null || !(d.opt("startTime") instanceof Number)) return "";
+        return DateTimeFormatter.ofPattern("MM-dd", Locale.SIMPLIFIED_CHINESE).withZone(ZoneId.systemDefault()).format(Instant.ofEpochSecond(((Number) d.opt("startTime")).longValue()));
+    }
+    /** "10-15" from a {day: "2026-10-15"} row. */
+    private static String dayLabel(JSONObject d, String key) {
+        String v = d == null ? "" : d.optString(key); return v.matches("\\d{4}-\\d{2}-\\d{2}.*") ? v.substring(5, 10) : "";
     }
     private static void domains(UI u, JSONObject p) {
         u.sources(obj(p, "sources"), "dns", "DNS", "registration", "注册", "pricing", "价格", "icp", "备案");
@@ -383,21 +454,27 @@ public final class FeatureRenderer {
                 "方向", state(n, "side"), "数量", number(n, "quantity"), "开仓均价", number(n, "averageEntryPrice"), "标记价格", number(n, "markPrice"),
                 "未实现盈亏", number(n, "unrealizedPnl"), "杠杆", number(n, "leverage")); }
     }
+    /** Mirrors the 源码与工程 web page: projects, then the iteration log. */
     private static void engineering(UI u, JSONObject p) {
         JSONObject coverage = obj(p, "coverage");
-        if (Boolean.TRUE.equals(coverage.opt("truncated"))) u.message("日志已截断", "当前返回 " + number(coverage, "returnedItems") + " 条；并非全部历史。");
-        if (arr(p, "repositoryIndex").length() > 0) { LinearLayout g = u.list("仓库");
+        u.metrics(u.card("工程概览"), "项目", String.valueOf(arr(p, "repositoryIndex").length()), "日志", String.valueOf(arr(p, "items").length()),
+            "覆盖", Boolean.TRUE.equals(coverage.opt("truncated")) ? "已截断" : "完整");
+        if (Boolean.TRUE.equals(coverage.opt("truncated"))) u.note("日志已截断：当前返回 " + number(coverage, "returnedItems") + " 条，并非全部历史。");
+        if (arr(p, "repositoryIndex").length() > 0) { LinearLayout g = u.list("全部项目");
             for (JSONObject n : rows(p, "repositoryIndex")) u.item(g, s(n, "name"), state(n, "state"), s(n, "description")); }
-        LinearLayout g = u.list("迭代日志");
+        LinearLayout g = u.list("工程迭代日志");
         for (JSONObject n : rows(p, "items")) u.item(g, s(n, "summary"), "", join(s(n, "repository"), date(n, "timestamp")));
         empty(u, p, "items", "暂无迭代日志");
     }
     private static void clipboard(UI u, JSONObject p) {
-        u.note("来源 " + source(obj(p, "sourceStatus")) + " · 仅显示元数据，不读取正文");
+        int publicCount = 0, total = 0; for (JSONObject n : rows(p, "items")) { total++; if (Boolean.TRUE.equals(n.opt("isPublic"))) publicCount++; }
+        LinearLayout c = u.card("当前内容"); u.metrics(c, "条数", String.valueOf(total), "公开", String.valueOf(publicCount), "私密", String.valueOf(total - publicCount));
+        u.row(c, "来源", source(obj(p, "sourceStatus")));
         LinearLayout g = u.list("剪贴内容"); int i = 0;
         for (JSONObject n : rows(p, "items")) u.item(g, "剪贴内容 " + (++i), flag(n, "isPublic", "公开", "私密"), join("创建 " + date(n, "createdAt"), "到期 " + date(n, "expiresAt")),
             "可见性", flag(n, "isPublic", "公开", "私密"), "创建", date(n, "createdAt"), "到期", date(n, "expiresAt"));
         empty(u, p, "items", "暂无剪贴内容");
+        u.note("只显示元数据：应用不请求、不显示剪贴内容正文。");
     }
     private static void ledger(UI u, JSONObject p) {
         if (p.optJSONArray("projects") != null) {
@@ -426,37 +503,49 @@ public final class FeatureRenderer {
         JSONObject page = obj(p, "page"); u.note("总计 " + number(page, "total") + " 条 · " + flag(page, "hasMore", "还有下一页", "已到末页"));
     }
     private static void cards(UI u, JSONObject p) {
+        int total = 0, custom = 0; for (JSONObject n : rows(p, "cards")) { total++; if (Boolean.TRUE.equals(n.opt("customized"))) custom++; }
+        u.metrics(u.card("卡片概览"), "卡片", String.valueOf(total), "自定义", String.valueOf(custom), "默认", String.valueOf(total - custom));
         LinearLayout g = u.list("卡片");
         for (JSONObject n : rows(p, "cards")) u.item(g, s(n, "title"), flag(n, "customized", "自定义", "默认"), join(s(n, "description"), "更新 " + date(n, "updatedAt")));
         empty(u, p, "cards", "暂无卡片");
+        u.note("编辑、二维码和分享仍在网页管理端。");
     }
+    /** Mirrors the 博客转公众号 web page: the account figures first, then created drafts and published articles. */
     private static void publishing(UI u, JSONObject p) {
-        LinearLayout c = u.card("公众号状态"); u.row(c, "配置", flag(p, "wechatConfigured", "已配置", "未配置"));
-        JSONObject caps = obj(p, "capabilities");
-        for (String k : new String[]{"drafts", "menu"}) { JSONObject n = obj(caps, k); u.row(c, k.equals("drafts") ? "草稿" : "菜单", Boolean.TRUE.equals(n.opt("available")) ? number(n, "count") : "暂不可用"); }
-        JSONObject pub = obj(p, "published"); u.row(c, "已发布", Boolean.TRUE.equals(pub.opt("available")) ? number(pub, "totalCount") : "暂不可用");
+        JSONObject caps = obj(p, "capabilities"), drafts = obj(caps, "drafts"), menu = obj(caps, "menu"), pub = obj(p, "published");
+        LinearLayout c = u.card("公众号资产概览");
+        u.metrics(c, "草稿", Boolean.TRUE.equals(drafts.opt("available")) ? number(drafts, "count") : "暂不可用",
+            "菜单", Boolean.TRUE.equals(menu.opt("available")) ? number(menu, "count") : "暂不可用",
+            "已发布", Boolean.TRUE.equals(pub.opt("available")) ? number(pub, "totalCount") : "暂不可用");
+        u.row(c, "公众号配置", flag(p, "wechatConfigured", "已配置", "未配置"));
+        if (arr(p, "history").length() > 0) { LinearLayout g = u.list("已创建草稿"); for (JSONObject n : rows(p, "history")) u.item(g, s(n, "title"), "", "创建 " + date(n, "createdAt")); }
         if (arr(p, "articles").length() > 0) { LinearLayout g = u.list("已发布文章"); for (JSONObject n : rows(p, "articles")) u.item(g, s(n, "title"), "", "发布 " + date(n, "publishedAt")); }
-        if (arr(p, "history").length() > 0) { LinearLayout g = u.list("草稿历史"); for (JSONObject n : rows(p, "history")) u.item(g, s(n, "title"), "", "创建 " + date(n, "createdAt")); }
     }
+    /** Mirrors the 万用格数据同步 web page: overall figures, then each source. */
     private static void catalog(UI u, JSONObject p) {
-        LinearLayout c = u.card("目录同步"); u.row(c, "版本", number(p, "catalogVersion")); u.row(c, "来源更新", date(p, "sourceGeneratedAt"));
-        u.row(c, "个人资料", flag(obj(p, "profile"), "configured", "已配置", "未配置"));
-        LinearLayout g = u.list("目录");
+        int sources = 0; double items = 0; boolean itemsKnown = true;
+        for (JSONObject n : rows(p, "tools")) { sources++; Object k = n.opt("itemCount"); if (k instanceof Number) items += ((Number) k).doubleValue(); else itemsKnown = false; }
+        LinearLayout c = u.card("目录同步");
+        u.metrics(c, "版本", number(p, "catalogVersion"), "来源", String.valueOf(sources), "项目合计", itemsKnown ? String.valueOf((long) items) : UNKNOWN);
+        u.row(c, "来源更新", date(p, "sourceGeneratedAt")); u.row(c, "个人资料", flag(obj(p, "profile"), "configured", "已配置", "未配置"));
+        LinearLayout g = u.list("来源状态");
         for (JSONObject n : rows(p, "tools")) u.item(g, s(n, "title"), state(n, "state"), join("项目 " + number(n, "itemCount"), "来源 " + s(obj(n, "source"), "label")));
         empty(u, p, "tools", "暂无目录");
     }
+    /** Mirrors the 微信登录日志 web page: binding, sessions and results as figures, then the event record. */
     private static void audit(UI u, JSONObject p) {
-        LinearLayout c = u.card("管理员绑定"); JSONObject b = obj(p, "binding"); u.row(c, "绑定", flag(b, "configured", "已绑定", "未绑定"));
-        u.row(c, "待处理绑定", flag(b, "pending", "有", "无")); u.row(c, "活跃会话", number(b, "activeSessionCount"));
-        JSONObject sum = obj(p, "summary");
-        u.metrics(u.card("登录概览"), "成功", number(sum, "successCount"), "拒绝", number(sum, "deniedCount"), "返回事件", number(sum, "returnedEventCount"));
-        LinearLayout g = u.list("登录事件");
+        JSONObject b = obj(p, "binding"), sum = obj(p, "summary"); LinearLayout c = u.card("概览");
+        u.metrics(c, "管理员绑定", flag(b, "configured", "已绑定", "未绑定"), "活跃会话", number(b, "activeSessionCount"), "待处理绑定", flag(b, "pending", "有", "无"),
+            "登录成功", number(sum, "successCount"), "登录拒绝", number(sum, "deniedCount"), "返回事件", number(sum, "returnedEventCount"));
+        LinearLayout g = u.list("事件记录");
         for (JSONObject n : rows(p, "events")) u.item(g, state(n, "type"), state(n, "result"), join(date(n, "occurredAt"), n.isNull("reason") ? "" : "原因 " + state(n, "reason")));
         empty(u, p, "events", "暂无登录事件");
+        u.note("事件已脱敏；首次绑定等管理操作仍在网页管理端。");
     }
     private static void prompts(UI u, JSONObject p) {
-        LinearLayout c = u.card("资产日报 Prompt"); u.fields(c, p, "task", "任务", "model", "模型", "version", "版本");
-        u.row(c, "来源", state(p, "source")); u.row(c, "更新时间", date(p, "updatedAt"));
+        LinearLayout c = u.card("Kimi 资产日报"); u.metrics(c, "模型", s(p, "model"), "版本", s(p, "version"), "来源", state(p, "source"));
+        u.row(c, "任务", s(p, "task")); u.row(c, "更新时间", date(p, "updatedAt"));
+        u.note("模板正文、版本差异与保存仍在网页管理端。");
         // Template, hashes, receipts and request fingerprints stay outside the metadata screen.
     }
     private static void images(UI u, JSONObject p) {
@@ -476,10 +565,61 @@ public final class FeatureRenderer {
             "站点", s(n, "hostname"), "状态", state(n, "status"), "访问", number(n, "visitCount"), "事件", number(n, "eventCount"), "生成时间", date(n, "createdAt"));
         empty(u, p, "reports", "暂无归档报告");
     }
+    /**
+     * Token 额度, after tokens.robby.wang: counts first, then accounts grouped by provider. Fresh windows get a
+     * remaining bar and countdown; stale ones keep the last value marked 上次 and never draw a bar.
+     */
+    private static void tokens(UI u, JSONObject p) {
+        long now = System.currentTimeMillis(); int connected = 0, attention = 0, soon = 0, total = 0;
+        Map<String, List<JSONObject>> byProvider = new LinkedHashMap<>();
+        for (JSONObject a : rows(p, "accounts")) { total++; String st = a.optString("status");
+            if ("connected".equals(st)) connected++; else if (!"not_configured".equals(st)) attention++;
+            for (JSONObject w : rows(a, "windows")) if (TokensModel.resettingSoon("connected".equals(st), percent(w), millis(w, "startsAt"), millis(w, "resetsAt"), now)) { soon++; break; }
+            byProvider.computeIfAbsent(s(a, "provider"), k -> new ArrayList<>()).add(a); }
+        u.metrics(u.card("额度总览"), "已更新", connected + " / " + total, "需处理", String.valueOf(attention), "即将重置", String.valueOf(soon));
+        for (Map.Entry<String, List<JSONObject>> e : byProvider.entrySet()) {
+            u.heading(e.getKey(), null); List<JSONObject> idle = new ArrayList<>();
+            for (JSONObject a : e.getValue()) { if ("not_configured".equals(a.optString("status"))) idle.add(a); else tokenAccount(u, a, now); }
+            if (!idle.isEmpty()) { LinearLayout g = u.group(); for (JSONObject a : idle) u.item(g, s(a, "label"), "未接入", TokensModel.reason(a.optString("reason"))); }
+        }
+        empty(u, p, "accounts", "暂无账号");
+        u.note("额度由本机采集器上传；不同周期分别显示，不把平台百分比相加，也不把过期读数当成当前余额。");
+    }
+    private static void tokenAccount(UI u, JSONObject a, long now) {
+        String status = a.optString("status"); boolean fresh = "connected".equals(status);
+        JSONObject profile = obj(a, "profile"), plan = obj(a, "subscription");
+        LinearLayout c = u.theme.card(u.root); c.setPadding(u.dp(16), u.dp(12), u.dp(16), u.dp(12));
+        LinearLayout top = new LinearLayout(u.context); top.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = u.text(s(a, "label"), 15, true); title.setAccessibilityHeading(true); top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        u.pill(top, TokensModel.status(status), fresh ? u.theme.success : "stale".equals(status) ? u.theme.warning : u.theme.danger); c.addView(top);
+        String who = s(profile, "email").equals(UNKNOWN) ? s(profile, "name") : s(profile, "email");
+        String meta = join(who, s(plan, "planName"), "更新 " + date(a, "lastSuccessAt"));
+        if (!meta.isEmpty()) { TextView m = u.text(meta, 12, false); m.setPadding(0, u.dp(3), 0, 0); c.addView(m); }
+        if (!fresh) { TextView r = u.text(TokensModel.reason(a.optString("reason")), 12, false); r.setTextColor(u.theme.faint); r.setPadding(0, u.dp(3), 0, 0); c.addView(r); }
+        for (JSONObject w : rows(a, "windows")) u.quota(c, w, fresh, now);
+        JSONObject credits = obj(a, "credits");
+        if (credits.length() > 0) u.row(c, "点数", Boolean.TRUE.equals(credits.opt("unlimited")) ? "不限" : number(credits, "remaining"));
+        JSONObject cards = obj(a, "resetCredits");
+        if (cards.length() > 0) u.row(c, "重置卡", number(cards, "available") + " 张" + (cards.opt("applicable") instanceof Number ? " · 当前可用 " + number(cards, "applicable") : ""));
+        JSONObject trend = obj(a, "usageTrend"); JSONArray points = arr(trend, "balancePoints");
+        if (points.length() > 1 && ("ready".equals(trend.optString("status")) || "stale".equals(trend.optString("status")))) {
+            double[] v = new double[points.length()]; for (int i = 0; i < v.length; i++) { JSONObject pt = points.optJSONObject(i); v[i] = pt != null && pt.opt("remaining") instanceof Number ? ((Number) pt.opt("remaining")).doubleValue() : Double.NaN; }
+            u.trend(c, "quota".equals(trend.optString("metric")) ? "近 1 小时剩余（%）" : "近 1 小时剩余点数", v, clock(points.optJSONObject(0)), clock(points.optJSONObject(points.length() - 1)));
+        }
+    }
+    private static Double percent(JSONObject w) { Object v = w.opt("remainingPercent"); return v instanceof Number ? ((Number) v).doubleValue() : null; }
+    private static long millis(JSONObject p, String key) { Object v = p.opt(key); if (!(v instanceof String)) return 0; try { return Instant.parse((String) v).toEpochMilli(); } catch (RuntimeException e) { return 0; } }
+    private static String clock(JSONObject p) { long ms = p == null ? 0 : millis(p, "at"); return ms == 0 ? "" : DateTimeFormatter.ofPattern("HH:mm", Locale.SIMPLIFIED_CHINESE).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(ms)); }
+    private static String unitLabel(String unit) {
+        switch (unit) { case "tokens": return " Token"; case "requests": return " 次"; case "messages": return " 条"; case "credits": return " 点"; case "USD": return " USD"; default: return ""; }
+    }
     private static void secrets(UI u, JSONObject p) {
+        int total = 0, configured = 0; for (JSONObject n : rows(p, "services")) { total++; if (Boolean.TRUE.equals(n.opt("configured"))) configured++; }
+        u.metrics(u.card("配置概览"), "服务", String.valueOf(total), "已配置", String.valueOf(configured), "未配置", String.valueOf(total - configured));
         LinearLayout g = u.list("服务");
         for (JSONObject n : rows(p, "services")) u.item(g, s(n, "label"), flag(n, "configured", "已配置", "未配置"), "更新 " + date(n, "updatedAt"));
         empty(u, p, "services", "暂无服务");
+        u.note("只显示配置状态，不返回凭据值；写入与轮换仍在网页管理端。");
     }
     /** " · "-joined summary of the parts that carry a value; unknown parts stay visible in the expanded details. */
     private static String join(String... parts) {
@@ -652,6 +792,34 @@ public final class FeatureRenderer {
         void pill(android.view.ViewGroup parent,String label,int color){
             LinearLayout chip=new LinearLayout(context);chip.setGravity(Gravity.CENTER_VERTICAL);chip.setPadding(dp(9),dp(4),dp(10),dp(4));chip.setBackground(theme.shape(theme.soft,99));
             chip.addView(theme.dot(color,6));TextView t=text(label,12,false);t.setTextColor(theme.ink);t.setPadding(dp(5),0,0,0);chip.addView(t);parent.addView(chip);
+        }
+        /** Daily bars with the first and last day under them; used where the web page shows a trend chart. */
+        void trend(LinearLayout c,String title,double[] values,String first,String last){
+            subhead(c,title);double peak=0,latest=Double.NaN;for(double v:values)if(!Double.isNaN(v)){peak=Math.max(peak,v);latest=v;}
+            NumberFormat f=NumberFormat.getNumberInstance(Locale.SIMPLIFIED_CHINESE);f.setMaximumFractionDigits(0);
+            String description=title+"，"+values.length+" 天，最高 "+f.format(peak)+(Double.isNaN(latest)?"":"，最近 "+f.format(latest));
+            MiniBars bars=new MiniBars(context,values,theme.accent,theme.line,description);LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(56));bp.topMargin=dp(4);c.addView(bars,bp);
+            LinearLayout axis=new LinearLayout(context);TextView a=text(first,11,false);a.setTextColor(theme.faint);axis.addView(a,new LinearLayout.LayoutParams(0,-2,1));
+            TextView m=text("最高 "+f.format(peak),11,false);m.setTextColor(theme.faint);m.setGravity(Gravity.CENTER);axis.addView(m,new LinearLayout.LayoutParams(0,-2,1));
+            TextView b=text(last,11,false);b.setTextColor(theme.faint);b.setGravity(Gravity.END);axis.addView(b,new LinearLayout.LayoutParams(0,-2,1));axis.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);c.addView(axis);
+        }
+        /** One quota window: name and remaining value, a bar only for fresh percentages, then the reset line. */
+        void quota(LinearLayout c,JSONObject w,boolean fresh,long now){
+            Double pct=percent(w);boolean unlimited=Boolean.TRUE.equals(w.opt("unlimited"));String unit=w.optString("unit");
+            String value=unlimited?"不限":pct!=null?new java.text.DecimalFormat("0.#").format(pct)+"%":w.opt("remaining") instanceof Number?number(w,"remaining")+(w.opt("limit") instanceof Number?" / "+number(w,"limit"):"")+unitLabel(unit):UNKNOWN;
+            if(!fresh&&!unlimited&&!value.equals(UNKNOWN))value="上次 "+value;
+            LinearLayout line=new LinearLayout(context);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(0,dp(10),0,0);
+            String label=s(w,"label"),model=s(w,"model");TextView t=text(model.equals(UNKNOWN)||label.contains(model)?label:label+" · "+model,13,false);t.setTextColor(theme.ink);line.addView(t,new LinearLayout.LayoutParams(0,-2,1));
+            TextView v=text(value,14,true);v.setPadding(dp(8),0,0,0);line.addView(v);c.addView(line);
+            if(fresh&&pct!=null&&!unlimited){int level=TokensModel.level(pct),color=level==1?theme.success:level==2?theme.warning:theme.danger;
+                LinearLayout track=new LinearLayout(context);track.setBackground(theme.shape(theme.soft,99));track.setClipToOutline(true);
+                View fill=new View(context);fill.setBackground(theme.shape(color,99));track.addView(fill,new LinearLayout.LayoutParams(0,-1,(float)Math.max(0.5,pct)));track.addView(new View(context),new LinearLayout.LayoutParams(0,-1,(float)Math.max(0,100-pct)));
+                LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,dp(5));tp.topMargin=dp(5);c.addView(track,tp);}
+            long resets=millis(w,"resetsAt");String countdown=TokensModel.countdown(resets,now);
+            LinearLayout sub=new LinearLayout(context);sub.setGravity(Gravity.CENTER_VERTICAL);sub.setPadding(0,dp(4),0,0);
+            TextView r=text(countdown!=null?countdown+" · "+date(w,"resetsAt"):resets>0?"已过重置时间":"无重置时间",11,false);r.setTextColor(theme.faint);sub.addView(r,new LinearLayout.LayoutParams(0,-2,1));
+            if(TokensModel.resettingSoon(fresh,pct,millis(w,"startsAt"),resets,now)){TextView soon=text("即将重置",11,true);soon.setTextColor(theme.danger);sub.addView(soon);}
+            c.addView(sub);
         }
         /** Large figure with a one-line caption under it, for 看板 cards. */
         void big(CharSequence value,String caption){TextView v=text("",24,true);v.setText(value);v.setPadding(0,dp(8),0,0);root.addView(v);TextView c=text(caption,12,false);c.setPadding(0,dp(1),0,0);root.addView(c);}

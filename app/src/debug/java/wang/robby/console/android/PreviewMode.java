@@ -35,11 +35,32 @@ final class PreviewMode {
     {"id":"github-status","name":"GitHub","available":true,"stale":false,"state":"degraded","indicator":"minor","updatedAt":"NOW","components":[{"name":"Git Operations","status":"operational"},{"name":"API Requests","status":"degraded_performance"},{"name":"Actions","status":"partial_outage"}]}
    ]}
   """.replace("NOW",time));}
+ /** Synthetic Token 额度 snapshot in the server's fixed account order; example addresses only. */
+ private static JSONObject tokens()throws Exception{
+  java.time.Instant now=java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+  java.util.function.LongFunction<String> at=h->now.plusSeconds(h*3600).toString();
+  String json="""
+  {"schemaVersion":1,"generatedAt":"NOW","staleAfterSeconds":120,"refreshAfterSeconds":30,"accounts":[
+   {"id":"codex-1","provider":"OpenAI","product":"codex","label":"ChatGPT Codex","profile":{"name":null,"email":"demo-one@example.com"},"subscription":{"planName":"Pro","planMultiplier":null},"monthlyCost":null,"status":"connected","reason":"connected","checkedAt":"NOW","lastSuccessAt":"NOW","sourceCollectedAt":"NOW","source":"演示采集器",
+    "windows":[{"id":"primary","label":"5 小时窗口","model":null,"quotaGroup":"default","remainingPercent":72,"remaining":null,"limit":null,"unit":"percent","resetsAt":"R3","startsAt":"S2","unlimited":false},
+               {"id":"weekly","label":"每周额度","model":null,"quotaGroup":"default","remainingPercent":64,"remaining":null,"limit":null,"unit":"percent","resetsAt":"R12","startsAt":"S144","unlimited":false}],
+    "usageRoute":null,"credits":{"remaining":120,"unlimited":false},"resetCredits":{"available":2,"applicable":1,"detailsAt":null,"cards":[]},"usageTrend":null},
+   {"id":"codex-2","provider":"OpenAI","product":"codex","label":"ChatGPT Codex","profile":{"name":null,"email":"demo-two@example.com"},"subscription":{"planName":"Plus","planMultiplier":null},"monthlyCost":null,"status":"stale","reason":"stale","checkedAt":"NOW","lastSuccessAt":"S3","sourceCollectedAt":"S3","source":"演示采集器",
+    "windows":[{"id":"weekly","label":"每周额度","model":null,"quotaGroup":"default","remainingPercent":18,"remaining":null,"limit":null,"unit":"percent","resetsAt":"R48","startsAt":"S120","unlimited":false}],"usageRoute":null,"credits":null,"resetCredits":null,"usageTrend":null},
+   {"id":"claude-1","provider":"Anthropic","product":"claude","label":"Claude","profile":{"name":"演示账号","email":null},"subscription":{"planName":"Max","planMultiplier":5},"monthlyCost":null,"status":"connected","reason":"connected","checkedAt":"NOW","lastSuccessAt":"NOW","sourceCollectedAt":"NOW","source":"演示采集器",
+    "windows":[{"id":"session","label":"当前会话","model":null,"quotaGroup":"default","remainingPercent":9,"remaining":null,"limit":null,"unit":"percent","resetsAt":"R1","startsAt":"S4","unlimited":false}],"usageRoute":null,"credits":null,"resetCredits":null,"usageTrend":null},
+   {"id":"claude-2","provider":"Anthropic","product":"claude","label":"Claude","profile":null,"subscription":null,"monthlyCost":null,"status":"not_configured","reason":"not_configured","checkedAt":null,"lastSuccessAt":null,"sourceCollectedAt":null,"source":"未配置","windows":[],"usageRoute":null,"credits":null,"resetCredits":null,"usageTrend":null},
+   {"id":"grok","provider":"xAI","product":"grok","label":"Grok Build","profile":null,"subscription":null,"monthlyCost":null,"status":"needs_auth","reason":"needs_auth","checkedAt":"NOW","lastSuccessAt":null,"sourceCollectedAt":null,"source":"演示采集器","windows":[],"usageRoute":null,"credits":null,"resetCredits":null,"usageTrend":null}
+  ]}""";
+  return new JSONObject(json.replace("NOW",now.toString()).replace("R12",at.apply(12)).replace("R48",at.apply(48)).replace("R3",at.apply(3)).replace("R1",at.apply(1))
+   .replace("S144",at.apply(-144)).replace("S120",at.apply(-120)).replace("S2",at.apply(-2)).replace("S3",at.apply(-3)).replace("S4",at.apply(-4)));
+ }
  static JSONObject data(String path)throws Exception{
  String time=java.time.Instant.now().toString();
  if(path.equals("overview"))return new JSONObject("{\"apiVersion\":\"2026-08-01\",\"summary\":{\"servicesOnline\":18,\"servicesKnown\":20,\"servicesTotal\":22,\"infrastructureInstances\":4,\"domainAssets\":12},\"status\":{\"schemaVersion\":2,\"summary\":{},\"sites\":[],\"upstreams\":[]},\"notices\":[{\"title\":\"演示域名即将到期\",\"severity\":\"warning\",\"detail\":\"合成提醒 · 请查看域名资产\"}]} ").put("generatedAt",time).put("status",status(time));
  if(path.equals("travel-ledger/current/projects"))return new JSONObject("{\"schemaVersion\":1,\"projects\":[{\"id\":\"00000000000000000000000000000001\",\"name\":\"界面演示账本\"}]}").put("generatedAt",time);
  if(path.startsWith("travel-ledger/current/snapshot"))return new JSONObject("{\"schemaVersion\":1,\"project\":{\"id\":\"00000000000000000000000000000001\",\"name\":\"界面演示账本\"},\"summary\":{},\"entries\":[],\"people\":[],\"page\":{\"hasMore\":false}}").put("generatedAt",time);
+ if(path.equals("tokens/quotas"))return tokens();
  if(path.equals("market"))return new JSONObject("{\"apiVersion\":\"2026-07-01\",\"sourceStatus\":{},\"watchlist\":[{\"label\":\"合成行情 A\",\"price\":123.45,\"currency\":\"USD\",\"changePct\":1.23}],\"sectors\":[],\"benchmarks\":[],\"aiUpstream\":[],\"disclaimer\":{\"text\":\"完全合成的界面预览数据\"}}").put("generatedAt",time);
  throw new IllegalStateException("此预览不连接真实服务");
  }

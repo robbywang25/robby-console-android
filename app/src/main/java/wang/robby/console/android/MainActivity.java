@@ -256,7 +256,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
                 catch(Exception e){runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;
                     // A refresh may have invalidated the stored session: show sign-in instead of a board that can only fail.
                     if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
-                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"暂不可读："+safeError(e));});}});}
+                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"暂不可读："+explain(path,e));});}});}
     }
     private void fillBoard(List<LinearLayout> shells,JSONObject data){for(LinearLayout shell:shells){Dashboard.Card card=Dashboard.find(String.valueOf(shell.getTag()));if(card!=null)FeatureRenderer.widget(this,shell,card,data);}}
     /** 编辑看板: switch cards on or off and order them; changes apply at once and survive restarts (layout only). */
@@ -337,7 +337,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!resumed)return;
         int epoch=++generation;
         worker.execute(()->{if(epoch!=generation)return;try{JSONObject data=read(key);runOnUiThread(()->{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");render(f,result,data);restoreViewport();});}
-        catch(Exception e){runOnUiThread(()->{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);TextView warning=text(safeError(e),15,theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();});}});
+        catch(Exception e){runOnUiThread(()->{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);TextView warning=text(explain(f.path,e),15,theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();});}});
     }
     private void render(FeatureCatalog.Feature f,LinearLayout result,JSONObject data) {
         try{
@@ -609,6 +609,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private boolean loggedIn(){return PreviewMode.isBuild()?PreviewMode.loggedIn():auth.hasSession();}
     private JSONObject read(String path)throws Exception{return PreviewMode.isBuild()?PreviewMode.data(path):api.get(path);}
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
+    /**
+     * Token 额度 needs god.mobile.tokens.read, which the server has not granted the Android client yet. A 403 there
+     * means "not opened for Android", not "your account lacks it", so say exactly that.
+     */
+    private String explain(String path,Exception e){
+        if("tokens/quotas".equals(path)&&e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==403)return "服务端还没给 Android 开放 Token 额度读取权限，开放后更新应用即可显示。";
+        return safeError(e);
+    }
     private String safeError(Exception e){String m=e.getMessage();return m!=null&&m.matches("[\\p{IsHan}，。、；：！？ ·…A-Za-z0-9-]{1,100}")?m:"连接未完成，请检查网络后重试";}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
     private void error(String title,String message){show(new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("知道了",null));}

@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.10.0", "2026-10-15", "Token 额度与网页同款排版",
+            "接入 tokens.robby.wang：各 AI 账号的剩余额度、重置倒计时、点数与重置卡。",
+            "额度快用完、或即将重置却还剩很多时会提醒；过期读数只作参考，不当成当前余额。",
+            "看板可添加 Token 额度卡片；服务端开放读取权限后即可显示，登录不受影响。",
+            "访问统计和 OpenAI 用量新增每日趋势图，各功能页按网页布局先给关键数字。"),
         new Entry("0.9.0", "2026-10-15", "自己组合的看板",
             "总览只保留「看板」和「常用」两块。",
             "看板可以自由组合服务状态、提醒、实例、域名、OpenAI、访问、OKX、剪贴板和行情卡片。",
