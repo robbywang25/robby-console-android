@@ -26,6 +26,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private static final List<String> TABS=List.of("总览","洞察","资产","工具","设置");
     /** Tab whose lens was last drawn, so the lens can glide from it; -1 before the first frame. */
     private int shownTab=-1; private int enterFrom=0; private View refreshIcon;
+    /** Pseudo feature id for 关于 God 工作台; it has no API path and lives in the 设置 tab's reading context. */
+    private static final String ABOUT="about";
+    /** Release-note cards the reader expanded; process memory only, like the other reading context. */
+    private final Set<String> expandedNotes=new HashSet<>();
     private String group="总览",selectedId=null,project=null;
     private volatile int generation=0; private boolean resumed=false;
     private final Map<String,JSONObject> snapshots=new HashMap<>();
@@ -95,8 +99,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // The stage holds the sky and the page. The floating dock blurs the stage, never itself.
         FrameLayout stage=new FrameLayout(this);stage.setBackground(theme.backdrop());root.addView(stage,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);stage.addView(body,new FrameLayout.LayoutParams(-1,-1));
-        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);if(detail==null)selectedId=null;
-        boolean nested=device!=null||detail!=null;
+        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId);if(detail==null&&!about)selectedId=null;
+        boolean nested=device!=null||detail!=null||about;
+        // Opening 关于 reads this version's notes, so the red dots must already be gone in this frame's dock.
+        if(about&&!versionName().isEmpty())prefs().edit().putString("notesSeen",versionName()).apply();
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
         leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);refreshIcon=null;
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
@@ -127,7 +133,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         for(String label:TABS) {
             boolean selected=group.equals(label);String name=ConsoleTheme.tabLabel(label);LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);
             tab.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,0),-1));tab.setSelected(selected);tab.setFocusable(true);tab.setClickable(true);tab.setContentDescription(name+(selected?"，已选中":""));tab.setTooltipText(name);
-            tab.addView(theme.tabIcon(ConsoleTheme.symbol(label),selected,24));
+            if(label.equals("设置")&&notesUnread()){
+                FrameLayout badge=new FrameLayout(this);badge.addView(theme.tabIcon(ConsoleTheme.symbol(label),selected,24),new FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER));
+                badge.addView(theme.dot(theme.unread,8),new FrameLayout.LayoutParams(dp(8),dp(8),Gravity.TOP|Gravity.END));tab.addView(badge,new LinearLayout.LayoutParams(dp(32),dp(26)));
+                tab.setContentDescription(name+(selected?"，已选中":"")+"，有新版本说明");
+            }else tab.addView(theme.tabIcon(ConsoleTheme.symbol(label),selected,24));
             TextView caption=text(name,11,selected?INK:MUTED,selected);caption.setPadding(0,dp(2),0,0);caption.setSingleLine(true);caption.setGravity(Gravity.CENTER);caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tab.addView(caption);
             tab.setOnClickListener(v->{if(!group.equals(label))v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);switchTab(label);});theme.press(tab);
             tabs.addView(tab,new LinearLayout.LayoutParams(0,-1,1));
@@ -139,6 +149,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             fade.getLayoutParams().height=bars.bottom+dp(28);fade.requestLayout();
             page.setPadding(dp(16),dp(4),dp(16),bars.bottom+(bar.getVisibility()==View.GONE?dp(24):dockHeight+dp(10+24)));return insets;});root.requestApplyInsets();
         if(device!=null){nav.setVisibility(View.GONE);showDeviceAuthorization(device);}
+        else if(about)about();
         else if(detail!=null)showFeature(detail,false);
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else catalog(group);
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
@@ -194,7 +205,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private LinearLayout groupCard(){return groupCard(content);}
     private LinearLayout groupCard(LinearLayout parent){LinearLayout c=theme.card(parent);c.setPadding(dp(4),dp(4),dp(4),dp(4));return c;}
     /** Grouped-list cell: tinted icon tile, title, optional one-line subtitle, chevron when it navigates. A null action is a plain info row. */
-    private void featureRow(String title,String subtitle,String symbol,LinearLayout parent,Runnable action){
+    private LinearLayout featureRow(String title,String subtitle,String symbol,LinearLayout parent,Runnable action){
         if(parent.getChildCount()>0){View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(66),0,dp(14),0);parent.addView(divider,d);}
         LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(10),dp(12),dp(10));row.setMinimumHeight(dp(64));
         row.setContentDescription(subtitle.isEmpty()?title:title+"，"+subtitle);
@@ -204,7 +215,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!subtitle.isEmpty()){TextView detail=text(subtitle,12,MUTED,false);detail.setPadding(0,dp(2),0,0);labels.addView(detail);}
         row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
         if(action!=null){ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);row.addView(chevron);}
-        parent.addView(row);
+        parent.addView(row);return row;
     }
     private void open(FeatureCatalog.Feature f){++generation;selectedId=f.id;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
     @Override public void openFeature(String id){FeatureCatalog.Feature f=find(id);if(f!=null&&loggedIn())open(f);}
@@ -270,7 +281,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");LinearLayout about=groupCard();
         featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。登录在系统浏览器完成，应用不接触密码或 Passkey 私钥。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
-        String version=versionName();featureRow("God 工作台",version.isEmpty()?"Android":"Android "+version,"info",about,null);restoreViewport();
+        String version=versionName();LinearLayout info=featureRow("God 工作台",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
+        if(notesUnread()){View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);info.setContentDescription(info.getContentDescription()+"，有新版本说明");}
+        restoreViewport();
     }
     /** Account card at the top of 我, in WeChat's profile position; opens the same sign-in / sign-out choices as before. */
     private void profile(){
@@ -280,6 +293,76 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(16),0,dp(8),0);labels.addView(text(logged?"已登录":"尚未登录",20,INK,true));
         TextView detail=text(logged?"Passkey · 设备加密存储":"使用 Passkey 或已有设备登录",13,MUTED,false);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
         c.addView(labels,new LinearLayout.LayoutParams(0,-2,1));ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);c.addView(chevron);
+    }
+    private void openAbout(){++generation;selectedId=ABOUT;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
+    private android.content.SharedPreferences prefs(){return getSharedPreferences("god-ui",MODE_PRIVATE);}
+    /** Red dot until the installed version's notes are opened once after an upgrade. Stores only a version string. */
+    private boolean notesUnread(){
+        boolean upgraded=false;
+        try{android.content.pm.PackageInfo info=Build.VERSION.SDK_INT>=33?getPackageManager().getPackageInfo(getPackageName(),android.content.pm.PackageManager.PackageInfoFlags.of(0)):getPackageManager().getPackageInfo(getPackageName(),0);upgraded=info.lastUpdateTime>info.firstInstallTime;}
+        catch(Exception ignored){}
+        return ReleaseNotes.unread(prefs().getString("notesSeen",null),versionName(),upgraded);
+    }
+    /**
+     * 关于 God 工作台, modelled on WeChat's 关于微信: brand and version first, one way to get a newer build,
+     * then 更新记录 newest first. The installed version is expanded and marked; older ones show their one-line
+     * theme until tapped, so the page scans like a list and reads like notes.
+     */
+    private void about(){
+        heading.setText("关于");
+        leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));
+        String version=versionName();
+        LinearLayout hero=new LinearLayout(this);hero.setOrientation(LinearLayout.VERTICAL);hero.setGravity(Gravity.CENTER_HORIZONTAL);hero.setPadding(0,dp(10),0,dp(22));
+        FrameLayout mark=new FrameLayout(this);mark.setBackground(theme.glass(-1));mark.addView(theme.tabIcon("grid",true,38),new FrameLayout.LayoutParams(dp(38),dp(38),Gravity.CENTER));hero.addView(mark,new LinearLayout.LayoutParams(dp(76),dp(76)));
+        TextView name=text("God 工作台",22,INK,true);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(14),0,dp(4));hero.addView(name);
+        TextView build=text(version.isEmpty()?"Android":"Android "+version,14,MUTED,false);build.setGravity(Gravity.CENTER);hero.addView(build);content.addView(hero);
+        LinearLayout links=groupCard();featureRow("获取新版本","GitHub Releases · 覆盖安装保留数据","download",links,this::openReleases);
+        // The installed version reads as its own card; every other version is one row in a single grouped list,
+        // like WeChat's 功能介绍, so ten releases scan as a list instead of a stack of cards.
+        if(expandedNotes.isEmpty()&&!version.isEmpty())expandedNotes.add(version);
+        java.time.LocalDate today=java.time.LocalDate.now();
+        ReleaseNotes.Entry installed=ReleaseNotes.find(version);
+        if(installed!=null){section("本次更新");noteRow(installed,true,today,card());}
+        section(installed==null?"更新记录":"历史版本");LinearLayout history=card();history.setPadding(dp(6),dp(6),dp(6),dp(6));
+        if(theme.effects)history.setLayoutTransition(new android.animation.LayoutTransition());
+        for(ReleaseNotes.Entry e:ReleaseNotes.ALL)if(e!=installed)noteRow(e,false,today,history);
+        TextView foot=text("安装包校验值和验证说明见 GitHub Releases。",12,theme.faint,false);foot.setGravity(Gravity.CENTER);foot.setPadding(dp(12),dp(8),dp(12),dp(4));content.addView(foot);
+        restoreViewport();
+    }
+    /** One release inside {@code c}: version, theme and date; tapping toggles its numbered notes in place. */
+    private void noteRow(ReleaseNotes.Entry e,boolean current,java.time.LocalDate today,LinearLayout c){
+        if(current)c.setPadding(dp(6),dp(6),dp(6),dp(6));
+        if(c.getChildCount()>0){View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(12),0,dp(12),0);c.addView(divider,d);}
+        boolean open=expandedNotes.contains(e.version);
+        LinearLayout head=new LinearLayout(this);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(dp(12),dp(10),dp(10),dp(10));head.setMinimumHeight(dp(56));
+        head.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,18),18));head.setFocusable(true);head.setClickable(true);
+        LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout line=new LinearLayout(this);line.setGravity(Gravity.CENTER_VERTICAL);line.addView(text(e.version,17,INK,true));
+        if(current){TextView badge=text("当前版本",11,theme.accent,true);badge.setPadding(dp(8),dp(2),dp(8),dp(2));badge.setBackground(theme.shape((theme.accent&0x00ffffff)|0x1f000000,99));LinearLayout.LayoutParams b=new LinearLayout.LayoutParams(-2,-2);b.leftMargin=dp(8);line.addView(badge,b);}
+        titles.addView(line);TextView summary=text(e.headline,14,MUTED,false);summary.setPadding(0,dp(3),0,0);titles.addView(summary);
+        head.addView(titles,new LinearLayout.LayoutParams(0,-2,1));
+        TextView date=text(ReleaseNotes.dateLabel(e.date,today),12,theme.faint,false);date.setPadding(dp(8),0,dp(6),0);head.addView(date);
+        ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.45f);chevron.setRotation(open?-90:90);head.addView(chevron);
+        c.addView(head);
+        LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);body.setPadding(dp(12),0,dp(14),dp(12));body.setVisibility(open?View.VISIBLE:View.GONE);
+        for(int i=0;i<e.items.size();i++){
+            LinearLayout item=new LinearLayout(this);item.setPadding(0,dp(6),0,dp(6));
+            TextView n=text((i+1)+".",15,MUTED,false);n.setMinWidth(dp(24));n.setPadding(0,0,dp(6),0);item.addView(n);
+            TextView t=text(e.items.get(i),15,INK,false);t.setLineSpacing(dp(4),1);item.addView(t,new LinearLayout.LayoutParams(0,-2,1));body.addView(item);
+        }
+        c.addView(body);
+        head.setContentDescription(e.version+(current?"，当前版本":"")+"，"+e.headline+"，"+ReleaseNotes.dateLabel(e.date,today));head.setStateDescription(open?"已展开":"已收起");
+        if(current&&theme.effects)c.setLayoutTransition(new android.animation.LayoutTransition());
+        head.setOnClickListener(v->{
+            boolean show=body.getVisibility()!=View.VISIBLE;
+            if(show)expandedNotes.add(e.version);else expandedNotes.remove(e.version);
+            body.setVisibility(show?View.VISIBLE:View.GONE);head.setStateDescription(show?"已展开":"已收起");
+            if(theme.effects)chevron.animate().rotation(show?-90:90).setDuration(200).start();else chevron.setRotation(show?-90:90);
+        });
+    }
+    private void openReleases(){
+        try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse("https://github.com/robbywang25/robby-console-android/releases")).addCategory(Intent.CATEGORY_BROWSABLE));}
+        catch(ActivityNotFoundException e){error("无法打开浏览器","手机需要可以打开 HTTPS 链接的浏览器。");}
     }
     @Override public void onDeviceAuthorization(DeviceAuthorization info){if(resumed&&!isDestroyed())build();}
     private void showDeviceAuthorization(DeviceAuthorization info){
