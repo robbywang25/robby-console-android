@@ -62,13 +62,20 @@ public final class SystemPasskey {
             }
             @Override public void onError(GetCredentialException error) {
                 String type = error.getType();
-                // The type is a fixed platform/provider identifier; the message may describe the account, so it is not logged.
-                Log.w("GodAuth", "credential manager: " + type);
+                // The type is a fixed platform/provider identifier. The provider's message explains DOM errors; it is
+                // logged only with addresses and long digit runs removed, and cut short.
+                Log.w("GodAuth", "credential manager: " + type + " " + brief(error.getMessage()));
                 if (GetCredentialException.TYPE_USER_CANCELED.equals(type)) result.completeExceptionally(NativePasskeyFlow.cancelled());
                 else if (GetCredentialException.TYPE_NO_CREDENTIAL.equals(type)) result.completeExceptionally(new NativePasskeyFlow.Failure(NO_CREDENTIAL, false));
                 else result.completeExceptionally(new NativePasskeyFlow.Failure(UNAVAILABLE, false));
             }
         });
+    }
+
+    static String brief(String message) {
+        if (message == null) return "";
+        String s = message.replaceAll("[^\\s@]+@[^\\s@]+", "<address>").replaceAll("\\d{6,}", "<n>").replaceAll("\\s+", " ");
+        return s.length() > 200 ? s.substring(0, 200) : s;
     }
 
     /** GetPublicKeyCredentialOption's request bundle: subtype, WebAuthn request JSON, auto-select and passkey priority. */
