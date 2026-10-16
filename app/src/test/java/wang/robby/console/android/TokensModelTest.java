@@ -34,4 +34,24 @@ public final class TokensModelTest {
         assertEquals("3 天后重置", TokensModel.countdown(NOW + 72 * H, NOW));
         assertNull(TokensModel.countdown(NOW - 1, NOW));
     }
+    static org.json.JSONObject window(String id, String label, double remaining, String group) throws Exception {
+        return new org.json.JSONObject().put("id", id).put("label", label).put("remainingPercent", remaining).put("quotaGroup", group == null ? org.json.JSONObject.NULL : group);
+    }
+    static java.util.List<String> shown(org.json.JSONObject account) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        for (TokensModel.Period p : TokensModel.boardWindows(account)) out.add(p.label + "=" + p.window.optString("id"));
+        return out;
+    }
+    @Test public void claudeShowsItsFiveHourAndWeeklyBalancesOthersTheTightest() throws Exception {
+        org.json.JSONObject claude = new org.json.JSONObject().put("product", "claude").put("windows", new org.json.JSONArray()
+                .put(window("five_hour", "5 小时", 72, "default")).put(window("seven_day", "每周", 30, null)).put(window("seven_day_opus", "Opus 每周", 3, null)));
+        assertEquals(java.util.List.of("5 小时=five_hour", "每周=seven_day"), shown(claude));
+        org.json.JSONObject labelled = new org.json.JSONObject().put("product", "claude").put("windows", new org.json.JSONArray()
+                .put(window("five", "5 小时", 72, null)).put(window("week", "每周", 30, null)));
+        assertEquals("matched by the collector's labels when ids differ", java.util.List.of("5 小时=five", "每周=week"), shown(labelled));
+        org.json.JSONObject codex = new org.json.JSONObject().put("product", "codex").put("windows", new org.json.JSONArray()
+                .put(window("primary", "5 小时", 64, "default")).put(window("secondary", "每周", 18, null)).put(window("spare", "备用", 1, "reserve")));
+        assertEquals("tightest, never a reserve window", java.util.List.of("null=secondary"), shown(codex));
+        assertEquals(java.util.List.of(), shown(new org.json.JSONObject().put("product", "grok")));
+    }
 }

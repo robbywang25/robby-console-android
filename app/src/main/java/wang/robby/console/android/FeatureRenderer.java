@@ -132,19 +132,26 @@ public final class FeatureRenderer {
             case "okx": u.big(number(p, "totalEquityUsd"), "总权益 USD · 持仓 " + number(p, "openPositionCount")); break;
             case "clipboard": u.big(String.valueOf(arr(p, "items").length()), "条剪贴内容 · 来源 " + source(obj(p, "sourceStatus"))); break;
             case "tokens": {
-                long now = System.currentTimeMillis(); int shown = 0, idle = 0;
+                // One row per connected account; accounts not set up are left off the board (the page lists them).
+                long now = System.currentTimeMillis(); int shown = 0; java.text.DecimalFormat whole = new java.text.DecimalFormat("0");
                 for (JSONObject a : rows(p, "accounts")) { String st = a.optString("status");
-                    if ("not_configured".equals(st)) { idle++; continue; } if (shown >= 5) continue; shown++;
-                    Double min = null; long reset = 0; for (JSONObject w : rows(a, "windows")) { Double pc = percent(w); if (pc != null && (min == null || pc < min)) { min = pc; reset = millis(w, "resetsAt"); } }
+                    if ("not_configured".equals(st) || shown >= 5) continue; shown++;
+                    List<TokensModel.Period> periods = TokensModel.boardWindows(a);
+                    Double min = null; for (TokensModel.Period pd : periods) { Double pc = TokensModel.remaining(pd.window); if (pc != null && (min == null || pc < min)) min = pc; }
+                    // The countdown is the first window's: Claude's 5 hours, otherwise the tightest window.
+                    long reset = periods.isEmpty() ? 0 : millis(periods.get(0).window, "resetsAt");
                     LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(shown == 1 ? 8 : 5), 0, 0);
                     boolean fresh = "connected".equals(st); int level = fresh ? TokensModel.level(min) : 0;
                     r.addView(u.theme.dot(level == 1 ? u.theme.success : level == 2 ? u.theme.warning : level == 3 ? u.theme.danger : u.theme.faint, 7));
-                    TextView name = u.text(s(a, "label"), 14, false); name.setTextColor(u.theme.ink); name.setPadding(u.dp(8), 0, 0, 0); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+                    TextView name = u.text(s(a, "label"), 14, false); name.setTextColor(u.theme.ink); name.setPadding(u.dp(8), 0, 0, 0); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
                     String cd = fresh ? TokensModel.countdown(reset, now) : null; if (cd != null) r.addView(u.text(cd, 11, false));
-                    TextView val = u.text(min == null ? TokensModel.status(st) : (fresh ? "" : "上次 ") + new java.text.DecimalFormat("0").format(min) + "%", 14, true); val.setPadding(u.dp(10), 0, 0, 0); r.addView(val);
+                    if (min == null) { TextView val = u.text(TokensModel.status(st), 14, true); val.setPadding(u.dp(10), 0, 0, 0); r.addView(val); }
+                    else for (int i = 0; i < periods.size(); i++) { TokensModel.Period pd = periods.get(i); Double pc = TokensModel.remaining(pd.window); if (pc == null) continue;
+                        String prefix = (!fresh && i == 0 ? "上次 " : "") + (pd.label == null ? "" : pd.label);
+                        if (!prefix.isEmpty()) { TextView l = u.text(prefix, 11, false); l.setPadding(u.dp(10), 0, u.dp(3), 0); r.addView(l); }
+                        TextView val = u.text(whole.format(pc) + "%", 14, true); if (prefix.isEmpty()) val.setPadding(u.dp(10), 0, 0, 0); r.addView(val); }
                     shell.addView(r); }
                 if (shown == 0) widgetMessage(context, shell, "还没有已接入的账号");
-                else if (idle > 0) { TextView more = u.text(idle + " 个账号未接入", 12, false); more.setTextColor(u.theme.faint); more.setPadding(0, u.dp(6), 0, 0); shell.addView(more); }
                 break; }
             case "market": {
                 JSONArray list = arr(p, "watchlist"); if (list.length() == 0) { widgetMessage(context, shell, "关注列表为空"); break; }

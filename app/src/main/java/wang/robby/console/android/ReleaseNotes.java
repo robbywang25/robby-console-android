@@ -15,7 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
-        new Entry("0.12.1", "2026-10-17", "检查更新更及时",
+        new Entry("0.13.0", "2026-10-17", "Claude 5 小时额度上看板",
+            "Token 额度看板里，Claude 同时显示 5 小时和每周余额，倒计时对应 5 小时额度。",
+            "看板不再显示「几个账号未接入」，只列出已接入的账号。",
             "已经发现新版本后又有更新发布时，再进「关于」就能看到，不用重启应用。",
             "在「关于」页下拉，可以立即重新检查新版本。"),
         new Entry("0.12.0", "2026-10-17", "总览更简洁：下拉刷新、长按编辑",

@@ -1,11 +1,48 @@
 package wang.robby.console.android;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 /**
  * Wording and judgements for the Token 额度 page (tokens.robby.wang via the mobile API). Mirrors the web dashboard
  * and the iOS app so the same quota reads the same everywhere; pure Java for JVM tests.
  */
 final class TokensModel {
     private TokensModel() {}
+    /** A quota window shown on a 看板 row, with the short period name it is shown under (null for a single value). */
+    static final class Period {
+        final String label; final JSONObject window;
+        Period(String label, JSONObject window) { this.label = label; this.window = window; }
+    }
+    /**
+     * The windows one 看板 row shows. Claude shows its 5-hour and weekly balances side by side, as tokens.robby.wang
+     * does (the collector's ids, then its labels); every other account shows the window with the least remaining.
+     * Reserve windows are never shown here, as on iOS.
+     */
+    static List<Period> boardWindows(JSONObject account) {
+        List<JSONObject> windows = new ArrayList<>(); JSONArray all = account.optJSONArray("windows");
+        if (all != null) for (int i = 0; i < all.length(); i++) { JSONObject w = all.optJSONObject(i); if (w != null && !"reserve".equals(w.opt("quotaGroup"))) windows.add(w); }
+        if ("claude".equals(account.opt("product"))) {
+            List<Period> out = new ArrayList<>();
+            JSONObject five = find(windows, Set.of("five_hour", "five-hour", "five", "5h"), Set.of("5小时", "5小时额度"));
+            JSONObject week = find(windows, Set.of("seven_day", "seven-day", "weekly", "week", "7d"), Set.of("每周", "每周额度", "7天"));
+            if (five != null) out.add(new Period("5 小时", five));
+            if (week != null) out.add(new Period("每周", week));
+            if (!out.isEmpty()) return out;
+        }
+        JSONObject tightest = null; Double low = null;
+        for (JSONObject w : windows) { Double p = remaining(w); if (p != null && (low == null || p < low)) { low = p; tightest = w; } }
+        return tightest == null ? List.of() : List.of(new Period(null, tightest));
+    }
+    static Double remaining(JSONObject window) { Object v = window.opt("remainingPercent"); return v instanceof Number ? ((Number) v).doubleValue() : null; }
+    private static JSONObject find(List<JSONObject> windows, Set<String> ids, Set<String> labels) {
+        for (JSONObject w : windows) if (ids.contains(String.valueOf(w.opt("id")))) return w;
+        for (JSONObject w : windows) if (labels.contains(String.valueOf(w.opt("label")).replaceAll("\\s", ""))) return w;
+        return null;
+    }
     static String status(String s) {
         switch (s == null ? "" : s) {
             case "connected": return "已更新";
