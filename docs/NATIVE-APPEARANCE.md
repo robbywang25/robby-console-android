@@ -199,3 +199,18 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
 - **403 文案**：Token 额度遇到 403 时，提示改为「这次登录没有 Token 额度读取权限，请在「我」里退出后重新登录」。
 
 验证：`check.sh` 通过（81 项 JVM 测试、lint 0 错误、正式证书签名）。服务端改动后，在未登录状态下向认证服务发起带这项 scope 的授权请求，现在会进入登录流程，改动前返回 `invalid_scope`。按用户偏好跳过了预览版真机验收；登录后无法截图，真实读取由用户在手机上确认。
+
+## v0.11.0–v0.11.1：原生通行密钥登录（2026-10-16 / 10-17）
+
+- **流程**：Android 14 及以上，「使用 Passkey 登录」改用框架 `CredentialManager`（不引入 AndroidX），按 iOS 的 `NativePasskeyAuthentication` 调 Authelia 的 `/api/firstfactor/passkey`、`/api/state`、`/api/oidc/consent`；授权确认是应用内提示框，回调仍由 `AuthCoordinator` 校验并用 PKCE 换令牌。Android 13 及更早仍走 Auth Tab。
+- **服务端**：Authelia 4.39.28 加 `webauthn.experimental_opaque_origins` 补丁并只登记本应用的 `android:apk-key-hash`；`auth.god.robby.wang` 发布 assetlinks，同时声明 `handle_all_urls` 与 `get_login_creds`（见 site-admin `deploy/android-client/enable_native_passkey.py`）。
+- **真机结论**：能访问 Google 服务的 Pixel 上原生登录成功，全程不打开网页。Find 所在网络连不上 `digitalassetlinks.googleapis.com`（DNS 超时、TCP 443 不通），Google 密码管理器无法在线校验 assetlinks，报 `RP ID cannot be validated`；0.11.1 起失败提示框附上系统原因并说明这一点，「改用网页登录」可用。
+
+## v0.12.0：总览下拉刷新、长按编辑（2026-10-17）
+
+- **总览**：登录后不再显示日期行和大标题，去掉刷新按钮和「看板 / 编辑」行，看板从状态栏下方 12dp 开始；未登录的欢迎页保留页头（登录进度显示在那里）。
+- **下拉刷新**（`PullScrollView`）：只在登录后的总览开启。顶部下拉时页面带阻尼下移，空出的位置居中出现玻璃圆钮和刷新图标，随下拉淡入、放大、旋转；超过 72dp 有阈值触感（Android 14+ 用手势阈值触感，更早用点按触感），松手后停在 56dp 持续旋转，直到 `loadBoard` 报告所有读取完成（至少 0.5 秒）。读屏有同名的「刷新看板」无障碍操作；关闭动画或省电时不做动画。
+- **长按编辑**：长按任意看板卡片进入「编辑看板」，有长按触感，读屏把长按操作读作「编辑看板」；原本点不开的卡片也加上按压反馈。看板为空时的提示改为「点这里添加…」。
+- **红点**：在「关于」里点更新时记下目标版本；装好后当前版本等于它，就当作已读，不再亮红点。取消安装或用其他途径升级仍按原规则（`ReleaseNotesTest` 覆盖）。
+
+验证：`check.sh` 通过（95 项 JVM 测试、lint 0 错误、正式证书签名）。预览版经 Tailscale 远程 ADB 装到 Find，截图确认：浅色、深色总览没有页头和「看板 / 编辑」行；下拉中途的圆钮和下移、松手后旋转保持的那一帧，以及刷新后快照时间更新；长按「服务状态」卡片进入编辑看板。正式包覆盖安装到 Find（保留数据），安装文件 SHA256 与构建一致，签名证书不变，崩溃日志里没有本应用的记录。未验证：大字体变体、阈值触感的手感（远程无法感知）、真实数据下的刷新耗时；红点修复要等下一次从「关于」更新时才能在真机上看到。
