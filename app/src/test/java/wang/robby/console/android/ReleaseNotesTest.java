@@ -43,6 +43,9 @@ public final class ReleaseNotesTest {
         assertFalse("opened this version", ReleaseNotes.unread(current, current, true));
         assertFalse("no notes for an unknown build", ReleaseNotes.unread(older, "9.9.9", true));
         assertFalse(ReleaseNotes.unread(older, null, true));
+        assertFalse("updated from 关于 to this version", ReleaseNotes.unread(older, current, true, current));
+        assertTrue("an update to another version was started but not installed", ReleaseNotes.unread(older, current, true, "9.9.9"));
+        assertTrue(ReleaseNotes.unread(older, current, true, null));
     }
     @Test public void dateLabelHidesTheCurrentYear() {
         assertEquals("10月15日", ReleaseNotes.dateLabel("2026-10-15", LocalDate.of(2026, 12, 1)));

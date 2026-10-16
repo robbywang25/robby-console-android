@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.12.0", "2026-10-17", "总览更简洁：下拉刷新、长按编辑",
+            "总览去掉顶部的日期和标题，看板从页面最上方开始。",
+            "去掉右上角的刷新按钮，在页面顶部下拉即可刷新看板。",
+            "拉到位时有轻微震动提示，松手后图标转动，所有卡片读完才收起。",
+            "长按任意看板卡片即可编辑看板，原来的「编辑」入口已去掉。",
+            "在「关于」里点更新后回到应用，「我」不再亮着红点。"),
         new Entry("0.11.1", "2026-10-17", "通行密钥失败时说清原因",
             "原生登录失败时，提示框会附上系统给出的具体原因，方便反馈。",
             "手机连不上 Google 服务时会直接说明，并可改用网页登录。"),
@@ -105,6 +111,11 @@ final class ReleaseNotes {
     static boolean unread(String seen, String current, boolean upgraded) {
         if (current == null || find(current) == null) return false;
         return seen == null ? upgraded : !seen.equals(current);
+    }
+    /** As above, except that an update started in 关于 already showed the target version's notes, so once that
+     *  version is the installed one they count as read. A cancelled update acknowledges a version never installed. */
+    static boolean unread(String seen, String current, boolean upgraded, String acknowledged) {
+        return !(current != null && current.equals(acknowledged)) && unread(seen, current, upgraded);
     }
     /** "10月15日"; the year is shown only when it is not the current year. */
     static String dateLabel(String iso, LocalDate today) {

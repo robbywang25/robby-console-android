@@ -26,7 +26,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private FrameLayout root,leading; private LinearLayout content,trailing; private GlassPane nav; private TextView heading,session;
     private static final List<String> TABS=List.of("总览","洞察","资产","工具","设置");
     /** Tab whose lens was last drawn, so the lens can glide from it; -1 before the first frame. */
-    private int shownTab=-1; private int enterFrom=0; private View refreshIcon;
+    private int shownTab=-1; private int enterFrom=0; private View refreshIcon, pullMark, pullGlyph;
     /** Pseudo feature id for 关于 God; it has no API path and lives in the 设置 tab's reading context. */
     private static final String ABOUT="about";
     /** Pseudo feature id for the 看板 editor, in the 总览 tab's reading context. */
@@ -46,7 +46,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private volatile int generation=0; private boolean resumed=false;
     private final Map<String,JSONObject> snapshots=new HashMap<>();
     private final NavigationMemory navigation=new NavigationMemory();
-    private ScrollView scroll; private String displayedRoute; private boolean viewportReady;
+    private PullScrollView scroll; private String displayedRoute; private boolean viewportReady;
     private void saveViewport(){if(viewportReady&&scroll!=null)navigation.rememberOffset(displayedRoute,scroll.getScrollY());}
     private String routeKey(){return group+"/"+selectedId+"/"+project+"/"+ledgerPages.size();}
     private void restoreViewport(){
@@ -183,12 +183,21 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             heading=theme.title(ConsoleTheme.tabLabel(group));titles.addView(session);titles.addView(heading);
             header.addView(titles,new LinearLayout.LayoutParams(0,-2,1));header.addView(trailing,new LinearLayout.LayoutParams(-2,dp(48)));
         }
+        // Signed-in 总览 is only the board and 常用: no date line or title above them. Signed out keeps the header,
+        // where sign-in progress is shown.
+        boolean bare=!nested&&group.equals("总览")&&loggedIn();if(bare)header.setVisibility(View.GONE);
         body.addView(header);
-        scroll=new ScrollView(this){@Override protected float getBottomFadingEdgeStrength(){return 0f;}};
+        scroll=new PullScrollView(this,theme.effects);
         scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
         // Scroll-edge effect: content dissolves under the header instead of being cut at a hard line.
         scroll.setVerticalFadingEdgeEnabled(true);scroll.setFadingEdgeLength(dp(28));
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(16),dp(4),dp(16),dp(120));scroll.addView(content);body.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(16),dp(bare?12:4),dp(16),dp(120));scroll.addView(content);
+        // The page area: the scroll, and above it the glass mark pull-to-refresh brings in on pages that use it.
+        FrameLayout pageArea=new FrameLayout(this);pageArea.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
+        pullMark=new FrameLayout(this);pullMark.setBackground(theme.glass(-1));pullMark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);pullMark.setVisibility(View.INVISIBLE);
+        pullGlyph=theme.icon("refresh",theme.ink,20);((FrameLayout)pullMark).addView(pullGlyph,new FrameLayout.LayoutParams(dp(20),dp(20),Gravity.CENTER));
+        pageArea.addView(pullMark,new FrameLayout.LayoutParams(dp(40),dp(40),Gravity.TOP|Gravity.CENTER_HORIZONTAL));
+        body.addView(pageArea,new LinearLayout.LayoutParams(-1,0,1));
         int current=TABS.indexOf(group);
         // Content keeps running under the dock to the screen edge, then fades into the sky below the gesture bar.
         View fade=new View(this);fade.setBackground(theme.bottomFade());fade.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);stage.addView(fade,new FrameLayout.LayoutParams(-1,dp(40),Gravity.BOTTOM));
@@ -236,18 +245,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             Button device=button("通过已有设备授权",this::deviceLogin);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);welcome.addView(device,d);
         }else{
             // 总览 is only 看板 and 常用: the board is the person's own combination of feature cards.
-            trailing.addView(circle("refresh","刷新看板",()->loadBoard(true)));
-            sectionAction("看板","编辑",this::openBoardEditor);
+            // Pull down on 总览 to refresh the board; the mark keeps turning until every card's read has finished.
+            final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新看板",()->loadBoard(true,page::finishRefresh));
             board=new LinearLayout(this);board.setOrientation(LinearLayout.VERTICAL);content.addView(board,new LinearLayout.LayoutParams(-1,-2));loadBoard(false);
         }
         section("常用");quick(List.of("travel-ledger","clipboard","openai","domains"));
         restoreViewport();
-    }
-    private void sectionAction(String title,String action,Runnable run){
-        LinearLayout r=new LinearLayout(this);r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(dp(6),dp(8),0,dp(2));
-        TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);r.addView(t,new LinearLayout.LayoutParams(0,-2,1));
-        TextView a=text(action,14,ACCENT,true);a.setPadding(dp(12),dp(10),dp(8),dp(10));a.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,14),14));a.setFocusable(true);a.setClickable(true);a.setContentDescription(action+title);a.setOnClickListener(v->run.run());r.addView(a);
-        content.addView(r);
     }
     private List<String> boardCards(){return Dashboard.parse(prefs().getString("dashboard",null));}
     private void saveBoard(List<String> ids){prefs().edit().putString("dashboard",Dashboard.serialize(ids)).apply();}
@@ -256,29 +259,42 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
      * Lays out the chosen cards (wide ones on their own row, small ones two to a row), shows any cached reads at
      * once, and fetches each distinct API path a single time. A failing source only blanks its own cards.
      */
-    private void loadBoard(boolean refresh){
-        final LinearLayout box=board;if(box==null||!resumed)return;box.removeAllViews();
+    private void loadBoard(boolean refresh){loadBoard(refresh,null);}
+    /** {@code done} runs on the main thread once every read this call started has finished (at once when none did). */
+    private void loadBoard(boolean refresh,Runnable done){
+        final LinearLayout box=board;if(box==null||!resumed){if(done!=null)done.run();return;}box.removeAllViews();
         List<String> ids=boardCards();
         if(ids.isEmpty()){LinearLayout c=theme.card(box);c.setBackground(theme.ripple(theme.card(),24));c.setFocusable(true);c.setClickable(true);c.setOnClickListener(v->openBoardEditor());
-            c.addView(text("看板是空的",15,INK,true));TextView t=text("点「编辑」添加想在这里看到的功能卡片。",13,MUTED,false);t.setPadding(0,dp(4),0,0);c.addView(t);return;}
+            c.addView(text("看板是空的",15,INK,true));TextView t=text("点这里添加想在这里看到的功能卡片。",13,MUTED,false);t.setPadding(0,dp(4),0,0);c.addView(t);if(done!=null)done.run();return;}
         final Map<String,List<LinearLayout>> shells=new HashMap<>();LinearLayout row=null;
         for(String id:ids){Dashboard.Card card=Dashboard.find(id);if(card==null)continue;LinearLayout shell;
             if(card.wide){row=null;LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(10);shell=FeatureRenderer.widgetShell(this,box,card,lp);}
             else{if(row==null||row.getChildCount()>=2){row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(10);box.addView(row,rp);}
                 LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);if(row.getChildCount()==1)lp.leftMargin=dp(10);shell=FeatureRenderer.widgetShell(this,row,card,lp);}
-            shells.computeIfAbsent(card.path,k->new ArrayList<>()).add(shell);}
+            editOnLongPress(shell);shells.computeIfAbsent(card.path,k->new ArrayList<>()).add(shell);}
         // Keep a lone small card at half width instead of stretching it across the row.
         for(int i=0;i<box.getChildCount();i++){View v=box.getChildAt(i);if(v instanceof LinearLayout&&((LinearLayout)v).getOrientation()==LinearLayout.HORIZONTAL&&((LinearLayout)v).getChildCount()==1){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,1,1);lp.leftMargin=dp(10);((LinearLayout)v).addView(new View(this),lp);}}
-        if(refresh)spin();final int epoch=++generation;
+        final int epoch=++generation;final int[] reading={0};
+        final Runnable finished=()->{if(--reading[0]==0&&done!=null)done.run();};
         for(String path:Dashboard.paths(ids)){final List<LinearLayout> targets=shells.get(path);JSONObject cached=snapshots.get(path);
             if(cached!=null)fillBoard(targets,cached);else for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"正在读取…");
             if(cached!=null&&!refresh)continue;
-            worker.execute(()->{if(epoch!=generation)return;
-                try{JSONObject data=read(path);runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);fillBoard(targets,data);restoreViewport();});}
-                catch(Exception e){runOnUiThread(()->{if(epoch!=generation||!resumed||isDestroyed())return;
+            reading[0]++;
+            worker.execute(()->{if(epoch!=generation){runOnUiThread(finished);return;}
+                try{JSONObject data=read(path);runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);fillBoard(targets,data);restoreViewport();}finally{finished.run();}});}
+                catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;
                     // A refresh may have invalidated the stored session: show sign-in instead of a board that can only fail.
                     if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
-                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"暂不可读："+explain(path,e));});}});}
+                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"暂不可读："+explain(path,e));}finally{finished.run();}});}});}
+        if(reading[0]==0&&done!=null)done.run();
+    }
+    /** Long-pressing any 看板 card opens 编辑看板; screen readers announce the long-press action by that name. */
+    private void editOnLongPress(View card){
+        if(!card.isClickable()){card.setBackground(theme.ripple(theme.card(),24));theme.press(card);}
+        card.setLongClickable(true);
+        card.setOnLongClickListener(v->{v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);openBoardEditor();return true;});
+        card.setAccessibilityDelegate(new View.AccessibilityDelegate(){@Override public void onInitializeAccessibilityNodeInfo(View host,android.view.accessibility.AccessibilityNodeInfo info){
+            super.onInitializeAccessibilityNodeInfo(host,info);info.addAction(new android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK,"编辑看板"));}});
     }
     private void fillBoard(List<LinearLayout> shells,JSONObject data){for(LinearLayout shell:shells){Dashboard.Card card=Dashboard.find(String.valueOf(shell.getTag()));if(card!=null)FeatureRenderer.widget(this,shell,card,data);}}
     /** 编辑看板: switch cards on or off and order them; changes apply at once and survive restarts (layout only). */
@@ -455,7 +471,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         boolean upgraded=false;
         try{android.content.pm.PackageInfo info=Build.VERSION.SDK_INT>=33?getPackageManager().getPackageInfo(getPackageName(),android.content.pm.PackageManager.PackageInfoFlags.of(0)):getPackageManager().getPackageInfo(getPackageName(),0);upgraded=info.lastUpdateTime>info.firstInstallTime;}
         catch(Exception ignored){}
-        return ReleaseNotes.unread(prefs().getString("notesSeen",null),versionName(),upgraded);
+        String current=versionName();
+        // An update started in 关于 showed that version's notes before installing: once it is the installed version, it is read.
+        String acknowledged=prefs().getString("notesAcknowledged",null);
+        if(!current.isEmpty()&&current.equals(acknowledged))prefs().edit().putString("notesSeen",current).remove("notesAcknowledged").apply();
+        return ReleaseNotes.unread(prefs().getString("notesSeen",null),current,upgraded,acknowledged);
     }
     /**
      * 关于 God, modelled on WeChat's 关于微信: brand and version first, one way to get a newer build,
@@ -536,6 +556,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
                     catch(ActivityNotFoundException e){awaitingInstallPermission=false;error("无法打开设置","请在系统设置里允许本应用安装应用。");}}));
             return;
         }
+        // The update card showed this version's notes; after it is installed the red dots should not ask again.
+        prefs().edit().putString("notesAcknowledged",r.version).apply();
         updateState="downloading";updatePercent=0;updateNote=null;updateCancel.set(false);renderUpdate();
         updater.execute(()->{
             try{
