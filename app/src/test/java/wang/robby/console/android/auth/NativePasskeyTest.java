@@ -127,6 +127,18 @@ public final class NativePasskeyTest {
         rejects(() -> NativePasskey.cookie(List.of("authelia_robby_session=abc; Domain=evil.example; Secure; HttpOnly"), null));
     }
 
+    @Test public void systemFailuresExplainThemselvesWithTheScrubbedReason() {
+        String rp = NativePasskey.systemFailure("androidx.credentials.TYPE_GET_PUBLIC_KEY_CREDENTIAL_DOM_EXCEPTION/androidx.credentials.TYPE_DATA_ERROR", "RP ID cannot be validated.");
+        assertTrue(rp.startsWith(NativePasskey.UNVERIFIED));
+        assertTrue(rp.endsWith("系统原因：DATA_ERROR · RP ID cannot be validated."));
+        assertEquals(NativePasskey.NO_CREDENTIAL, NativePasskey.systemFailure("android.credentials.GetCredentialException.TYPE_NO_CREDENTIAL", "none"));
+        String other = NativePasskey.systemFailure("android.credentials.GetCredentialException.TYPE_UNKNOWN", "Failed for someone@example.com code 1234567");
+        assertTrue(other.startsWith(NativePasskey.UNAVAILABLE));
+        assertTrue(other.endsWith("系统原因：UNKNOWN · Failed for <address> code <n>"));
+        assertTrue(NativePasskey.systemFailure(null, null).endsWith("系统原因：未知"));
+        assertEquals(200, NativePasskey.brief("x".repeat(500)).length());
+    }
+
     @Test public void callbackIsOnlyTheAndroidRedirect() {
         assertTrue(NativePasskey.callback(URI.create("https://god.robby.wang/mobile/android/callback?code=c&state=s")));
         assertFalse(NativePasskey.callback(URI.create("https://god.robby.wang/mobile/oauth/callback?code=c")));

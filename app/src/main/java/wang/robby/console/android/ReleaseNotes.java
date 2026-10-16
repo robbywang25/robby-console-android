@@ -15,6 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.11.1", "2026-10-17", "通行密钥失败时说清原因",
+            "原生登录失败时，提示框会附上系统给出的具体原因，方便反馈。",
+            "手机连不上 Google 服务时会直接说明，并可改用网页登录。"),
         new Entry("0.11.0", "2026-10-16", "通行密钥登录不再打开网页",
             "Android 14 及以上点「使用 Passkey 登录」，直接弹出系统通行密钥完成验证。",
             "确认授权改为应用内的提示框，和 iPhone 版一致；不再打开登录网页。",

@@ -29,8 +29,7 @@ import java.util.concurrent.CompletableFuture;
 public final class SystemPasskey {
     private SystemPasskey() {}
     private static final String TYPE = "androidx.credentials.TYPE_PUBLIC_KEY_CREDENTIAL";
-    static final String NO_CREDENTIAL = "这台手机上没有可用于 God 的通行密钥。可以在 Google 密码管理器同步通行密钥，或改用「通过已有设备授权」。";
-    public static final String UNAVAILABLE = "系统暂时无法使用通行密钥，请确认 Google 密码管理器可用后重试。";
+    public static final String UNAVAILABLE = NativePasskey.UNAVAILABLE;
 
     public static boolean available(Context context) { return context.getSystemService(CredentialManager.class) != null; }
 
@@ -64,18 +63,11 @@ public final class SystemPasskey {
                 String type = error.getType();
                 // The type is a fixed platform/provider identifier. The provider's message explains DOM errors; it is
                 // logged only with addresses and long digit runs removed, and cut short.
-                Log.w("GodAuth", "credential manager: " + type + " " + brief(error.getMessage()));
+                Log.w("GodAuth", "credential manager: " + type + " " + NativePasskey.brief(error.getMessage()));
                 if (GetCredentialException.TYPE_USER_CANCELED.equals(type)) result.completeExceptionally(NativePasskeyFlow.cancelled());
-                else if (GetCredentialException.TYPE_NO_CREDENTIAL.equals(type)) result.completeExceptionally(new NativePasskeyFlow.Failure(NO_CREDENTIAL, false));
-                else result.completeExceptionally(new NativePasskeyFlow.Failure(UNAVAILABLE, false));
+                else result.completeExceptionally(new NativePasskeyFlow.Failure(NativePasskey.systemFailure(type, error.getMessage()), false));
             }
         });
-    }
-
-    static String brief(String message) {
-        if (message == null) return "";
-        String s = message.replaceAll("[^\\s@]+@[^\\s@]+", "<address>").replaceAll("\\d{6,}", "<n>").replaceAll("\\s+", " ");
-        return s.length() > 200 ? s.substring(0, 200) : s;
     }
 
     /** GetPublicKeyCredentialOption's request bundle: subtype, WebAuthn request JSON, auto-select and passkey priority. */

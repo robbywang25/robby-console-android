@@ -29,6 +29,9 @@ final class NativePasskey {
     static final String COOKIE = "authelia_robby_session";
     static final String AUTHORIZATION_PATH = "/api/oidc/authorization";
     static final Set<String> PATHS = Set.of("/api/firstfactor/passkey", "/api/state", "/api/oidc/consent");
+    static final String NO_CREDENTIAL = "这台手机上没有可用于 God 的通行密钥。可以在 Google 密码管理器同步通行密钥，或改用「通过已有设备授权」。";
+    static final String UNAVAILABLE = "系统暂时无法使用通行密钥，请确认 Google 密码管理器可用后重试。";
+    static final String UNVERIFIED = "这台手机现在连不上 Google 服务，系统没法确认 God 可以使用 auth.god.robby.wang 的通行密钥。连上能访问 Google 的网络后重试，或改用网页登录。";
     private static final Set<String> COOKIE_DOMAINS = Set.of(RP_ID, "." + RP_ID, "god.robby.wang", ".god.robby.wang", "robby.wang", ".robby.wang");
 
     /** A challenge Authelia issued, and the Credential Manager request built only from its validated parts. */
@@ -152,6 +155,27 @@ final class NativePasskey {
             }
         }
         return current;
+    }
+
+    /**
+     * What the person reads when Credential Manager fails. Google Password Manager reports "RP ID cannot be validated"
+     * when it cannot reach Google's Digital Asset Links service, which is the usual case on networks without Google.
+     * The system's own reason is appended, scrubbed, so a failure on any phone can be reported without logs.
+     */
+    static String systemFailure(String type, String message) {
+        String code = type == null ? "" : type.substring(type.lastIndexOf('/') + 1);
+        code = code.substring(code.lastIndexOf('.') + 1).replaceFirst("^TYPE_", "");
+        if ("NO_CREDENTIAL".equals(code)) return NO_CREDENTIAL;
+        String reason = brief(message);
+        String base = reason.toLowerCase(Locale.ROOT).contains("cannot be validated") ? UNVERIFIED : UNAVAILABLE;
+        return base + "\n\n系统原因：" + (code.isEmpty() ? "未知" : code) + (reason.isEmpty() ? "" : " · " + reason);
+    }
+
+    /** A provider message for logs and the failure dialog: addresses and long digit runs removed, whitespace folded, cut short. */
+    static String brief(String message) {
+        if (message == null) return "";
+        String s = message.replaceAll("[^\\s@]+@[^\\s@]+", "<address>").replaceAll("\\d{6,}", "<n>").replaceAll("\\s+", " ").trim();
+        return s.length() > 200 ? s.substring(0, 200) : s;
     }
 
     static boolean sameIssuer(URI uri) {
