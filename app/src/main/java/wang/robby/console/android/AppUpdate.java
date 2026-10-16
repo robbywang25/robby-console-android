@@ -88,6 +88,14 @@ final class AppUpdate {
         }
         return out;
     }
+    /**
+     * 关于 checks again whenever it opens, at most once a minute (GitHub's anonymous API budget), and never while a
+     * check, download or install is under way; the first open of a run always checks.
+     */
+    static boolean recheck(String state, boolean checking, long checkedAt, long now) {
+        if (checking || "downloading".equals(state) || "installing".equals(state)) return false;
+        return "idle".equals(state) || now - checkedAt >= 60_000L;
+    }
     static Release check(String current) throws Exception {
         ByteArrayOutputStream body = new ByteArrayOutputStream(); fetch(RELEASES, MAX_JSON, body, null, null);
         return pick(parse(body.toString("UTF-8")), current);

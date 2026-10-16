@@ -38,6 +38,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private final java.util.concurrent.atomic.AtomicBoolean updateCancel=new java.util.concurrent.atomic.AtomicBoolean();
     private final UpdateReceiver.Listener updateListener=this::onUpdateStatus;
     private volatile AppUpdate.Release update; private volatile String updateState="idle",updateNote; private volatile int updatePercent=-1;
+    private volatile boolean updateChecking; private long updateCheckedAt;
     private boolean awaitingInstallPermission; private LinearLayout updateBox;
     /** 运行状态 refreshes itself every 60 s while it is the visible page, like status.robby.wang; never in the background. */
     private final Handler ticker=new Handler(Looper.getMainLooper());
@@ -490,9 +491,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         FrameLayout mark=new FrameLayout(this);mark.setBackground(theme.glass(-1));mark.addView(theme.tabIcon("grid",true,38),new FrameLayout.LayoutParams(dp(38),dp(38),Gravity.CENTER));hero.addView(mark,new LinearLayout.LayoutParams(dp(76),dp(76)));
         TextView name=text("God",22,INK,true);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(14),0,dp(4));hero.addView(name);
         TextView build=text(version.isEmpty()?"Android":"Android "+version,14,MUTED,false);build.setGravity(Gravity.CENTER);hero.addView(build);content.addView(hero);
-        // Update lives right under the version, like 关于微信: the check runs once when the page first opens.
+        // Update lives right under the version, like 关于微信. Every open checks again (at most once a minute), so a
+        // release published after one was found still shows up; pulling down checks at once.
         updateBox=new LinearLayout(this);updateBox.setOrientation(LinearLayout.VERTICAL);content.addView(updateBox);renderUpdate();
-        if(updateState.equals("idle"))checkUpdate();
+        if(AppUpdate.recheck(updateState,updateChecking,updateCheckedAt,SystemClock.elapsedRealtime()))checkUpdate();
+        final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"检查新版本",()->checkUpdate(page::finishRefresh));
         // The installed version reads as its own card; every other version is one row in a single grouped list,
         // like WeChat's 功能介绍, so ten releases scan as a list instead of a stack of cards.
         if(expandedNotes.isEmpty()&&!version.isEmpty())expandedNotes.add(version);
@@ -537,13 +540,31 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         });
     }
     private boolean updateBusy(){String s=updateState;return s.equals("checking")||s.equals("downloading")||s.equals("installing");}
-    private void checkUpdate(){
-        if(updateBusy())return;updateState="checking";updateNote=null;renderUpdate();String current=versionName();
+    private void checkUpdate(){checkUpdate(null);}
+    /**
+     * Asks GitHub for the newest release. With a version already shown the check runs quietly behind its card and
+     * replaces it only with a newer answer; a failed re-check keeps it. A download or install in progress is never
+     * interrupted. {@code done} runs on the main thread when this call is over.
+     */
+    private void checkUpdate(Runnable done){
+        String s=updateState;
+        if(updateChecking||s.equals("downloading")||s.equals("installing")){if(done!=null)done.run();return;}
+        updateChecking=true;if(update==null){updateState="checking";updateNote=null;renderUpdate();}
+        String current=versionName();
         updater.execute(()->{
-            try{AppUpdate.Release found;String real=PreviewMode.realUpdateAs();
-                if(PreviewMode.isBuild()&&real==null){Thread.sleep(700);found=PreviewMode.update();}else found=AppUpdate.check(real!=null?real:current);
-                runOnUiThread(()->{update=found;updateState=found==null?"latest":"available";renderUpdate();});}
-            catch(Exception e){runOnUiThread(()->{updateState="failed";updateNote=updateError(e);renderUpdate();});}
+            AppUpdate.Release result=null;Exception failure=null;
+            try{String real=PreviewMode.realUpdateAs();
+                if(PreviewMode.isBuild()&&real==null){Thread.sleep(700);result=PreviewMode.update();}else result=AppUpdate.check(real!=null?real:current);}
+            catch(Exception e){failure=e;}
+            final AppUpdate.Release found=result;final Exception error=failure;
+            runOnUiThread(()->{
+                try{updateChecking=false;updateCheckedAt=SystemClock.elapsedRealtime();
+                    String now=updateState;if(now.equals("downloading")||now.equals("installing"))return;
+                    if(error==null){update=found;updateState=found==null?"latest":"available";updateNote=null;}
+                    else if(update==null){updateState="failed";updateNote=updateError(error);}
+                    renderUpdate();}
+                finally{if(done!=null)done.run();}
+            });
         });
     }
     /** 立即更新: download, verify, then the system installer asks the person to confirm. */

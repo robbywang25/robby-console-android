@@ -50,4 +50,14 @@ public final class AppUpdateTest {
         assertEquals("整体换成 Liquid Glass 风格，见 FEATURE-PARITY。", AppUpdate.summary("整体换成 **Liquid Glass** 风格，见 [FEATURE-PARITY](docs/x.md)。\n\n- 外观"));
         assertTrue(AppUpdate.summary("字".repeat(300)).length() <= 120);
     }
+    @Test public void aboutChecksAgainButNotTooOftenNorDuringAnUpdate() {
+        long now = 1_000_000L;
+        assertTrue("first open of a run", AppUpdate.recheck("idle", false, 0L, now));
+        assertTrue("a version was found a minute ago", AppUpdate.recheck("available", false, now - 60_000L, now));
+        assertTrue(AppUpdate.recheck("latest", false, now - 120_000L, now));
+        assertFalse("checked moments ago", AppUpdate.recheck("available", false, now - 5_000L, now));
+        assertFalse("already checking", AppUpdate.recheck("available", true, now - 120_000L, now));
+        assertFalse("downloading", AppUpdate.recheck("downloading", false, now - 120_000L, now));
+        assertFalse("installing", AppUpdate.recheck("installing", false, now - 120_000L, now));
+    }
 }
