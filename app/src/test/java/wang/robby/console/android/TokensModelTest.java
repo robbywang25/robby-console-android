@@ -54,4 +54,25 @@ public final class TokensModelTest {
         assertEquals("tightest, never a reserve window", java.util.List.of("null=secondary"), shown(codex));
         assertEquals(java.util.List.of(), shown(new org.json.JSONObject().put("product", "grok")));
     }
+    @Test public void codexBoardLineShowsPointsAndResetCardsLikeIos() throws Exception {
+        java.time.ZoneId zone = java.time.ZoneId.of("Asia/Shanghai");
+        long now = java.time.Instant.parse("2026-10-17T02:00:00Z").toEpochMilli();
+        org.json.JSONObject codex = new org.json.JSONObject().put("product", "codex")
+                .put("windows", new org.json.JSONArray().put(window("primary", "5 小时", 64, "default")))
+                .put("credits", new org.json.JSONObject().put("remaining", 1250).put("unlimited", false))
+                .put("resetCredits", new org.json.JSONObject().put("available", 2).put("applicable", 1).put("cards", new org.json.JSONArray()
+                        .put(new org.json.JSONObject().put("status", "available").put("expiresAt", "2026-10-20T04:00:00Z"))
+                        .put(new org.json.JSONObject().put("status", "redeemed").put("expiresAt", "2026-10-18T04:00:00Z"))));
+        assertEquals("Points 1,250 · 重置卡 2 张 · 最近 10月20日到期", TokensModel.boardExtras(codex, true, now, zone));
+        assertEquals("上次 Points 1,250 · 重置卡 2 张 · 最近 10月20日到期", TokensModel.boardExtras(codex, false, now, zone));
+        codex.getJSONArray("windows").getJSONObject(0).put("remainingPercent", 0);
+        assertTrue(TokensModel.boardExtras(codex, true, now, zone).startsWith("正在用 Points 1,250"));
+        codex.getJSONArray("windows").getJSONObject(0).put("remainingPercent", 40);
+        codex.put("usageRoute", new org.json.JSONObject().put("defaultAllowed", false));
+        assertTrue("default quota not allowed", TokensModel.usesPoints(codex));
+        org.json.JSONObject plain = new org.json.JSONObject().put("product", "codex").put("resetCredits", new org.json.JSONObject().put("available", 0).put("cards", new org.json.JSONArray()));
+        assertEquals("重置卡 0 张", TokensModel.boardExtras(plain, true, now, zone));
+        assertNull("nothing to add", TokensModel.boardExtras(new org.json.JSONObject().put("product", "codex"), true, now, zone));
+        assertNull("only Codex gets the line", TokensModel.boardExtras(new org.json.JSONObject().put("product", "claude").put("credits", new org.json.JSONObject().put("remaining", 5).put("unlimited", false)), true, now, zone));
+    }
 }

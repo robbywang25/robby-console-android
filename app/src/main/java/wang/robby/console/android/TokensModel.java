@@ -37,6 +37,44 @@ final class TokensModel {
         for (JSONObject w : windows) { Double p = remaining(w); if (p != null && (low == null || p < low)) { low = p; tightest = w; } }
         return tightest == null ? List.of() : List.of(new Period(null, tightest));
     }
+    /**
+     * The small line under a Codex row on the 看板, as on iOS: Points (「正在用 Points」 once the default quota is spent or
+     * not allowed), then the reset cards with the earliest expiry among the available ones. Null when there is neither.
+     */
+    static String boardExtras(JSONObject account, boolean fresh, long now, java.time.ZoneId zone) {
+        if (!"codex".equals(account.opt("product"))) return null;
+        List<String> parts = new ArrayList<>();
+        JSONObject credits = account.optJSONObject("credits");
+        if (credits != null) {
+            Object left = credits.opt("remaining");
+            if (Boolean.TRUE.equals(credits.opt("unlimited"))) parts.add("Points 不限量");
+            else if (left instanceof Number) parts.add((usesPoints(account) ? "正在用 Points " : "Points ") + new java.text.DecimalFormat("#,##0.#").format(((Number) left).doubleValue()));
+        }
+        JSONObject cards = account.optJSONObject("resetCredits");
+        if (cards != null && cards.opt("available") instanceof Number) {
+            int available = ((Number) cards.opt("available")).intValue(); String part = "重置卡 " + available + " 张";
+            long next = Long.MAX_VALUE; JSONArray list = cards.optJSONArray("cards");
+            if (available > 0 && list != null) for (int i = 0; i < list.length(); i++) {
+                JSONObject c = list.optJSONObject(i); if (c == null || !"available".equals(c.opt("status")) || !(c.opt("expiresAt") instanceof String)) continue;
+                try { next = Math.min(next, java.time.Instant.parse((String) c.opt("expiresAt")).toEpochMilli()); } catch (RuntimeException ignored) { }
+            }
+            if (next != Long.MAX_VALUE) { java.time.LocalDate d = java.time.Instant.ofEpochMilli(next).atZone(zone).toLocalDate();
+                part += next <= now ? " · 最近一张已到期" : " · 最近 " + d.getMonthValue() + "月" + d.getDayOfMonth() + "日到期"; }
+            parts.add(part);
+        }
+        if (parts.isEmpty()) return null;
+        return (fresh ? "" : "上次 ") + String.join(" · ", parts);
+    }
+    /** iOS's rule: Codex is on Points when its default quota is spent or not allowed and a Points balance is known. */
+    static boolean usesPoints(JSONObject account) {
+        JSONObject credits = account.optJSONObject("credits"), route = account.optJSONObject("usageRoute");
+        if (!"codex".equals(account.opt("product")) || credits == null || !(credits.opt("remaining") instanceof Number)) return false;
+        JSONObject primary = null; JSONArray all = account.optJSONArray("windows");
+        if (all != null) for (int i = 0; i < all.length() && primary == null; i++) { JSONObject w = all.optJSONObject(i); if (w != null && "default".equals(w.opt("quotaGroup"))) primary = w; }
+        if (all != null) for (int i = 0; i < all.length() && primary == null; i++) { JSONObject w = all.optJSONObject(i); if (w != null && !"reserve".equals(w.opt("quotaGroup"))) primary = w; }
+        Double left = primary == null ? null : remaining(primary);
+        return (left != null && left == 0) || (route != null && Boolean.FALSE.equals(route.opt("defaultAllowed")));
+    }
     static Double remaining(JSONObject window) { Object v = window.opt("remainingPercent"); return v instanceof Number ? ((Number) v).doubleValue() : null; }
     private static JSONObject find(List<JSONObject> windows, Set<String> ids, Set<String> labels) {
         for (JSONObject w : windows) if (ids.contains(String.valueOf(w.opt("id")))) return w;

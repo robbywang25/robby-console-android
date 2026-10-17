@@ -150,7 +150,10 @@ public final class FeatureRenderer {
                         String prefix = (!fresh && i == 0 ? "上次 " : "") + (pd.label == null ? "" : pd.label);
                         if (!prefix.isEmpty()) { TextView l = u.text(prefix, 11, false); l.setPadding(u.dp(10), 0, u.dp(3), 0); r.addView(l); }
                         TextView val = u.text(whole.format(pc) + "%", 14, true); if (prefix.isEmpty()) val.setPadding(u.dp(10), 0, 0, 0); r.addView(val); }
-                    shell.addView(r); }
+                    shell.addView(r);
+                    // Codex: Points and reset cards on a small second line, aligned with the account name.
+                    String extras = TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault());
+                    if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }
                 if (shown == 0) widgetMessage(context, shell, "还没有已接入的账号");
                 break; }
             case "market": {
