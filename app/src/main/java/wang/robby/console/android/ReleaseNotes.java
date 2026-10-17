@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.14.0", "2026-10-18", "功能合并，Token 页对齐网页",
+            "底部导航改为「总览 / 功能 / 我」，洞察、资产、工具合并到「功能」，顶部可搜索。",
+            "所有页面都改为下拉刷新，去掉了右上角的刷新按钮。",
+            "Token 额度页按 tokens 网页重排：去掉额度总览，只显示已接入的账号，按服务商分组。",
+            "每个账号显示剩余额度、价格、套餐、近 1 小时曲线、重置时间和重置卡明细。",
+            "服务端开放后，Token 额度会显示 TodayAI 中国版和全球版。",
+            "「我」里的关于入口改名为「关于 God」。"),
         new Entry("0.13.0", "2026-10-17", "Token 看板信息更全",
             "Token 额度看板里，Claude 同时显示 5 小时和每周余额，倒计时对应 5 小时额度。",
             "Codex 下方显示 Points 余额和重置卡张数，正在用 Points 时会标出。",

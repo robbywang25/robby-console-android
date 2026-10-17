@@ -134,8 +134,9 @@ public final class FeatureRenderer {
             case "tokens": {
                 // One row per connected account; accounts not set up are left off the board (the page lists them).
                 long now = System.currentTimeMillis(); int shown = 0; java.text.DecimalFormat whole = new java.text.DecimalFormat("0");
-                for (JSONObject a : rows(p, "accounts")) { String st = a.optString("status");
-                    if ("not_configured".equals(st) || shown >= 5) continue; shown++;
+                List<JSONObject> accounts = tokenAccounts(p);
+                for (JSONObject a : accounts) { String st = a.optString("status");
+                    if (!TokensModel.shownOnPage(a) || shown >= 8) continue; shown++;
                     List<TokensModel.Period> periods = TokensModel.boardWindows(a);
                     Double min = null; for (TokensModel.Period pd : periods) { Double pc = TokensModel.remaining(pd.window); if (pc != null && (min == null || pc < min)) min = pc; }
                     // The countdown is the first window's: Claude's 5 hours, otherwise the tightest window.
@@ -576,46 +577,100 @@ public final class FeatureRenderer {
         empty(u, p, "reports", "暂无归档报告");
     }
     /**
-     * Token 额度, after tokens.robby.wang: counts first, then accounts grouped by provider. Fresh windows get a
-     * remaining bar and countdown; stale ones keep the last value marked 上次 and never draw a bar.
+     * Token 额度, as the 账号额度 grid of tokens.robby.wang: no summary card, connected accounts only (never the two ChatGPT
+     * entries the web keeps out), grouped OpenAI / Claude / Grok / Cursor / TodayAI in stable slots. TodayAI arrives in
+     * the additive additionalAccounts array beside the original nine accounts.
      */
     private static void tokens(UI u, JSONObject p) {
-        long now = System.currentTimeMillis(); int connected = 0, attention = 0, soon = 0, total = 0;
-        Map<String, List<JSONObject>> byProvider = new LinkedHashMap<>();
-        for (JSONObject a : rows(p, "accounts")) { total++; String st = a.optString("status");
-            if ("connected".equals(st)) connected++; else if (!"not_configured".equals(st)) attention++;
-            for (JSONObject w : rows(a, "windows")) if (TokensModel.resettingSoon("connected".equals(st), percent(w), millis(w, "startsAt"), millis(w, "resetsAt"), now)) { soon++; break; }
-            byProvider.computeIfAbsent(s(a, "provider"), k -> new ArrayList<>()).add(a); }
-        u.metrics(u.card("额度总览"), "已更新", connected + " / " + total, "需处理", String.valueOf(attention), "即将重置", String.valueOf(soon));
-        for (Map.Entry<String, List<JSONObject>> e : byProvider.entrySet()) {
-            u.heading(e.getKey(), null); List<JSONObject> idle = new ArrayList<>();
-            for (JSONObject a : e.getValue()) { if ("not_configured".equals(a.optString("status"))) idle.add(a); else tokenAccount(u, a, now); }
-            if (!idle.isEmpty()) { LinearLayout g = u.group(); for (JSONObject a : idle) u.item(g, s(a, "label"), "未接入", TokensModel.reason(a.optString("reason"))); }
+        long now = System.currentTimeMillis(); ZoneId zone = ZoneId.systemDefault();
+        List<JSONObject> all = tokenAccounts(p);
+        JSONObject build = null; for (JSONObject a : all) if ("grok".equals(a.optString("id"))) build = a;
+        Map<String, List<JSONObject>> sections = new LinkedHashMap<>(); for (String s : TokensModel.SECTIONS) sections.put(s, new ArrayList<>());
+        for (JSONObject a : all) if (TokensModel.shownOnPage(a)) sections.get(TokensModel.section(a)).add(a);
+        int shown = 0;
+        for (Map.Entry<String, List<JSONObject>> e : sections.entrySet()) {
+            if (e.getValue().isEmpty()) continue;
+            e.getValue().sort(TokensModel.SLOT_ORDER); u.heading(e.getKey(), null);
+            for (JSONObject a : e.getValue()) { tokenTile(u, a, sharedPlan(a, build), e.getKey(), now, zone); shown++; }
         }
-        empty(u, p, "accounts", "暂无账号");
-        u.note("额度由本机采集器上传；不同周期分别显示，不把平台百分比相加，也不把过期读数当成当前余额。");
+        if (shown == 0) { LinearLayout c = u.theme.card(u.root); TextView t = u.text("还没有已接入的账号", 15, false); t.setTextColor(u.theme.muted); c.addView(t); }
     }
-    private static void tokenAccount(UI u, JSONObject a, long now) {
-        String status = a.optString("status"); boolean fresh = "connected".equals(status);
-        JSONObject profile = obj(a, "profile"), plan = obj(a, "subscription");
-        LinearLayout c = u.theme.card(u.root); c.setPadding(u.dp(16), u.dp(12), u.dp(16), u.dp(12));
-        LinearLayout top = new LinearLayout(u.context); top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title = u.text(s(a, "label"), 15, true); title.setAccessibilityHeading(true); top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        u.pill(top, TokensModel.status(status), fresh ? u.theme.success : "stale".equals(status) ? u.theme.warning : u.theme.danger); c.addView(top);
-        String who = s(profile, "email").equals(UNKNOWN) ? s(profile, "name") : s(profile, "email");
-        String meta = join(who, s(plan, "planName"), "更新 " + date(a, "lastSuccessAt"));
-        if (!meta.isEmpty()) { TextView m = u.text(meta, 12, false); m.setPadding(0, u.dp(3), 0, 0); c.addView(m); }
-        if (!fresh) { TextView r = u.text(TokensModel.reason(a.optString("reason")), 12, false); r.setTextColor(u.theme.faint); r.setPadding(0, u.dp(3), 0, 0); c.addView(r); }
-        for (JSONObject w : rows(a, "windows")) u.quota(c, w, fresh, now);
-        JSONObject credits = obj(a, "credits");
-        if (credits.length() > 0) u.row(c, "点数", Boolean.TRUE.equals(credits.opt("unlimited")) ? "不限" : number(credits, "remaining"));
-        JSONObject cards = obj(a, "resetCredits");
-        if (cards.length() > 0) u.row(c, "重置卡", number(cards, "available") + " 张" + (cards.opt("applicable") instanceof Number ? " · 当前可用 " + number(cards, "applicable") : ""));
-        JSONObject trend = obj(a, "usageTrend"); JSONArray points = arr(trend, "balancePoints");
-        if (points.length() > 1 && ("ready".equals(trend.optString("status")) || "stale".equals(trend.optString("status")))) {
-            double[] v = new double[points.length()]; for (int i = 0; i < v.length; i++) { JSONObject pt = points.optJSONObject(i); v[i] = pt != null && pt.opt("remaining") instanceof Number ? ((Number) pt.opt("remaining")).doubleValue() : Double.NaN; }
-            u.trend(c, "quota".equals(trend.optString("metric")) ? "近 1 小时剩余（%）" : "近 1 小时剩余点数", v, clock(points.optJSONObject(0)), clock(points.optJSONObject(points.length() - 1)));
+    /** The original nine accounts followed by the additive additionalAccounts (TodayAI), as the web combines them. */
+    private static List<JSONObject> tokenAccounts(JSONObject p) {
+        List<JSONObject> out = new ArrayList<>(); for (JSONObject a : rows(p, "accounts")) out.add(a); for (JSONObject a : rows(p, "additionalAccounts")) out.add(a); return out;
+    }
+    /** Grok Bot signed in with Grok Build's email shares Build's subscription, as the web shows it. */
+    private static String sharedPlan(JSONObject a, JSONObject build) {
+        if (build == null || !"grok-bot".equals(a.optString("id")) || a.optJSONObject("subscription") != null || build.optJSONObject("subscription") == null) return null;
+        String bot = s(obj(a, "profile"), "email"), main = s(obj(build, "profile"), "email");
+        return bot.equals(UNKNOWN) || !bot.equalsIgnoreCase(main) ? null : TokensModel.plan(build);
+    }
+    private static int tokenTint(UI u, String section) {
+        switch (section) {
+            case "OpenAI": return u.theme.accent;
+            case "Claude": return u.theme.dark ? 0xffe39a7e : 0xffb8532f;
+            case "Grok": return u.theme.dark ? 0xffb19cf5 : 0xff6a4cc0;
+            case "Cursor": case "TodayAI": return u.theme.dark ? 0xff6fcfab : 0xff1d7f5f;
+            default: return u.theme.ink;
         }
+    }
+    /** One account tile: identity and value, price and plan, balances, pace, the hour's curve, resets and 重置卡明细. */
+    private static void tokenTile(UI u, JSONObject a, String sharedPlan, String section, long now, ZoneId zone) {
+        boolean fresh = "connected".equals(TokensModel.effectiveStatus(a, now)); int tint = fresh ? tokenTint(u, section) : u.theme.muted;
+        LinearLayout c = u.theme.card(u.root); c.setPadding(u.dp(16), u.dp(14), u.dp(16), u.dp(14));
+        LinearLayout top = new LinearLayout(u.context); top.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout who = new LinearLayout(u.context); who.setOrientation(LinearLayout.VERTICAL);
+        TextView title = u.text(TokensModel.displayName(a), 15, true); title.setTextColor(u.theme.ink); title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setAccessibilityHeading(true); who.addView(title);
+        LinearLayout product = new LinearLayout(u.context); product.setGravity(Gravity.CENTER_VERTICAL); product.setPadding(0, u.dp(3), 0, 0);
+        product.addView(u.theme.dot(fresh ? tint : u.theme.faint, 7));
+        TextView name = u.text(TokensModel.productName(a), 13, false); name.setTextColor(fresh ? tint : u.theme.muted); name.setPadding(u.dp(6), 0, 0, 0); product.addView(name); who.addView(product);
+        top.addView(who, new LinearLayout.LayoutParams(0, -2, 1));
+        String headline = TokensModel.headline(a, now);
+        TextView value = u.text(headline, headline.endsWith("%") ? 24 : 16, true); value.setTextColor(tint); value.setPadding(u.dp(10), 0, 0, 0); top.addView(value); c.addView(top);
+        LinearLayout meta = new LinearLayout(u.context); meta.setPadding(0, u.dp(6), 0, 0);
+        TextView price = u.text(TokensModel.monthly(a), 13, false); price.setTextColor(u.theme.muted); meta.addView(price, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView plan = u.text(sharedPlan != null ? sharedPlan : TokensModel.plan(a), 13, false); plan.setTextColor(u.theme.muted); meta.addView(plan); c.addView(meta);
+        List<String[]> blocks = TokensModel.balances(a, now);
+        if (!blocks.isEmpty()) {
+            LinearLayout b = new LinearLayout(u.context); b.setPadding(0, u.dp(10), 0, 0);
+            for (String[] block : blocks) {
+                LinearLayout col = new LinearLayout(u.context); col.setOrientation(LinearLayout.VERTICAL);
+                TextView l = u.text(block[0], 11, false); l.setTextColor(u.theme.faint); col.addView(l);
+                TextView v = u.text(block[1], 16, true); v.setTextColor(u.theme.ink); col.addView(v); b.addView(col, new LinearLayout.LayoutParams(0, -2, 1));
+            }
+            c.addView(b);
+        }
+        String pace = TokensModel.pace(a, now);
+        if (pace != null) { LinearLayout row = new LinearLayout(u.context); row.setPadding(0, u.dp(10), 0, 0); u.pill(row, pace, "即将重置".equals(pace) ? u.theme.danger : u.theme.warning); c.addView(row); }
+        tokenTrend(u, c, a, fresh, tint);
+        for (String line : TokensModel.resetLines(a, zone, now)) { TextView t = u.text(line, 12, false); t.setTextColor(u.theme.muted); t.setPadding(0, u.dp(4), 0, 0); c.addView(t); }
+        TokensModel.Cards cards = TokensModel.cards(a, zone, now);
+        if (cards != null) {
+            View divider = new View(u.context); divider.setBackgroundColor(u.theme.line); LinearLayout.LayoutParams d = new LinearLayout.LayoutParams(-1, Math.max(1, u.dp(.5f))); d.topMargin = u.dp(12); c.addView(divider, d);
+            TextView h = u.text(cards.heading, 14, true); h.setTextColor(u.theme.ink); h.setPadding(0, u.dp(10), 0, u.dp(2)); c.addView(h);
+            for (String note : cards.notes) { TextView t = u.text(note, 12, false); t.setTextColor(u.theme.muted); t.setPadding(0, u.dp(2), 0, 0); c.addView(t); }
+            for (String[] item : cards.items) {
+                LinearLayout row = new LinearLayout(u.context); row.setPadding(0, u.dp(8), 0, 0);
+                TextView n = u.text(item[0], 13, true); n.setTextColor(u.theme.ink); row.addView(n, new LinearLayout.LayoutParams(0, -2, 1));
+                TextView st = u.text(item[1], 12, false); st.setTextColor(u.theme.muted); row.addView(st); c.addView(row);
+                TextView ex = u.text(item[2], 12, false); ex.setTextColor(u.theme.ink); c.addView(ex);
+                TextView gr = u.text(item[3], 12, false); gr.setTextColor(u.theme.faint); c.addView(gr);
+            }
+            if (cards.pending != null) { TextView t = u.text(cards.pending, 12, false); t.setTextColor(u.theme.muted); t.setPadding(0, u.dp(6), 0, 0); c.addView(t); }
+        }
+    }
+    /** 近 1 小时 curve: Claude's is its 5-hour balance; points accounts draw points on their own scale. */
+    private static void tokenTrend(UI u, LinearLayout c, JSONObject a, boolean fresh, int tint) {
+        JSONObject trend = a.optJSONObject("usageTrend"); if (trend == null) return;
+        JSONArray points = trend.optJSONArray("balancePoints"); int n = points == null ? 0 : points.length(), count = 0;
+        boolean percentMetric = !"points".equals(trend.optString("metric")); double latest = Double.NaN; double[] values = new double[n];
+        for (int i = 0; i < n; i++) { JSONObject pt = points.optJSONObject(i); Object v = pt == null ? null : pt.opt("remaining"); values[i] = v instanceof Number ? ((Number) v).doubleValue() : Double.NaN; if (!Double.isNaN(values[i])) { latest = values[i]; count++; } }
+        LinearLayout head = new LinearLayout(u.context); head.setPadding(0, u.dp(12), 0, 0);
+        TextView label = u.text("近 1 小时 " + ("claude".equals(a.optString("product")) ? "5小时" : "额度"), 12, false); label.setTextColor(u.theme.muted); head.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
+        String right = count >= 2 ? "剩余" + TokensModel.number(latest) + (percentMetric ? "%" : " 点") : "collecting".equals(trend.optString("status")) ? "采集中" : "暂无曲线";
+        TextView r = u.text(right, 12, true); r.setTextColor(fresh ? tint : u.theme.muted); head.addView(r); c.addView(head);
+        if (count >= 2) { MiniLine line = new MiniLine(u.context, values, percentMetric, fresh ? tint : u.theme.faint, u.theme.line, "近 1 小时剩余曲线，" + right);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, u.dp(36)); lp.topMargin = u.dp(4); c.addView(line, lp); }
     }
     private static Double percent(JSONObject w) { Object v = w.opt("remainingPercent"); return v instanceof Number ? ((Number) v).doubleValue() : null; }
     private static long millis(JSONObject p, String key) { Object v = p.opt(key); if (!(v instanceof String)) return 0; try { return Instant.parse((String) v).toEpochMilli(); } catch (RuntimeException e) { return 0; } }
@@ -812,24 +867,6 @@ public final class FeatureRenderer {
             LinearLayout axis=new LinearLayout(context);TextView a=text(first,11,false);a.setTextColor(theme.faint);axis.addView(a,new LinearLayout.LayoutParams(0,-2,1));
             TextView m=text("最高 "+f.format(peak),11,false);m.setTextColor(theme.faint);m.setGravity(Gravity.CENTER);axis.addView(m,new LinearLayout.LayoutParams(0,-2,1));
             TextView b=text(last,11,false);b.setTextColor(theme.faint);b.setGravity(Gravity.END);axis.addView(b,new LinearLayout.LayoutParams(0,-2,1));axis.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);c.addView(axis);
-        }
-        /** One quota window: name and remaining value, a bar only for fresh percentages, then the reset line. */
-        void quota(LinearLayout c,JSONObject w,boolean fresh,long now){
-            Double pct=percent(w);boolean unlimited=Boolean.TRUE.equals(w.opt("unlimited"));String unit=w.optString("unit");
-            String value=unlimited?"不限":pct!=null?new java.text.DecimalFormat("0.#").format(pct)+"%":w.opt("remaining") instanceof Number?number(w,"remaining")+(w.opt("limit") instanceof Number?" / "+number(w,"limit"):"")+unitLabel(unit):UNKNOWN;
-            if(!fresh&&!unlimited&&!value.equals(UNKNOWN))value="上次 "+value;
-            LinearLayout line=new LinearLayout(context);line.setGravity(Gravity.CENTER_VERTICAL);line.setPadding(0,dp(10),0,0);
-            String label=s(w,"label"),model=s(w,"model");TextView t=text(model.equals(UNKNOWN)||label.contains(model)?label:label+" · "+model,13,false);t.setTextColor(theme.ink);line.addView(t,new LinearLayout.LayoutParams(0,-2,1));
-            TextView v=text(value,14,true);v.setPadding(dp(8),0,0,0);line.addView(v);c.addView(line);
-            if(fresh&&pct!=null&&!unlimited){int level=TokensModel.level(pct),color=level==1?theme.success:level==2?theme.warning:theme.danger;
-                LinearLayout track=new LinearLayout(context);track.setBackground(theme.shape(theme.soft,99));track.setClipToOutline(true);
-                View fill=new View(context);fill.setBackground(theme.shape(color,99));track.addView(fill,new LinearLayout.LayoutParams(0,-1,(float)Math.max(0.5,pct)));track.addView(new View(context),new LinearLayout.LayoutParams(0,-1,(float)Math.max(0,100-pct)));
-                LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,dp(5));tp.topMargin=dp(5);c.addView(track,tp);}
-            long resets=millis(w,"resetsAt");String countdown=TokensModel.countdown(resets,now);
-            LinearLayout sub=new LinearLayout(context);sub.setGravity(Gravity.CENTER_VERTICAL);sub.setPadding(0,dp(4),0,0);
-            TextView r=text(countdown!=null?countdown+" · "+date(w,"resetsAt"):resets>0?"已过重置时间":"无重置时间",11,false);r.setTextColor(theme.faint);sub.addView(r,new LinearLayout.LayoutParams(0,-2,1));
-            if(TokensModel.resettingSoon(fresh,pct,millis(w,"startsAt"),resets,now)){TextView soon=text("即将重置",11,true);soon.setTextColor(theme.danger);sub.addView(soon);}
-            c.addView(sub);
         }
         /** Large figure with a one-line caption under it, for 看板 cards. */
         void big(CharSequence value,String caption){TextView v=text("",24,true);v.setText(value);v.setPadding(0,dp(8),0,0);root.addView(v);TextView c=text(caption,12,false);c.setPadding(0,dp(1),0,0);root.addView(c);}
