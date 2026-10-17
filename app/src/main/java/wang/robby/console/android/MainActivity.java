@@ -407,9 +407,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
         String key=path; JSONObject cached=key.startsWith("travel-ledger/")?null:snapshots.get(key);
         LinearLayout result=new LinearLayout(this);result.setOrientation(LinearLayout.VERTICAL);content.addView(result);
-        if(cached!=null){render(f,result,cached);TextView stamp=text(refresh?"正在更新，暂时保留上次结果":"上次读取结果 · 下拉可刷新",12,MUTED,false);result.addView(stamp);restoreViewport();}
+        // Token 额度 counts a reading older than two minutes as 待更新 (the web's rule), so an older cache reloads at once.
+        boolean reload=refresh||cached!=null&&"tokens".equals(f.id)&&FeatureRenderer.ageMillis(cached)>120_000L;
+        if(cached!=null){render(f,result,cached);TextView stamp=text(reload?"正在更新，暂时保留上次结果":"上次读取结果 · 下拉可刷新",12,MUTED,false);result.addView(stamp);restoreViewport();}
         else{TextView loading=text("正在读取…",15,MUTED,false);loading.setPadding(dp(4),dp(12),0,dp(12));result.addView(loading);}
-        if(cached!=null&&!refresh){if(done!=null)done.run();return;}
+        if(cached!=null&&!reload){if(done!=null)done.run();return;}
         if(!resumed){if(done!=null)done.run();return;}
         int epoch=++generation;
         worker.execute(()->{if(epoch!=generation){if(done!=null)runOnUiThread(done);return;}try{JSONObject data=read(key);runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");render(f,result,data);restoreViewport();}finally{if(done!=null)done.run();}});}

@@ -672,6 +672,12 @@ public final class FeatureRenderer {
         if (count >= 2) { MiniLine line = new MiniLine(u.context, values, percentMetric, fresh ? tint : u.theme.faint, u.theme.line, "近 1 小时剩余曲线，" + right);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, u.dp(36)); lp.topMargin = u.dp(4); c.addView(line, lp); }
     }
+    /** How old a snapshot is by its generatedAt, the same clock as the 快照 pill; unknown counts as old. */
+    static long ageMillis(JSONObject p) {
+        Object generated = p.opt("generatedAt");
+        if (!(generated instanceof String)) return Long.MAX_VALUE;
+        try { return System.currentTimeMillis() - Instant.parse((String) generated).toEpochMilli(); } catch (RuntimeException e) { return Long.MAX_VALUE; }
+    }
     private static Double percent(JSONObject w) { Object v = w.opt("remainingPercent"); return v instanceof Number ? ((Number) v).doubleValue() : null; }
     private static long millis(JSONObject p, String key) { Object v = p.opt(key); if (!(v instanceof String)) return 0; try { return Instant.parse((String) v).toEpochMilli(); } catch (RuntimeException e) { return 0; } }
     private static String clock(JSONObject p) { long ms = p == null ? 0 : millis(p, "at"); return ms == 0 ? "" : DateTimeFormatter.ofPattern("HH:mm", Locale.SIMPLIFIED_CHINESE).withZone(ZoneId.systemDefault()).format(Instant.ofEpochMilli(ms)); }
