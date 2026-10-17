@@ -27,4 +27,23 @@ public final class FeatureCatalogTest {
     }
     @Test(expected = UnsupportedOperationException.class)
     public void callersCannotChangeGlobalNavigation() { FeatureCatalog.all().clear(); }
+    private static java.util.List<String> ids(String query) {
+        java.util.List<String> out = new java.util.ArrayList<>(); for (FeatureCatalog.Feature f : FeatureCatalog.search(query)) out.add(f.id); return out;
+    }
+    @Test public void searchFindsFeaturesByNameDescriptionAndAliasesLikeIos() {
+        assertTrue(ids("服务器").contains("infrastructure"));
+        assertTrue(ids("账本").contains("travel-ledger"));
+        assertTrue(ids("额度").contains("tokens"));
+        assertTrue(ids("codex").contains("tokens"));
+        assertTrue(ids("提示词").contains("prompts"));
+        assertTrue("full-width and upper case", ids("ＣＯＤＥＸ").contains("tokens"));
+        assertEquals("every term must match", java.util.List.of("wechat-login-audit"), ids("微信 审计"));
+        assertTrue("settings entries are searchable too", ids("凭证").contains("secrets"));
+        assertTrue(ids("没有这个功能xyz").isEmpty());
+    }
+    @Test public void blankSearchListsEveryFeatureButTheInternalWorkbench() {
+        assertEquals(FeatureCatalog.all().size() - 1, FeatureCatalog.search("  ").size());
+        assertFalse(ids("").contains("overview"));
+        for (String section : FeatureCatalog.SECTIONS) assertTrue(FeatureCatalog.all().stream().anyMatch(f -> f.group.equals(section)));
+    }
 }

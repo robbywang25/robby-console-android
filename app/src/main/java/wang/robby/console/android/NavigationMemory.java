@@ -4,7 +4,7 @@ import java.util.*;
 
 /** Process-memory reading context only. Never stores payloads, drafts, credentials or account identity. */
 final class NavigationMemory {
-    private static final Set<String> TABS=Set.of("总览","洞察","资产","工具","设置");
+    private static final Set<String> TABS=Set.of("总览","功能","设置");
     private final Map<String,Destination> tabs=new HashMap<>();
     private final LinkedHashMap<String,Integer> offsets=new LinkedHashMap<>(64,.75f,true);
     static final class Destination {

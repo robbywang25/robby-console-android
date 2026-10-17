@@ -100,6 +100,7 @@ public final class ConsoleTheme {
             case "chart"->selected?R.drawable.tab_insights_solid:R.drawable.tab_insights_outline;
             case "globe"->selected?R.drawable.tab_assets_solid:R.drawable.tab_assets_outline;
             case "tools"->selected?R.drawable.tab_tools_solid:R.drawable.tab_tools_outline;
+            case "features"->selected?R.drawable.tab_features_solid:R.drawable.tab_features_outline;
             case "me"->selected?R.drawable.tab_me_solid:R.drawable.tab_me_outline;
             default->selected?R.drawable.tab_settings_solid:R.drawable.tab_settings_outline;
         };
@@ -107,7 +108,7 @@ public final class ConsoleTheme {
     }
     public static String symbol(String id){return switch(id){
         case "总览","overview"->"grid";case "洞察","observer","umami","posthog","openai"->"chart";
-        case "资产","domains"->"globe";case "tokens"->"gauge";case "工具"->"tools";case "设置"->"me";
+        case "资产","domains"->"globe";case "tokens"->"gauge";case "工具"->"tools";case "功能"->"features";case "设置"->"me";
         case "travel-ledger"->"ledger";case "clipboard"->"clipboard";case "infrastructure"->"server";
         case "status","site-maintenance"->"pulse";case "market","okx"->"trend";
         case "engineering"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog"->"chat";
@@ -196,6 +197,8 @@ public final class ConsoleTheme {
                 case "people":c.drawCircle(9,8,3.2f,p);c.drawArc(2.5f,13.5f,15.5f,26,180,180,false,p);c.drawCircle(16.5f,8.5f,2.6f,p);c.drawArc(13,14.5f,21.5f,24,250,110,false,p);break;
                 case "back":line(c,15,5,8,12,15,19);break;
                 case "chevron":line(c,9,6,15,12,9,18);break;
+                case "search":c.drawCircle(10.5f,10.5f,6.5f,p);line(c,15.5f,15.5f,21,21);break;
+                case "clear":line(c,7,7,17,17);line(c,17,7,7,17);break;
                 case "refresh":c.drawArc(4,4,20,20,40,285,false,p);line(c,15,3,20,4,20,9);break;
                 case "key":c.drawCircle(8,9,4,p);line(c,11,12,20,21);line(c,16,17,19,14);break;
                 case "plus":line(c,12,5,12,19);line(c,5,12,19,12);break;

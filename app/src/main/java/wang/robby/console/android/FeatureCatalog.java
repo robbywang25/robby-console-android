@@ -1,6 +1,8 @@
 package wang.robby.console.android;
 
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.Map;
 import java.util.Collections;
 import java.util.List;
 
@@ -46,6 +48,53 @@ public final class FeatureCatalog {
         f("secrets", "凭据配置", "服务配置状态", "设置", "secrets/status", "god.mobile.read")
     ));
     public static List<Feature> all() { return FEATURES; }
+
+    /** The sections of the 功能 tab, in order; 设置 entries stay in 我 but are still found by search. */
+    public static final List<String> SECTIONS = List.of("洞察", "资产", "工具");
+    // Only static feature metadata is searched, as on iOS: never account data, credentials or clipboard contents.
+    private static final Map<String, String> ALIASES = Map.ofEntries(
+        Map.entry("tokens", "额度 配额 quota balance Codex Claude Cursor Grok TodayAI 重置"),
+        Map.entry("infrastructure", "服务器 云主机 server cloud"),
+        Map.entry("domains", "域名 domain DNS 备案"),
+        Map.entry("status", "服务 健康 health uptime"),
+        Map.entry("site-maintenance", "站点 网站 维护 health"),
+        Map.entry("engineering", "代码 仓库 GitHub repository timeline"),
+        Map.entry("market", "股票 行情 stock market"),
+        Map.entry("okx", "欧易 持仓 加密货币 crypto"),
+        Map.entry("openai", "API 费用 usage cost"),
+        Map.entry("observer", "访问 流量 visit analytics"),
+        Map.entry("umami", "访问 流量 统计 analytics"),
+        Map.entry("posthog", "埋点 事件 漏斗 analytics"),
+        Map.entry("visit-insight-reports", "报告 访问 report"),
+        Map.entry("clipboard", "剪贴板 复制 粘贴 clipboard"),
+        Map.entry("travel-ledger", "账本 记账 旅行 ledger expense"),
+        Map.entry("image-workshop", "图片 压缩 转换 图床 image WebP"),
+        Map.entry("wechat-cards", "微信 卡片 wechat"),
+        Map.entry("wechat-publishing", "公众号 文章 草稿 publish"),
+        Map.entry("miniprogram-catalog", "小程序 mini program"),
+        Map.entry("prompts", "提示词 prompt"),
+        Map.entry("wechat-login-audit", "微信 登录 审计 wechat login"),
+        Map.entry("secrets", "密钥 凭证 credential"));
+
+    /**
+     * Features whose title, description, id, section or aliases contain every term of the query, in catalog order.
+     * Case, width and accents are ignored; a blank query returns everything except the internal 工作台 entry.
+     */
+    public static List<Feature> search(String query) {
+        String[] terms = normalize(query == null ? "" : query).trim().split("\\s+");
+        List<Feature> out = new ArrayList<>();
+        for (Feature f : FEATURES) {
+            if (f.id.equals("overview")) continue;
+            String text = normalize(String.join(" ", f.id, f.title, f.subtitle, f.group, ALIASES.getOrDefault(f.id, "")));
+            boolean all = true; for (String term : terms) if (!term.isEmpty() && !text.contains(term)) { all = false; break; }
+            if (all) out.add(f);
+        }
+        return out;
+    }
+    static String normalize(String value) {
+        String wide = java.text.Normalizer.normalize(value, java.text.Normalizer.Form.NFKD).replaceAll("\\p{M}", "");
+        return wide.toLowerCase(java.util.Locale.ROOT);
+    }
     public static Feature find(String id) {
         for (Feature feature : FEATURES) if (feature.id.equals(id)) return feature;
         return null;

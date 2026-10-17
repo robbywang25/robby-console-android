@@ -24,9 +24,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private AuthSession auth; private AuthCoordinator coordinator; private MobileApi api; private LedgerActions ledger;
     private String ledgerCursor=null; private final Deque<String> ledgerPages=new ArrayDeque<>();
     private FrameLayout root,leading; private LinearLayout content,trailing; private GlassPane nav; private TextView heading,session;
-    private static final List<String> TABS=List.of("总览","洞察","资产","工具","设置");
+    private static final List<String> TABS=List.of("总览","功能","设置");
     /** Tab whose lens was last drawn, so the lens can glide from it; -1 before the first frame. */
-    private int shownTab=-1; private int enterFrom=0; private View refreshIcon, pullMark, pullGlyph;
+    private int shownTab=-1; private int enterFrom=0; private View pullMark, pullGlyph;
     /** Pseudo feature id for 关于 God; it has no API path and lives in the 设置 tab's reading context. */
     private static final String ABOUT="about";
     /** Pseudo feature id for the 看板 editor, in the 总览 tab's reading context. */
@@ -72,7 +72,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;
         try { coordinator=AuthCoordinator.get(this);auth=coordinator.session(); api=new MobileApi(auth);ledger=new LedgerActions(this,new LedgerActions.Transport(){public JSONObject get(String path)throws Exception{return read(path);}public JSONObject post(String path,JSONObject body)throws Exception{if(PreviewMode.isBuild())throw new IllegalStateException("界面预览不执行写入");return api.post(path,body);}},()->{ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature f=find("travel-ledger");if(f!=null)showFeature(f,true);}); }
         catch(Exception e) { new AlertDialog.Builder(this).setMessage("无法打开设备安全存储，请检查屏幕锁定设置").setCancelable(false).setPositiveButton("关闭",(d,w)->finish()).show(); return; }
-        if(state!=null) { group=state.getString("group","总览"); selectedId=state.getString("feature"); project=state.getString("project");navigation.rememberOffset(routeKey(),state.getInt("scroll",0)); }
+        if(state!=null) { group=state.getString("group","总览");if(FeatureCatalog.SECTIONS.contains(group))group="功能"; selectedId=state.getString("feature"); project=state.getString("project");navigation.rememberOffset(routeKey(),state.getInt("scroll",0)); }
         build();
         // A recreated Activity (process death) or a Recents relaunch re-delivers the original launch
         // Intent. Its one-time OAuth callback was already consumed, so replaying it only produced a
@@ -172,7 +172,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // Opening 关于 reads this version's notes, so the red dots must already be gone in this frame's dock.
         if(about&&!versionName().isEmpty())prefs().edit().putString("notesSeen",versionName()).apply();
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
-        leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);refreshIcon=null;
+        leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
         session=text(PreviewMode.isBuild()?"界面预览 · 合成数据":!nested&&group.equals("总览")?today():"God",12,MUTED,false);
         if(nested){
@@ -229,13 +229,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         else if(about)about();
         else if(boardEdit)boardEditor();
         else if(detail!=null)showFeature(detail,false);
-        else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else catalog(group);
+        else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else features();
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
     }
     private String today(){return java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("M月d日 EEEE",Locale.SIMPLIFIED_CHINESE));}
-    /** Round glass header control; the refresh symbol is remembered so a refresh can spin it as feedback. */
-    private FrameLayout circle(String symbol,String label,Runnable action){FrameLayout c=theme.circle(symbol,label,action);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(48),dp(48));p.leftMargin=dp(4);c.setLayoutParams(p);if("refresh".equals(symbol))refreshIcon=c.getChildAt(0);return c;}
-    private void spin(){if(refreshIcon!=null&&theme.effects){refreshIcon.setRotation(0);refreshIcon.animate().rotation(360).setDuration(700).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();}}
+    /** Round glass header control (e.g. 记一笔); refreshing is pull-to-refresh on every page, never a header button. */
+    private FrameLayout circle(String symbol,String label,Runnable action){FrameLayout c=theme.circle(symbol,label,action);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(48),dp(48));p.leftMargin=dp(4);c.setLayoutParams(p);return c;}
     private void home() {
         if(!loggedIn()){
             LinearLayout welcome=card();welcome.setGravity(Gravity.CENTER_HORIZONTAL);welcome.setPadding(dp(22),dp(28),dp(22),dp(22));
@@ -340,7 +339,41 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             grid.addView(cell,new LinearLayout.LayoutParams(0,-2,1));}
     }
     private LinearLayout board;
-    private void catalog(String category) {LinearLayout list=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals(category))featureRow(f,list);restoreViewport();}
+    /** What the 功能 search field holds; kept across rebuilds and tab switches, never persisted. */
+    private String featureQuery="";
+    /**
+     * 功能, as on iOS: 洞察, 资产 and 工具 as sections of one list, with a search field over the bundled catalog (titles,
+     * descriptions, ids and aliases; never account data). Typing only redraws the list, so the field keeps focus.
+     */
+    private void features(){
+        LinearLayout field=new LinearLayout(this);field.setGravity(Gravity.CENTER_VERTICAL);field.setBackground(theme.glass(-1));field.setPadding(dp(14),0,dp(6),0);field.setMinimumHeight(dp(48));
+        field.addView(theme.icon("search",MUTED,18),new LinearLayout.LayoutParams(dp(18),dp(18)));
+        EditText input=new EditText(this);input.setHint("搜索功能");input.setText(featureQuery);input.setSingleLine(true);input.setBackground(null);input.setTextSize(16);input.setTextColor(INK);input.setHintTextColor(MUTED);
+        input.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);input.setPadding(dp(10),dp(10),dp(4),dp(10));input.setContentDescription("搜索功能");
+        field.addView(input,new LinearLayout.LayoutParams(0,-2,1));
+        FrameLayout clear=theme.circle("clear","清除搜索",()->{input.setText("");});clear.setBackground(null);clear.setVisibility(featureQuery.isEmpty()?View.GONE:View.VISIBLE);field.addView(clear,new LinearLayout.LayoutParams(dp(40),dp(40)));
+        LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(-1,-2);fp.bottomMargin=dp(4);content.addView(field,fp);
+        LinearLayout list=new LinearLayout(this);list.setOrientation(LinearLayout.VERTICAL);content.addView(list);
+        input.setOnEditorActionListener((v,action,event)->{if(action==android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH){v.clearFocus();((android.view.inputmethod.InputMethodManager)getSystemService(INPUT_METHOD_SERVICE)).hideSoftInputFromWindow(v.getWindowToken(),0);return true;}return false;});
+        input.addTextChangedListener(new android.text.TextWatcher(){
+            @Override public void beforeTextChanged(CharSequence s,int a,int b,int c){}
+            @Override public void onTextChanged(CharSequence s,int a,int b,int c){}
+            @Override public void afterTextChanged(android.text.Editable s){featureQuery=s.toString();clear.setVisibility(featureQuery.trim().isEmpty()?View.GONE:View.VISIBLE);featureList(list);}
+        });
+        featureList(list);restoreViewport();
+    }
+    private void featureList(LinearLayout list){
+        list.removeAllViews();String q=featureQuery.trim();
+        if(q.isEmpty()){
+            for(String section:FeatureCatalog.SECTIONS){TextView t=text(section,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));list.addView(t);
+                LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals(section))featureRow(f,g);}
+            return;
+        }
+        List<FeatureCatalog.Feature> found=FeatureCatalog.search(q);
+        TextView count=text(found.isEmpty()?"没有找到与「"+q+"」相关的功能":"找到 "+found.size()+" 个功能",13,MUTED,false);count.setPadding(dp(6),dp(12),0,dp(8));count.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);list.addView(count);
+        if(found.isEmpty())return;
+        LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:found)featureRow(f,g);
+    }
     private void featureRow(FeatureCatalog.Feature f){featureRow(f,groupCard());}
     private void featureRow(FeatureCatalog.Feature f,LinearLayout list){featureRow(f.title,f.subtitle,ConsoleTheme.symbol(f.id),list,()->open(f));}
     private LinearLayout groupCard(){return groupCard(content);}
@@ -360,23 +393,27 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     private void open(FeatureCatalog.Feature f){++generation;selectedId=f.id;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
     @Override public void openFeature(String id){FeatureCatalog.Feature f=find(id);if(f!=null&&loggedIn())open(f);}
-    private void showFeature(FeatureCatalog.Feature f,boolean refresh) {
+    private void showFeature(FeatureCatalog.Feature f,boolean refresh){showFeature(f,refresh,null);}
+    /** {@code done} runs on the main thread when this call's read has finished (at once when it starts none). */
+    private void showFeature(FeatureCatalog.Feature f,boolean refresh,Runnable done) {
         saveViewport();viewportReady=false;displayedRoute=routeKey();content.removeAllViews();heading.setText(f.title);
         leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));
-        trailing.removeAllViews();trailing.addView(circle("refresh","刷新",()->showFeature(f,true)));if(refresh)spin();
+        trailing.removeAllViews();
+        // Every data page refreshes by pulling down; the mark keeps turning until this page's read has finished.
+        if(loggedIn()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新",()->showFeature(f,true,page::finishRefresh));}
         ticker.removeCallbacks(statusTick);if("status".equals(f.id)&&loggedIn())ticker.postDelayed(statusTick,60_000);
         if(!loggedIn()){LinearLayout c=card();c.addView(text(f.title,17,INK,true));TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(6),0,dp(18));c.addView(t);Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);c.addView(passkey,new LinearLayout.LayoutParams(-1,-2));LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);c.addView(button("通过已有设备授权",this::deviceLogin),d);restoreViewport();return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
         String key=path; JSONObject cached=key.startsWith("travel-ledger/")?null:snapshots.get(key);
         LinearLayout result=new LinearLayout(this);result.setOrientation(LinearLayout.VERTICAL);content.addView(result);
-        if(cached!=null){render(f,result,cached);TextView stamp=text(refresh?"正在更新，暂时保留上次结果":"上次读取结果 · 可刷新更新",12,MUTED,false);result.addView(stamp);restoreViewport();}
+        if(cached!=null){render(f,result,cached);TextView stamp=text(refresh?"正在更新，暂时保留上次结果":"上次读取结果 · 下拉可刷新",12,MUTED,false);result.addView(stamp);restoreViewport();}
         else{TextView loading=text("正在读取…",15,MUTED,false);loading.setPadding(dp(4),dp(12),0,dp(12));result.addView(loading);}
-        if(cached!=null&&!refresh)return;
-        if(!resumed)return;
+        if(cached!=null&&!refresh){if(done!=null)done.run();return;}
+        if(!resumed){if(done!=null)done.run();return;}
         int epoch=++generation;
-        worker.execute(()->{if(epoch!=generation)return;try{JSONObject data=read(key);runOnUiThread(()->{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");render(f,result,data);restoreViewport();});}
-        catch(Exception e){runOnUiThread(()->{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);TextView warning=text(explain(f.path,e),15,theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();});}});
+        worker.execute(()->{if(epoch!=generation){if(done!=null)runOnUiThread(done);return;}try{JSONObject data=read(key);runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");render(f,result,data);restoreViewport();}finally{if(done!=null)done.run();}});}
+        catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);TextView warning=text(explain(f.path,e),15,theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();}finally{if(done!=null)done.run();}});}});
     }
     private void render(FeatureCatalog.Feature f,LinearLayout result,JSONObject data) {
         try{
@@ -423,7 +460,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("关于");LinearLayout about=groupCard();
         featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
-        String version=versionName();LinearLayout info=featureRow("God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
+        String version=versionName();LinearLayout info=featureRow("关于 God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
         if(notesUnread()){View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);info.setContentDescription(info.getContentDescription()+"，有新版本说明");}
         restoreViewport();
     }
