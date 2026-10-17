@@ -73,7 +73,8 @@ final class PullScrollView extends ScrollView {
         if (onRefresh == null || refreshing || e.getActionMasked() != MotionEvent.ACTION_MOVE || getScrollY() > 0) return false;
         float dy = e.getY() - downY, dx = Math.abs(e.getX() - downX);
         if (dy <= slop || dy <= dx) return false;
-        dragging = true; downY += slop; if (settle != null) settle.cancel();
+        // Measure the pull from where it takes over, so a drag that first scrolled the page back to the top starts at 0.
+        dragging = true; downY = e.getY(); if (settle != null) settle.cancel();
         if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
         return true;
     }
