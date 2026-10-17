@@ -222,3 +222,13 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
 - **下拉手势**：先把页面滑回顶部再继续下拉时，下拉量改为从接手那一刻算起，不再跳变。
 
 验证：`check.sh` 通过（98 项 JVM 测试、lint 0 错误、正式证书签名）。预览版经 Tailscale 远程 ADB（当时走香港中继）装到 Find，只在预览版位于前台时截图：总览 Token 卡片显示 Claude「5 小时 72%　每周 30%」和倒计时、Codex 的「Points 120 · 重置卡 2 张 · 最近 10月19日到期」，没有「未接入」行；「关于」页顶部下拉出现刷新圆钮，新版本卡片保持不变。未验证：真实数据下的卡片，以及「已发现新版本后又有新发布」的真机表现（预览数据固定为 9.9.9，要等下一次真实发版后在正式 App 上看）。
+
+## v0.14.0：功能合并、Token 页对齐网页（2026-10-18）
+
+- **导航**：底部改为「总览 / 功能 / 我」三个 Tab。洞察、资产、工具合并到「功能」，按原分区列出；顶部是玻璃搜索框（`FeatureCatalog.search`，移植 iOS 的别名表并补上 Android 独有功能，NFKD 归一化、小写，所有词都要命中）。旧版保存的分区 Tab 恢复时映射到「功能」（`NavigationMemory`）。
+- **下拉刷新**：所有功能页都用 `PullScrollView` 下拉刷新，去掉右上角的刷新圆钮；刷新结束在每条路径上都会收起。Token 额度页缓存超过 120 秒时，打开页面就重新读取，不再把所有账号显示成「待更新」。
+- **Token 额度页**（`TokensModel` / `FeatureRenderer.tokens`）：按 tokens 网页 `renderOverview` 的卡片移植，去掉额度总览，不显示未接入的账号和 ChatGPT Dots / 聊天，按 OpenAI / Claude / Grok / Cursor / TodayAI 分组。每张卡片有身份、剩余额度、价格（参考 / 续费 / 月付）、套餐倍数、余额块、用量节奏、近 1 小时曲线（`MiniLine`）、重置时间和重置卡明细；状态名称和 120 秒过期规则与网页一致。
+- **TodayAI**：读取接口返回的 `additionalAccounts`（today-cn、today-global）。服务端 2026-10-18 在 god-mobile-api 上线投影（site-admin `c50b1d1`，回执 `deploy/ios-live/TOKENS-TODAY-ACCEPTED-20261018.json`），旧版 App 忽略这个新增字段。
+- **文案**：「我」里的入口改为「关于 God」。
+
+验证：`check.sh` 通过（103 项 JVM 测试、lint 0 错误、正式证书签名）。预览版经 Tailscale 远程 ADB 装到 Find，只在预览版位于前台时截图（浅色）：「功能」Tab 与三个 Tab 的底栏、搜索「codex」找到 Token 额度；Token 额度页的 Codex、Claude、Grok、TodayAI 中国版和全球版卡片，以及详情页下拉刷新。服务端上线后，用户在 Find 的正式 App 里确认 TodayAI 两张卡片显示正常。未验证：深色和大字体变体；其他功能页的真实数据下拉刷新耗时。
