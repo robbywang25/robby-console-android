@@ -39,7 +39,8 @@ public final class FeatureRenderer {
             return;
         }
         // 总览 carries its snapshot time inside the summary card instead of a separate row.
-        if (!feature.id.equals("overview")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.id.equals("tokens") ? 120 : 600);
+        // 28 天挑战 shows its own sync line; the quota pages count a reading older than two minutes as stale.
+        if (!feature.id.equals("overview") && !feature.id.equals("tibo")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.path.equals("tokens/quotas") ? 120 : 600);
         switch (feature.id) {
             case "overview": overview(ui, payload); break;
             case "infrastructure": infrastructure(ui, obj(payload, "infrastructure")); break;
@@ -64,6 +65,8 @@ public final class FeatureRenderer {
             case "visit-insight-reports": reports(ui, payload); break;
             case "secrets": secrets(ui, payload); break;
             case "tokens": tokens(ui, payload); break;
+            case "quota-calendar": TokensPages.calendar(context, container, payload); break;
+            case "tibo": TokensPages.challenge(context, container, payload); break;
             default: ui.message("暂未接入", "此功能尚无原生数据视图。");
         }
     }
@@ -184,7 +187,8 @@ public final class FeatureRenderer {
             case "engineering": return api(p) && p.optJSONArray("repositoryIndex") != null && p.optJSONArray("items") != null;
             case "clipboard": return api(p) && p.optJSONArray("items") != null && p.optJSONObject("sourceStatus") != null;
             case "secrets": return api(p) && p.optJSONArray("services") != null;
-            case "tokens": return version(p, 1) && p.optJSONArray("accounts") != null;
+            case "tokens": case "quota-calendar": return version(p, 1) && p.optJSONArray("accounts") != null;
+            case "tibo": return version(p, 1) && p.optJSONArray("events") != null;
             case "travel-ledger": return version(p, 1) && (p.optJSONArray("projects") != null ||
                 (p.optJSONObject("project") != null && p.optJSONObject("summary") != null && p.optJSONArray("entries") != null));
             case "domains": return version(p, 1) && p.optJSONArray("domains") != null;
@@ -591,7 +595,7 @@ public final class FeatureRenderer {
         for (Map.Entry<String, List<JSONObject>> e : sections.entrySet()) {
             if (e.getValue().isEmpty()) continue;
             e.getValue().sort(TokensModel.SLOT_ORDER); u.heading(e.getKey(), null);
-            for (JSONObject a : e.getValue()) { tokenTile(u, a, sharedPlan(a, build), e.getKey(), now, zone); shown++; }
+            for (JSONObject a : e.getValue()) { tokenTile(u, a, sharedPlan(a, build), e.getKey(), now, zone, p.optJSONObject("tiboReset")); shown++; }
         }
         if (shown == 0) { LinearLayout c = u.theme.card(u.root); TextView t = u.text("还没有已接入的账号", 15, false); t.setTextColor(u.theme.muted); c.addView(t); }
     }
@@ -615,7 +619,7 @@ public final class FeatureRenderer {
         }
     }
     /** One account tile: identity and value, price and plan, balances, pace, the hour's curve, resets and 重置卡明细. */
-    private static void tokenTile(UI u, JSONObject a, String sharedPlan, String section, long now, ZoneId zone) {
+    private static void tokenTile(UI u, JSONObject a, String sharedPlan, String section, long now, ZoneId zone, JSONObject tibo) {
         boolean fresh = "connected".equals(TokensModel.effectiveStatus(a, now)); int tint = fresh ? tokenTint(u, section) : u.theme.muted;
         LinearLayout c = u.theme.card(u.root); c.setPadding(u.dp(16), u.dp(14), u.dp(16), u.dp(14));
         LinearLayout top = new LinearLayout(u.context); top.setGravity(Gravity.CENTER_VERTICAL);
@@ -640,8 +644,13 @@ public final class FeatureRenderer {
             }
             c.addView(b);
         }
+        // An official Tibo announcement takes the pace badge's place on Codex tiles, counting down as on the web.
+        TiboChallenge.Post signal = "codex".equals(a.optString("product")) && tibo != null && ("scheduled".equals(tibo.optString("state")) || "announced".equals(tibo.optString("state"))) ? new TiboChallenge.Post(tibo) : null;
         String pace = TokensModel.pace(a, now);
-        if (pace != null) { LinearLayout row = new LinearLayout(u.context); row.setPadding(0, u.dp(10), 0, 0); u.pill(row, pace, "即将重置".equals(pace) ? u.theme.danger : u.theme.warning); c.addView(row); }
+        if (signal != null && signal.url != null) { LinearLayout row = new LinearLayout(u.context); row.setPadding(0, u.dp(10), 0, 0); u.pill(row, signal.cards() ? "Tibo 重置卡发放倒计时" : "Tibo 额度重置倒计时", u.theme.danger);
+            TextView count = u.text("", 13, true); count.setTextColor(u.theme.danger); count.setPadding(u.dp(8), 0, 0, 0); row.setGravity(Gravity.CENTER_VERTICAL); row.addView(count);
+            if (signal.deadline > 0) TokensPages.tick(count, at -> TiboChallenge.countdown(signal.deadline, at)); else count.setText("已预告，时间未公布"); c.addView(row); }
+        else if (pace != null) { LinearLayout row = new LinearLayout(u.context); row.setPadding(0, u.dp(10), 0, 0); u.pill(row, pace, "即将重置".equals(pace) ? u.theme.danger : u.theme.warning); c.addView(row); }
         tokenTrend(u, c, a, fresh, tint);
         for (String line : TokensModel.resetLines(a, zone, now)) { TextView t = u.text(line, 12, false); t.setTextColor(u.theme.muted); t.setPadding(0, u.dp(4), 0, 0); c.addView(t); }
         TokensModel.Cards cards = TokensModel.cards(a, zone, now);

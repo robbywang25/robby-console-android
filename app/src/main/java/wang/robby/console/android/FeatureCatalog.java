@@ -32,6 +32,8 @@ public final class FeatureCatalog {
         f("okx", "OKX 账户", "资产、持仓与风险摘要", "洞察", "okx/overview", "god.mobile.okx.read"),
         f("openai", "OpenAI 用量", "Token、请求与成本", "洞察", "openai/usage", "god.mobile.read"),
         f("tokens", "Token 额度", "多账号剩余额度与重置时间", "洞察", "tokens/quotas", "god.mobile.tokens.read"),
+        f("quota-calendar", "重置日历", "所有账号的额度重置日期", "洞察", "tokens/quotas", "god.mobile.tokens.read"),
+        f("tibo", "28 天挑战", "Tibo 的重置预告、每日进展与提醒", "洞察", "tokens/tibo", "god.mobile.tokens.read"),
         f("infrastructure", "基础设施", "实例、资源指标与月价", "资产", "overview", "god.mobile.read"),
         f("domains", "域名资产", "注册、到期、解析与备案", "资产", "domains/overview", "god.mobile.domains.read"),
         f("status", "运行状态", "站点健康与上游服务", "资产", "overview", "god.mobile.read"),
@@ -54,6 +56,8 @@ public final class FeatureCatalog {
     // Only static feature metadata is searched, as on iOS: never account data, credentials or clipboard contents.
     private static final Map<String, String> ALIASES = Map.ofEntries(
         Map.entry("tokens", "额度 配额 quota balance Codex Claude Cursor Grok TodayAI 重置"),
+        Map.entry("quota-calendar", "日历 重置 额度 calendar reset"),
+        Map.entry("tibo", "Tibo Codex 重置 预告 挑战 提醒 闹钟 reset challenge alarm"),
         Map.entry("infrastructure", "服务器 云主机 server cloud"),
         Map.entry("domains", "域名 domain DNS 备案"),
         Map.entry("status", "服务 健康 health uptime"),

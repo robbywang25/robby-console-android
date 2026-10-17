@@ -21,7 +21,7 @@ public final class MobileApi {
             throw new IllegalArgumentException("接口地址无效");
         String route = path.split("\\?",2)[0];
         boolean known = FeatureCatalog.all().stream().anyMatch(f -> f.path.equals(route));
-        if (!known && !route.equals("travel-ledger/current/snapshot") && !ledgerRoute(route))
+        if (!known && !route.equals("travel-ledger/current/snapshot") && !route.equals("tokens/tibo/alerts") && !ledgerRoute(route))
             throw new IllegalArgumentException("接口未登记");
         return path;
     }

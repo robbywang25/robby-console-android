@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.15.0", "2026-10-18", "重置日历与 Tibo 提醒",
+            "新增「重置日历」：按月查看所有账号的额度重置日期，点某天看明细。",
+            "新增「28 天挑战」：Tibo 每天的进展、重置预告倒计时和原帖。",
+            "开启重置提醒后，Tibo 发出重置或发卡预告时，手机会像闹钟一样响铃。",
+            "提醒会持续响到你点「知道了」，没处理会每 10 分钟再响，最多三轮。",
+            "Token 额度里，Codex 卡片会显示 Tibo 预告的重置倒计时。"),
         new Entry("0.14.0", "2026-10-18", "功能合并，Token 页对齐网页",
             "底部导航改为「总览 / 功能 / 我」，洞察、资产、工具合并到「功能」，顶部可搜索。",
             "所有页面都改为下拉刷新，去掉了右上角的刷新按钮。",

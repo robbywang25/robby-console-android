@@ -63,7 +63,37 @@ final class PreviewMode {
   // The first Codex account's last hour: a gentle decline, five-minute samples, as the collector reports it.
   org.json.JSONArray points=new org.json.JSONArray();for(int i=0;i<=12;i++)points.put(new JSONObject().put("at",now.minusSeconds((12-i)*300L).toString()).put("remaining",76-i*0.35-(i>8?1.2:0)));
   out.getJSONArray("accounts").getJSONObject(0).put("usageTrend",new JSONObject().put("status","ready").put("metric","quota").put("from",now.minusSeconds(3600).toString()).put("to",now.toString()).put("observedAt",now.toString()).put("balancePoints",points));
+  // Elapsed Claude resets for the 重置日历, and an announced Tibo reset counting down on the Codex tiles.
+  org.json.JSONArray history=new org.json.JSONArray();for(int i=1;i<=6;i++)history.put(new JSONObject().put("id","five_hour").put("label","5 小时").put("quotaGroup",JSONObject.NULL).put("model",JSONObject.NULL).put("resetsAt",now.minusSeconds(i*5*3600L).toString()));
+  out.getJSONArray("accounts").getJSONObject(2).put("resetHistory",history);
+  out.put("tiboReset",tiboPost("2111600000000000013",13,"reset-scheduled","官方预计太平洋时间今晚重置",now.minusSeconds(1800),now.plusSeconds(2*3600+1234)).put("state","scheduled"));
   return out;
+ }
+ private static JSONObject tiboPost(String id,int day,String kind,String title,java.time.Instant at,java.time.Instant deadline)throws Exception{
+  return new JSONObject().put("id",id).put("day",day).put("kind",kind).put("title",title).put("publishedAt",at.toString()).put("deadline",deadline==null?JSONObject.NULL:deadline.toString())
+   .put("conditional",false).put("excerpt","合成的帖子摘录，只用于界面预览。").put("sourceUrl","https://x.com/thsottiaux/status/"+id);
+ }
+ /** Synthetic 28 天挑战 on its thirteenth day; post ids are made up and link nowhere real. */
+ private static JSONObject tibo()throws Exception{
+  java.time.Instant now=java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+  java.time.LocalDate start=java.time.LocalDate.now(java.time.ZoneId.of("America/Los_Angeles")).minusDays(12);
+  java.util.function.IntFunction<java.time.Instant> day=d->start.plusDays(d-1).atTime(10,0).atZone(java.time.ZoneId.of("America/Los_Angeles")).toInstant();
+  org.json.JSONArray events=new org.json.JSONArray();
+  events.put(tiboPost("2111600000000000013",13,"reset-scheduled","官方预计太平洋时间今晚重置",now.minusSeconds(1800),now.plusSeconds(2*3600+1234)));
+  events.put(tiboPost("2111600000000000012",13,"update","Tibo 新动态",now.minusSeconds(5400),null));
+  events.put(tiboPost("2111600000000000031",3,"cards-completed","官方确认重置卡已发放",day.apply(3).plusSeconds(7200),null));
+  events.put(tiboPost("2111600000000000030",3,"cards-announced","宣布发放一张重置卡",day.apply(3),null));
+  events.put(tiboPost("2111600000000000021",2,"reset-completed","官方表示额度重置已完成",day.apply(2).plusSeconds(3600),null));
+  events.put(tiboPost("2111600000000000020",2,"improvement","Day 2 产品更新",day.apply(2),null));
+  org.json.JSONArray summaries=new org.json.JSONArray();
+  for(int d=1;d<=12;d++)summaries.put(new JSONObject().put("day",d).put("preview",d==2?"免费审查 · 已重置":d==3?"云端重新发布 · 发卡":"演示进展 "+d).put("updatedAt",day.apply(d).plusSeconds(3600).toString())
+   .put("items",new org.json.JSONArray().put(new JSONObject().put("id","21116000000000001"+String.format(java.util.Locale.ROOT,"%02d",d)).put("title",d==2?"Day 2 重置完成":"Day "+d+" 演示更新").put("summary",d==2?"官方原帖确认这次额度重置已完成。":"合成的每日摘要，只用于界面预览。")
+    .put("kind",d==2?"reset-completed":"update").put("publishedAt",day.apply(d).toString()).put("sourceUrl","https://x.com/thsottiaux/status/21116000000000001"+String.format(java.util.Locale.ROOT,"%02d",d)))));
+  return new JSONObject().put("schemaVersion",1).put("status","connected").put("checkedAt",now.toString()).put("lastSuccessAt",now.toString()).put("intervalSeconds",300)
+   .put("sourceNote","每日摘要自动同步 Codex Radar，并核对 Tibo 原帖作者；重置倒计时仅采用官方明确时间。").put("summaryStatus","connected").put("summaryLastSuccessAt",now.toString())
+   .put("challenge",new JSONObject().put("startDate",start.toString()).put("days",28).put("timeZone","America/Los_Angeles").put("currentDay",13).put("promiseUrl",JSONObject.NULL))
+   .put("upcoming",tiboPost("2111600000000000013",13,"reset-scheduled","官方预计太平洋时间今晚重置",now.minusSeconds(1800),now.plusSeconds(2*3600+1234)).put("state","scheduled"))
+   .put("events",events).put("dailySummaries",summaries);
  }
  static JSONObject data(String path)throws Exception{
  String time=java.time.Instant.now().toString();
@@ -71,6 +101,7 @@ final class PreviewMode {
  if(path.equals("travel-ledger/current/projects"))return new JSONObject("{\"schemaVersion\":1,\"projects\":[{\"id\":\"00000000000000000000000000000001\",\"name\":\"界面演示账本\"}]}").put("generatedAt",time);
  if(path.startsWith("travel-ledger/current/snapshot"))return new JSONObject("{\"schemaVersion\":1,\"project\":{\"id\":\"00000000000000000000000000000001\",\"name\":\"界面演示账本\"},\"summary\":{},\"entries\":[],\"people\":[],\"page\":{\"hasMore\":false}}").put("generatedAt",time);
  if(path.equals("tokens/quotas"))return tokens();
+ if(path.equals("tokens/tibo"))return tibo();
  if(path.equals("market"))return new JSONObject("{\"apiVersion\":\"2026-07-01\",\"sourceStatus\":{},\"watchlist\":[{\"label\":\"合成行情 A\",\"price\":123.45,\"currency\":\"USD\",\"changePct\":1.23}],\"sectors\":[],\"benchmarks\":[],\"aiUpstream\":[],\"disclaimer\":{\"text\":\"完全合成的界面预览数据\"}}").put("generatedAt",time);
  throw new IllegalStateException("此预览不连接真实服务");
  }

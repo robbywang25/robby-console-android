@@ -18,7 +18,7 @@ import wang.robby.console.android.auth.DeviceAuthorization;
 import wang.robby.console.android.auth.NativePasskeyFlow;
 
 /** Native client. No embedded web content, demo balances, or service credentials. */
-public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener {
+public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host {
     private int INK, MUTED, ACCENT, BG; private ConsoleTheme theme;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private AuthSession auth; private AuthCoordinator coordinator; private MobileApi api; private LedgerActions ledger;
@@ -78,11 +78,17 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // Intent. Its one-time OAuth callback was already consumed, so replaying it only produced a
         // spurious "登录未完成或已过期" error. Fresh callbacks always arrive as a new launch or onNewIntent.
         if(state==null&&!launchedFromHistory(getIntent()))handle(getIntent()); else getIntent().setData(null);
+        openRequested(getIntent());
         UpdateReceiver.listener=updateListener;
         if(Build.VERSION.SDK_INT>=33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::goBack);
     }
     @Override protected void onSaveInstanceState(Bundle state) {super.onSaveInstanceState(state);state.putString("group",group);state.putString("feature",selectedId);state.putString("project",project);saveViewport();state.putInt("scroll",ledgerCursor==null?navigation.offset(routeKey()):0);}
-    @Override protected void onNewIntent(Intent intent) {super.onNewIntent(intent);setIntent(intent);if(!launchedFromHistory(intent))handle(intent);else intent.setData(null);}
+    @Override protected void onNewIntent(Intent intent) {super.onNewIntent(intent);setIntent(intent);if(!launchedFromHistory(intent))handle(intent);else intent.setData(null);openRequested(intent);}
+    /** The Tibo reminder's notification and alarm page open 28 天挑战; only that fixed page can be requested. */
+    private void openRequested(Intent intent){
+        if(intent==null||!"tibo".equals(intent.getStringExtra(TiboWatch.EXTRA_OPEN)))return;intent.removeExtra(TiboWatch.EXTRA_OPEN);
+        if(launchedFromHistory(intent)||!loggedIn())return;FeatureCatalog.Feature f=find("tibo");if(f==null)return;if(!group.equals("功能")){saveViewport();group="功能";}open(f);
+    }
     static boolean launchedFromHistory(Intent intent){return intent!=null&&(intent.getFlags()&Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)!=0;}
     private void handle(Intent intent) {
         if(PreviewMode.isBuild()||coordinator==null){intent.setData(null);return;}
@@ -91,7 +97,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}
         // Back from the "install unknown apps" settings page: continue the update the person already started.
-        if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}}
+        if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}
+        // Back from a notification or battery settings page: show what still keeps the reminder from ringing.
+        TokensPages.refreshReminder();}
     @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){if(!resumed||isDestroyed())return;++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     private static final int AUTH_TAB=41;
@@ -407,8 +415,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
         String key=path; JSONObject cached=key.startsWith("travel-ledger/")?null:snapshots.get(key);
         LinearLayout result=new LinearLayout(this);result.setOrientation(LinearLayout.VERTICAL);content.addView(result);
-        // Token 额度 counts a reading older than two minutes as 待更新 (the web's rule), so an older cache reloads at once.
-        boolean reload=refresh||cached!=null&&"tokens".equals(f.id)&&FeatureRenderer.ageMillis(cached)>120_000L;
+        // Token pages count a reading older than two minutes as 待更新 (the web's rule), so an older cache reloads at once.
+        boolean reload=refresh||cached!=null&&f.path.startsWith("tokens/")&&FeatureRenderer.ageMillis(cached)>120_000L;
         if(cached!=null){render(f,result,cached);TextView stamp=text(reload?"正在更新，暂时保留上次结果":"上次读取结果 · 下拉可刷新",12,MUTED,false);result.addView(stamp);restoreViewport();}
         else{TextView loading=text("正在读取…",15,MUTED,false);loading.setPadding(dp(4),dp(12),0,dp(12));result.addView(loading);}
         if(cached!=null&&!reload){if(done!=null)done.run();return;}
@@ -460,8 +468,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void settings(){
         profile();
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
+        section("提醒");LinearLayout alerts=groupCard();boolean watching=!PreviewMode.isBuild()&&TiboWatch.enabled(this);
+        featureRow("Tibo 重置提醒",watching?TiboWatch.status(this):"未开启 · Tibo 发出重置预告时像闹钟一样响铃","bell",alerts,()->{FeatureCatalog.Feature f=find("tibo");if(f!=null&&loggedIn())open(f);else if(f!=null)error("登录后开启","登录 God 后才能读取 Tibo 的重置预告。");});
         section("关于");LinearLayout about=groupCard();
-        featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
+        featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
         String version=versionName();LinearLayout info=featureRow("关于 God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
         if(notesUnread()){View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);info.setContentDescription(info.getContentDescription()+"，有新版本说明");}
         restoreViewport();
@@ -723,6 +733,34 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     private String safeError(Exception e){String m=e.getMessage();return m!=null&&m.matches("[\\p{IsHan}，。、；：！？ ·…A-Za-z0-9-]{1,100}")?m:"连接未完成，请检查网络后重试";}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
+    private static final int TIBO_PERMISSION=43;private boolean tiboTestPending;
+    @Override public void tiboSwitch(boolean on){
+        if(PreviewMode.isBuild())return;
+        if(!on){TiboWatch.disable(this);return;}
+        if(!notificationsAllowed()){tiboTestPending=false;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},TIBO_PERMISSION);return;}
+        TiboWatch.enable(this);
+        if(!getSystemService(PowerManager.class).isIgnoringBatteryOptimizations(getPackageName()))tiboFix("battery");
+    }
+    @Override public void tiboTest(){if(!notificationsAllowed()){tiboTestPending=true;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},TIBO_PERMISSION);return;}TiboWatch.test(this);}
+    private boolean notificationsAllowed(){return Build.VERSION.SDK_INT<33||checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED;}
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
+        super.onRequestPermissionsResult(request,permissions,results);if(request!=TIBO_PERMISSION)return;
+        if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED){if(tiboTestPending)TiboWatch.test(this);else tiboSwitch(true);}
+        else error("没有通知权限","重置提醒需要通知权限才能响铃。可以在系统设置里为 God 开启通知后再试。");
+        TokensPages.refreshReminder();
+    }
+    /** Opens the system page that removes one obstacle named on the 重置提醒 card. The app is sideloaded, not on Play. */
+    @android.annotation.SuppressLint("BatteryLife")
+    @Override public void tiboFix(String what){
+        String pkg=getPackageName();Uri app=Uri.parse("package:"+pkg);Intent intent=switch(what){
+            case "notifications"->new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,pkg);
+            case "channel"->new Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,pkg).putExtra(android.provider.Settings.EXTRA_CHANNEL_ID,TiboWatch.CH_ALARM);
+            case "fullscreen"->Build.VERSION.SDK_INT>=34?new Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,app):new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,app);
+            case "battery"->new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,app);
+            case "exact"->Build.VERSION.SDK_INT>=31?new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,app):new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,app);
+            default->new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,app);};
+        try{startActivity(intent);}catch(RuntimeException e){try{startActivity(new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,app));}catch(RuntimeException ignored){}}
+    }
     private void error(String title,String message){show(new AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("知道了",null));}
     private void show(AlertDialog.Builder builder){AlertDialog d=builder.create();d.show();theme.dialog(d);}
 }
