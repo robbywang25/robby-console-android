@@ -25,7 +25,7 @@ final class PullScrollView extends ScrollView {
     private final boolean effects;
     private final float trigger, hold, max; private final int slop;
     private View mark, glyph; private Runnable onRefresh; private String label;
-    private float downX, downY, pull; private boolean dragging, armed, refreshing; private long started;
+    private float downX, downY, pull; private boolean dragging, armed, refreshing; private long started; private int inset;
     private ValueAnimator settle, spin;
 
     PullScrollView(Context context, boolean effects) {
@@ -40,6 +40,8 @@ final class PullScrollView extends ScrollView {
         this.mark = mark; this.glyph = glyph; this.label = label; this.onRefresh = onRefresh; place(0);
     }
     boolean refreshing() { return refreshing; }
+    /** Height of the status bar the page scrolls under, so the mark rides in the visible part of the gap. */
+    void setTopInset(int px) { inset = px; }
 
     /** Ends a refresh: the mark stops and the page settles back; shown for at least half a second so it never flickers. */
     void finishRefresh() {
@@ -114,7 +116,7 @@ final class PullScrollView extends ScrollView {
         if (mark == null) return;
         float progress = Math.min(1f, to / trigger);
         mark.setVisibility(to > 0 ? VISIBLE : INVISIBLE);
-        mark.setTranslationY(getTop() + to / 2f - mark.getHeight() / 2f);
+        mark.setTranslationY(getTop() + inset + to / 2f - mark.getHeight() / 2f);
         mark.setAlpha(progress); mark.setScaleX(0.6f + 0.4f * progress); mark.setScaleY(0.6f + 0.4f * progress);
         if (glyph != null && !refreshing && spin == null) glyph.setRotation(progress * 300f);
     }

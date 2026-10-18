@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.20.0", "2026-10-19", "全屏显示",
+            "总览、功能和「我」铺满整个屏幕，上滑时卡片从状态栏下面穿过。",
+            "「功能」和「我」的大标题跟着页面一起滑走。",
+            "详情页的顶栏保持固定，返回和「记一笔」随时点得到。"),
         new Entry("0.19.0", "2026-10-18", "拖拽排序，日历直接看重置",
             "编辑看板改成按住右侧的 ≡ 拖动排序。",
             "总览的 Token 卡片先列出账号，额度随后填上，读取也更快。",

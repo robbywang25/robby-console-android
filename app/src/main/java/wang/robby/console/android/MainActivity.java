@@ -216,12 +216,17 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // Signed-in 总览 is only the board and 常用: no date line or title above them. Signed out keeps the header,
         // where sign-in progress is shown.
         boolean bare=!nested&&group.equals("总览")&&loggedIn();if(bare)header.setVisibility(View.GONE);
-        body.addView(header);
+        // Tab roots run edge to edge: the page scrolls under the status bar and their large title scrolls away with it.
+        // Detail pages keep a fixed header, so back and 记一笔 stay one tap away.
+        final boolean edge=!nested;
+        if(!edge)body.addView(header);
         scroll=new PullScrollView(this,theme.effects);
         scroll.setFillViewport(true);scroll.setClipToPadding(false);scroll.setVerticalScrollBarEnabled(false);
-        // Scroll-edge effect: content dissolves under the header instead of being cut at a hard line.
+        // Scroll-edge effect: content dissolves under the header (or the status bar) instead of being cut at a hard line.
         scroll.setVerticalFadingEdgeEnabled(true);scroll.setFadingEdgeLength(dp(28));
-        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(16),dp(bare?12:4),dp(16),dp(120));scroll.addView(content);
+        content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(dp(16),dp(bare?12:4),dp(16),dp(120));
+        final LinearLayout column=new LinearLayout(this);column.setOrientation(LinearLayout.VERTICAL);
+        if(edge){column.addView(header);column.addView(content);scroll.addView(column);}else scroll.addView(content);
         // The page area: the scroll, and above it the glass mark pull-to-refresh brings in on pages that use it.
         FrameLayout pageArea=new FrameLayout(this);pageArea.addView(scroll,new FrameLayout.LayoutParams(-1,-1));
         pullMark=new FrameLayout(this);pullMark.setBackground(theme.glass(-1));pullMark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);pullMark.setVisibility(View.INVISIBLE);
@@ -249,9 +254,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             tab.setOnClickListener(v->{v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);if(group.equals(label))tabHome();else switchTab(label);});theme.press(tab);
             tabs.addView(tab,new LinearLayout.LayoutParams(0,-1,1));
         }
-        final LinearLayout page=content;final GlassPane bar=nav;
+        final LinearLayout page=content;final GlassPane bar=nav;final PullScrollView pager=scroll;
         root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
-            body.setPadding(bars.left,bars.top,bars.right,0);
+            body.setPadding(bars.left,edge?0:bars.top,bars.right,0);
+            // Edge to edge the page starts below the status bar, and content scrolled up fades out across its height.
+            if(edge){column.setPadding(0,bars.top,0,0);pager.setFadingEdgeLength(Math.max(dp(28),bars.top));}
+            pager.setTopInset(edge?bars.top:0);
             FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)bar.getLayoutParams();lp.leftMargin=bars.left+dp(16);lp.rightMargin=bars.right+dp(16);lp.bottomMargin=bars.bottom+dp(10);bar.setLayoutParams(lp);
             fade.getLayoutParams().height=bars.bottom+dp(28);fade.requestLayout();
             page.setPadding(dp(16),dp(4),dp(16),bars.bottom+(bar.getVisibility()==View.GONE?dp(24):dockHeight+dp(10+24)));return insets;});root.requestApplyInsets();
