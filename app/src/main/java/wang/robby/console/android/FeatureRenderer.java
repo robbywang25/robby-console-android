@@ -69,6 +69,7 @@ public final class FeatureRenderer {
             case "tibo": TokensPages.challenge(context, container, payload); break;
             default: ui.message("暂未接入", "此功能尚无原生数据视图。");
         }
+        if (!ui.explanations.isEmpty()) container.addView(ui.theme.info(ui.explanations));
     }
 
     /** Feature whose contract a dashboard read must satisfy; several 总览 cards share the overview read. */
@@ -137,9 +138,9 @@ public final class FeatureRenderer {
             case "tokens": {
                 // One row per connected account; accounts not set up are left off the board (the page lists them).
                 long now = System.currentTimeMillis(); int shown = 0; java.text.DecimalFormat whole = new java.text.DecimalFormat("0");
-                List<JSONObject> accounts = tokenAccounts(p);
+                List<JSONObject> accounts = tokenAccounts(p); Set<String> hidden = Dashboard.hiddenTokens(context); boolean anyHidden = false;
                 for (JSONObject a : accounts) { String st = a.optString("status");
-                    if (!TokensModel.shownOnPage(a) || shown >= 8) continue; shown++;
+                    if (!TokensModel.shownOnPage(a)) continue; if (hidden.contains(a.optString("id"))) { anyHidden = true; continue; } if (shown >= 8) continue; shown++;
                     List<TokensModel.Period> periods = TokensModel.boardWindows(a);
                     Double min = null; for (TokensModel.Period pd : periods) { Double pc = TokensModel.remaining(pd.window); if (pc != null && (min == null || pc < min)) min = pc; }
                     // The countdown is the first window's: Claude's 5 hours, otherwise the tightest window.
@@ -158,7 +159,7 @@ public final class FeatureRenderer {
                     // Codex: Points and reset cards on a small second line, aligned with the account name.
                     String extras = TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault());
                     if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }
-                if (shown == 0) widgetMessage(context, shell, "还没有已接入的账号");
+                if (shown == 0) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");
                 break; }
             case "market": {
                 JSONArray list = arr(p, "watchlist"); if (list.length() == 0) { widgetMessage(context, shell, "关注列表为空"); break; }
@@ -452,7 +453,7 @@ public final class FeatureRenderer {
                 join("涨跌 " + unit(n, "changePct", "%"), n.has("updatedAt") ? "行情 " + date(n, "updatedAt") : "")); }
         for (JSONObject group : rows(p, "aiUpstream")) { LinearLayout c = u.card(s(group, "name")); for (JSONObject n : rows(group, "companies"))
             u.row(c, s(n, "name"), Boolean.TRUE.equals(n.opt("quoteAvailable")) ? number(n, "price") + " " + s(n, "currency") : "暂无报价"); }
-        u.note(s(obj(p, "disclaimer"), "text"));
+        u.explain(s(obj(p, "disclaimer"), "text"));
     }
     private static void okx(UI u, JSONObject p) {
         LinearLayout c = u.card("账户摘要");
@@ -489,7 +490,7 @@ public final class FeatureRenderer {
         for (JSONObject n : rows(p, "items")) u.item(g, "剪贴内容 " + (++i), flag(n, "isPublic", "公开", "私密"), join("创建 " + date(n, "createdAt"), "到期 " + date(n, "expiresAt")),
             "可见性", flag(n, "isPublic", "公开", "私密"), "创建", date(n, "createdAt"), "到期", date(n, "expiresAt"));
         empty(u, p, "items", "暂无剪贴内容");
-        u.note("只显示元数据：应用不请求、不显示剪贴内容正文。");
+        u.explain("只显示元数据：应用不请求、不显示剪贴内容正文。");
     }
     private static void ledger(UI u, JSONObject p) {
         if (p.optJSONArray("projects") != null) {
@@ -508,7 +509,7 @@ public final class FeatureRenderer {
                     lines.add(cur + " 已付 " + s(total, "paid") + " · 差额 " + s(total, "net"));
                     details.add(cur + " 已付"); details.add(s(total, "paid")); details.add(cur + " 应分摊 / 差额"); details.add(s(total, "expense") + " / " + s(total, "net")); }
                 u.item(g, s(n, "displayName"), "", String.join("\n", lines), details.toArray(new String[0])); }
-            u.note("差额是账本计算结果，不代表实际还款。"); }
+            u.explain("差额是账本计算结果，不代表实际还款。"); }
         LinearLayout g = u.list("账目");
         for (JSONObject n : rows(p, "entries")) u.item(g, s(n, "merchant").equals(UNKNOWN) ? s(n, "category") : s(n, "merchant"), money(n, "amount", "currency"),
             join(s(n, "category"), s(n, "payer"), s(n, "occurredAt")),
@@ -523,7 +524,7 @@ public final class FeatureRenderer {
         LinearLayout g = u.list("卡片");
         for (JSONObject n : rows(p, "cards")) u.item(g, s(n, "title"), flag(n, "customized", "自定义", "默认"), join(s(n, "description"), "更新 " + date(n, "updatedAt")));
         empty(u, p, "cards", "暂无卡片");
-        u.note("编辑、二维码和分享仍在网页管理端。");
+        u.explain("编辑、二维码和分享仍在网页管理端。");
     }
     /** Mirrors the 博客转公众号 web page: the account figures first, then created drafts and published articles. */
     private static void publishing(UI u, JSONObject p) {
@@ -555,12 +556,12 @@ public final class FeatureRenderer {
         LinearLayout g = u.list("事件记录");
         for (JSONObject n : rows(p, "events")) u.item(g, state(n, "type"), state(n, "result"), join(date(n, "occurredAt"), n.isNull("reason") ? "" : "原因 " + state(n, "reason")));
         empty(u, p, "events", "暂无登录事件");
-        u.note("事件已脱敏；首次绑定等管理操作仍在网页管理端。");
+        u.explain("事件已脱敏；首次绑定等管理操作仍在网页管理端。");
     }
     private static void prompts(UI u, JSONObject p) {
         LinearLayout c = u.card("Kimi 资产日报"); u.metrics(c, "模型", s(p, "model"), "版本", s(p, "version"), "来源", state(p, "source"));
         u.row(c, "任务", s(p, "task")); u.row(c, "更新时间", date(p, "updatedAt"));
-        u.note("模板正文、版本差异与保存仍在网页管理端。");
+        u.explain("模板正文、版本差异与保存仍在网页管理端。");
         // Template, hashes, receipts and request fingerprints stay outside the metadata screen.
     }
     private static void images(UI u, JSONObject p) {
@@ -600,7 +601,7 @@ public final class FeatureRenderer {
         if (shown == 0) { LinearLayout c = u.theme.card(u.root); TextView t = u.text("还没有已接入的账号", 15, false); t.setTextColor(u.theme.muted); c.addView(t); }
     }
     /** The original nine accounts followed by the additive additionalAccounts (TodayAI), as the web combines them. */
-    private static List<JSONObject> tokenAccounts(JSONObject p) {
+    static List<JSONObject> tokenAccounts(JSONObject p) {
         List<JSONObject> out = new ArrayList<>(); for (JSONObject a : rows(p, "accounts")) out.add(a); for (JSONObject a : rows(p, "additionalAccounts")) out.add(a); return out;
     }
     /** Grok Bot signed in with Grok Build's email shares Build's subscription, as the web shows it. */
@@ -699,7 +700,7 @@ public final class FeatureRenderer {
         LinearLayout g = u.list("服务");
         for (JSONObject n : rows(p, "services")) u.item(g, s(n, "label"), flag(n, "configured", "已配置", "未配置"), "更新 " + date(n, "updatedAt"));
         empty(u, p, "services", "暂无服务");
-        u.note("只显示配置状态，不返回凭据值；写入与轮换仍在网页管理端。");
+        u.explain("只显示配置状态，不返回凭据值；写入与轮换仍在网页管理端。");
     }
     /** " · "-joined summary of the parts that carry a value; unknown parts stay visible in the expanded details. */
     private static String join(String... parts) {
@@ -808,6 +809,9 @@ public final class FeatureRenderer {
         /** Section heading plus one grouped list card. */
         LinearLayout list(String title){heading(title,null);return group();}
         void subhead(LinearLayout c,String title){TextView t=text(title,12,false);t.setTextColor(theme.faint);t.setPadding(0,dp(10),0,dp(2));c.addView(t);}
+        /** Explanation without status or figures: kept for the page's ⓘ instead of a paragraph. */
+        final List<String> explanations = new ArrayList<>();
+        void explain(String value){if(value!=null&&!value.isEmpty()&&!value.equals(UNKNOWN))explanations.add(value);}
         void note(String value){if(value==null||value.isEmpty()||value.equals(UNKNOWN))return;TextView t=text(value,12,false);t.setTextColor(theme.faint);t.setPadding(dp(6),dp(2),dp(6),dp(10));root.addView(t);}
         void emptyLine(String value){LinearLayout c=group();TextView t=text(value,14,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(14),dp(12),dp(14));c.addView(t);}
         /** Short figures as a grid: three columns normally, two with large text; values wrap instead of shrinking. */

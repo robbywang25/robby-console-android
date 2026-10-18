@@ -32,6 +32,16 @@ final class Dashboard {
     );
     static final List<String> DEFAULT = List.of("services", "instances", "domains", "reminders", "tokens");
 
+    /** Token 额度 accounts left off the 看板 card, by account id (codex-1, today-cn…); unknown text is dropped. */
+    static Set<String> hiddenTokens(String saved) {
+        Set<String> out = new LinkedHashSet<>(); if (saved == null) return out;
+        for (String part : saved.split(",")) { String id = part.trim(); if (id.matches("[a-z0-9-]{1,32}")) out.add(id); }
+        return out;
+    }
+    static String toggleHidden(String saved, String id) { Set<String> ids = hiddenTokens(saved); if (!ids.remove(id) && id.matches("[a-z0-9-]{1,32}")) ids.add(id); return String.join(",", ids); }
+    static final String HIDDEN_TOKENS = "tokenBoardHidden";
+    static Set<String> hiddenTokens(android.content.Context c) { return hiddenTokens(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(HIDDEN_TOKENS, null)); }
+
     static Card find(String id) { for (Card c : ALL) if (c.id.equals(id)) return c; return null; }
     /** Saved value to an ordered combination: unknown and repeated ids are dropped; null (never saved) is the default set. */
     static List<String> parse(String saved) {

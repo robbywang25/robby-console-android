@@ -99,7 +99,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // Back from the "install unknown apps" settings page: continue the update the person already started.
         if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}
         // Back from a notification or battery settings page: show what still keeps the reminder from ringing.
-        TokensPages.refreshReminder();}
+        TokensPages.refreshReminder();
+        // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
+        if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
     @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){if(!resumed||isDestroyed())return;++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     private static final int AUTH_TAB=41;
@@ -177,8 +179,6 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);stage.addView(body,new FrameLayout.LayoutParams(-1,-1));
         FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId);if(detail==null&&!about&&!boardEdit)selectedId=null;
         boolean nested=device!=null||detail!=null||about||boardEdit;
-        // Opening 关于 reads this version's notes, so the red dots must already be gone in this frame's dock.
-        if(about&&!versionName().isEmpty())prefs().edit().putString("notesSeen",versionName()).apply();
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
         leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
@@ -218,13 +218,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         for(String label:TABS) {
             boolean selected=group.equals(label);String name=ConsoleTheme.tabLabel(label);LinearLayout tab=new LinearLayout(this);tab.setOrientation(LinearLayout.VERTICAL);tab.setGravity(Gravity.CENTER);
             tab.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,0),-1));tab.setSelected(selected);tab.setFocusable(true);tab.setClickable(true);tab.setContentDescription(name+(selected?"，已选中":""));tab.setTooltipText(name);
-            if(label.equals("设置")&&notesUnread()){
+            if(label.equals("设置")){
+                // The dot means a newer release can be installed; a background check may show it later without a rebuild.
                 FrameLayout badge=new FrameLayout(this);badge.addView(tabGlyph(label,selected),new FrameLayout.LayoutParams(dp(24),dp(24),Gravity.CENTER));
-                badge.addView(theme.dot(theme.unread,8),new FrameLayout.LayoutParams(dp(8),dp(8),Gravity.TOP|Gravity.END));tab.addView(badge,new LinearLayout.LayoutParams(dp(32),dp(26)));
-                tab.setContentDescription(name+(selected?"，已选中":"")+"，有新版本说明");
+                View dot=theme.dot(theme.unread,8);badge.addView(dot,new FrameLayout.LayoutParams(dp(8),dp(8),Gravity.TOP|Gravity.END));tab.addView(badge,new LinearLayout.LayoutParams(dp(32),dp(26)));
+                meDot=dot;meTab=tab;meTabDescription=name+(selected?"，已选中":"");showDots();
             }else tab.addView(tabGlyph(label,selected));
             TextView caption=text(name,11,selected?INK:MUTED,selected);caption.setPadding(0,dp(2),0,0);caption.setSingleLine(true);caption.setGravity(Gravity.CENTER);caption.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);tab.addView(caption);
-            tab.setOnClickListener(v->{if(!group.equals(label))v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);switchTab(label);});theme.press(tab);
+            tab.setOnClickListener(v->{v.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);if(group.equals(label))tabHome();else switchTab(label);});theme.press(tab);
             tabs.addView(tab,new LinearLayout.LayoutParams(0,-1,1));
         }
         final LinearLayout page=content;final GlassPane bar=nav;
@@ -314,10 +315,31 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section("已添加");LinearLayout on=groupCard();
         for(int i=0;i<ids.size();i++){Dashboard.Card card=Dashboard.find(ids.get(i));if(card!=null)boardRow(on,card,true,i>0,i<ids.size()-1);}
         if(ids.isEmpty()){TextView t=text("还没有添加卡片",14,MUTED,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(14),dp(12),dp(14));on.addView(t);}
+        if(ids.contains("tokens")){section("Token 额度卡片");LinearLayout accounts=groupCard();JSONObject cached=snapshots.get("tokens/quotas");
+            if(cached!=null)tokenToggles(accounts,cached);
+            else{TextView wait=text("正在读取账号…",14,MUTED,false);wait.setPadding(dp(12),dp(14),dp(12),dp(14));accounts.addView(wait);int epoch=generation;
+                worker.execute(()->{try{JSONObject data=read("tokens/quotas");runOnUiThread(()->{if(epoch!=generation||!BOARD.equals(selectedId)||isDestroyed())return;snapshots.put("tokens/quotas",data);accounts.removeAllViews();tokenToggles(accounts,data);});}
+                    catch(Exception e){runOnUiThread(()->{if(epoch==generation&&!isDestroyed()){String why="暂时读不到账号："+explain("tokens/quotas",e);wait.setText(why);}});}});}}
         List<Dashboard.Card> rest=new ArrayList<>();for(Dashboard.Card card:Dashboard.ALL)if(!ids.contains(card.id))rest.add(card);
         if(!rest.isEmpty()){section("可添加");LinearLayout off=groupCard();for(Dashboard.Card card:rest)boardRow(off,card,false,false,false);}
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.topMargin=dp(6);content.addView(button("恢复默认组合",()->{saveBoard(Dashboard.DEFAULT);build();}),rp);
         restoreViewport();
+    }
+    /** One switch per connected Token account: whether its row shows on the 看板's Token 额度 card, remembered on this phone by account. */
+    private void tokenToggles(LinearLayout group,JSONObject p){
+        Set<String> hidden=Dashboard.hiddenTokens(this);List<JSONObject> list=new ArrayList<>();
+        for(JSONObject a:FeatureRenderer.tokenAccounts(p))if(TokensModel.shownOnPage(a))list.add(a);
+        list.sort(Comparator.<JSONObject>comparingInt(a->TokensModel.SECTIONS.indexOf(TokensModel.section(a))).thenComparing(TokensModel.SLOT_ORDER));
+        if(list.isEmpty()){TextView t=text("还没有已接入的账号",14,MUTED,false);t.setPadding(dp(12),dp(14),dp(12),dp(14));group.addView(t);return;}
+        for(JSONObject a:list){String id=a.optString("id");
+            if(group.getChildCount()>0){View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(38),0,dp(14),0);group.addView(divider,d);}
+            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(14),dp(8),dp(8),dp(8));row.setMinimumHeight(dp(56));
+            View dot=theme.dot(TokensPages.tint(theme,a.optString("product")),8);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(14);row.addView(dot);
+            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);TextView who=text(TokensModel.displayName(a),15,INK,false);who.setSingleLine(true);who.setEllipsize(android.text.TextUtils.TruncateAt.END);labels.addView(who);
+            TextView product=text(TokensModel.productName(a),12,MUTED,false);product.setPadding(0,dp(2),0,0);labels.addView(product);row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
+            Switch toggle=new Switch(this);toggle.setChecked(!hidden.contains(id));toggle.setContentDescription("在看板显示 "+TokensModel.productName(a)+" "+TokensModel.displayName(a));toggle.setMinimumHeight(dp(48));
+            toggle.setOnCheckedChangeListener((b,checked)->prefs().edit().putString(Dashboard.HIDDEN_TOKENS,Dashboard.toggleHidden(prefs().getString(Dashboard.HIDDEN_TOKENS,null),id)).apply());
+            row.addView(toggle);group.addView(row);}
     }
     private void boardRow(LinearLayout group,Dashboard.Card card,boolean added,boolean canUp,boolean canDown){
         if(group.getChildCount()>0){View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(62),0,dp(14),0);group.addView(divider,d);}
@@ -473,7 +495,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section("关于");LinearLayout about=groupCard();
         featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
         String version=versionName();LinearLayout info=featureRow("关于 God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
-        if(notesUnread()){View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);info.setContentDescription(info.getContentDescription()+"，有新版本说明");}
+        View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);
+        aboutDot=red;aboutRow=info;aboutDescription=String.valueOf(info.getContentDescription());showDots();
         restoreViewport();
     }
     /** Account card at the top of 我, in WeChat's profile position; opens the same sign-in / sign-out choices as before. */
@@ -516,16 +539,17 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     private void openAbout(){++generation;selectedId=ABOUT;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
     private android.content.SharedPreferences prefs(){return getSharedPreferences("god-ui",MODE_PRIVATE);}
-    /** Red dot until the installed version's notes are opened once after an upgrade. Stores only a version string. */
-    private boolean notesUnread(){
-        boolean upgraded=false;
-        try{android.content.pm.PackageInfo info=Build.VERSION.SDK_INT>=33?getPackageManager().getPackageInfo(getPackageName(),android.content.pm.PackageManager.PackageInfoFlags.of(0)):getPackageManager().getPackageInfo(getPackageName(),0);upgraded=info.lastUpdateTime>info.firstInstallTime;}
-        catch(Exception ignored){}
-        String current=versionName();
-        // An update started in 关于 showed that version's notes before installing: once it is the installed version, it is read.
-        String acknowledged=prefs().getString("notesAcknowledged",null);
-        if(!current.isEmpty()&&current.equals(acknowledged))prefs().edit().putString("notesSeen",current).remove("notesAcknowledged").apply();
-        return ReleaseNotes.unread(prefs().getString("notesSeen",null),current,upgraded,acknowledged);
+    private View meDot,aboutDot;private View meTab,aboutRow;private String meTabDescription="",aboutDescription="";
+    /** A red dot only when a newer release than the installed one has been found; reading notes never needs one. */
+    private boolean updateDot(){return update!=null;}
+    private void showDots(){boolean on=updateDot();
+        if(meDot!=null){meDot.setVisibility(on?View.VISIBLE:View.GONE);if(meTab!=null)meTab.setContentDescription(meTabDescription+(on?"，有新版本可更新":""));}
+        if(aboutDot!=null){aboutDot.setVisibility(on?View.VISIBLE:View.GONE);if(aboutRow!=null)aboutRow.setContentDescription(aboutDescription+(on?"，有新版本可更新":""));}}
+    /** The selected tab tapped again (a double tap included): back to that tab's first page, or to its top when already there. */
+    private void tabHome(){
+        if(coordinator==null||coordinator.deviceAuthorization()!=null)return;
+        if(selectedId!=null){saveViewport();++generation;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=-1;build();}
+        else if(scroll!=null)scroll.smoothScrollTo(0,0);
     }
     /**
      * 关于 God, modelled on WeChat's 关于微信: brand and version first, one way to get a newer build,
@@ -554,7 +578,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section(installed==null?"更新记录":"历史版本");LinearLayout history=card();history.setPadding(dp(6),dp(6),dp(6),dp(6));
         if(theme.effects)history.setLayoutTransition(new android.animation.LayoutTransition());
         for(ReleaseNotes.Entry e:ReleaseNotes.ALL)if(e!=installed)noteRow(e,false,today,history);
-        TextView foot=text("安装包校验值和验证说明见 GitHub Releases。",12,theme.faint,false);foot.setGravity(Gravity.CENTER);foot.setPadding(dp(12),dp(8),dp(12),dp(4));content.addView(foot);
+        content.addView(theme.info(List.of("安装包校验值和验证说明见 GitHub Releases。")));
         restoreViewport();
     }
     /** One release inside {@code c}: version, theme and date; tapping toggles its numbered notes in place. */
@@ -611,7 +635,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
                     String now=updateState;if(now.equals("downloading")||now.equals("installing"))return;
                     if(error==null){update=found;updateState=found==null?"latest":"available";updateNote=null;}
                     else if(update==null){updateState="failed";updateNote=updateError(error);}
-                    renderUpdate();}
+                    renderUpdate();showDots();}
                 finally{if(done!=null)done.run();}
             });
         });
@@ -626,8 +650,6 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
                     catch(ActivityNotFoundException e){awaitingInstallPermission=false;error("无法打开设置","请在系统设置里允许本应用安装应用。");}}));
             return;
         }
-        // The update card showed this version's notes; after it is installed the red dots should not ask again.
-        prefs().edit().putString("notesAcknowledged",r.version).apply();
         updateState="downloading";updatePercent=0;updateNote=null;updateCancel.set(false);renderUpdate();
         updater.execute(()->{
             try{

@@ -35,18 +35,6 @@ public final class ReleaseNotesTest {
         assertTrue("versionName not found", m.find());
         assertEquals(m.group(1), ReleaseNotes.ALL.get(0).version);
     }
-    @Test public void redDotOnlyAfterAnUpgradeUntilOpened() {
-        String current = ReleaseNotes.ALL.get(0).version, older = ReleaseNotes.ALL.get(1).version;
-        assertFalse("fresh install starts read", ReleaseNotes.unread(null, current, false));
-        assertTrue("upgrade from a build that never recorded", ReleaseNotes.unread(null, current, true));
-        assertTrue(ReleaseNotes.unread(older, current, true));
-        assertFalse("opened this version", ReleaseNotes.unread(current, current, true));
-        assertFalse("no notes for an unknown build", ReleaseNotes.unread(older, "9.9.9", true));
-        assertFalse(ReleaseNotes.unread(older, null, true));
-        assertFalse("updated from 关于 to this version", ReleaseNotes.unread(older, current, true, current));
-        assertTrue("an update to another version was started but not installed", ReleaseNotes.unread(older, current, true, "9.9.9"));
-        assertTrue(ReleaseNotes.unread(older, current, true, null));
-    }
     @Test public void dateLabelHidesTheCurrentYear() {
         assertEquals("10月15日", ReleaseNotes.dateLabel("2026-10-15", LocalDate.of(2026, 12, 1)));
         assertEquals("2026年10月15日", ReleaseNotes.dateLabel("2026-10-15", LocalDate.of(2027, 1, 2)));

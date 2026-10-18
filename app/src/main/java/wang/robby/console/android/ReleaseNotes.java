@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.16.0", "2026-10-18", "看板可选账号，说明收进图标",
+            "编辑看板里可以单独隐藏 Token 额度卡片中的某个账号。",
+            "看板里 Claude 下方显示每周额度还有几天重置。",
+            "再点一次当前的底部标签，回到这一页的首页。",
+            "页面底部的说明文字收进 ⓘ 图标，点开再看。",
+            "「我」和「关于 God」的红点只在有新版本可以更新时出现。"),
         new Entry("0.15.0", "2026-10-18", "重置日历与 Tibo 提醒",
             "新增「重置日历」：按月查看所有账号的额度重置日期，点某天看明细。",
             "新增「28 天挑战」：Tibo 每天的进展、重置预告倒计时和原帖。",
@@ -122,20 +128,6 @@ final class ReleaseNotes {
             "用 Passkey 登录，会话加密保存在本机。")
     );
     static Entry find(String version) { for (Entry e : ALL) if (e.version.equals(version)) return e; return null; }
-    /**
-     * Whether the red dot should show. Unread only when the installed version has notes and they were not
-     * opened since this version arrived. A fresh install starts read; an upgrade from a build that never
-     * recorded anything ({@code seen == null}) counts as unread.
-     */
-    static boolean unread(String seen, String current, boolean upgraded) {
-        if (current == null || find(current) == null) return false;
-        return seen == null ? upgraded : !seen.equals(current);
-    }
-    /** As above, except that an update started in 关于 already showed the target version's notes, so once that
-     *  version is the installed one they count as read. A cancelled update acknowledges a version never installed. */
-    static boolean unread(String seen, String current, boolean upgraded, String acknowledged) {
-        return !(current != null && current.equals(acknowledged)) && unread(seen, current, upgraded);
-    }
     /** "10月15日"; the year is shown only when it is not the current year. */
     static String dateLabel(String iso, LocalDate today) {
         LocalDate d = LocalDate.parse(iso);

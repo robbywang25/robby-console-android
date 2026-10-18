@@ -47,6 +47,11 @@ final class TokensModel {
      * not allowed), then the reset cards with the earliest expiry among the available ones. Null when there is neither.
      */
     static String boardExtras(JSONObject account, boolean fresh, long now, java.time.ZoneId zone) {
+        // Claude: the row counts down the 5-hour window, so the weekly reset gets the small line.
+        if ("claude".equals(account.opt("product"))) {
+            for (Period p : boardWindows(account)) if ("每周".equals(p.label)) { String left = days(at(p.window.opt("resetsAt")), now); return left == null ? null : "每周额度 " + left; }
+            return null;
+        }
         if (!"codex".equals(account.opt("product"))) return null;
         List<String> parts = new ArrayList<>();
         JSONObject credits = account.optJSONObject("credits");
@@ -106,6 +111,12 @@ final class TokensModel {
      * remaining share of the period, so quota is about to go unused. Stale readings never raise it.
      */
     /** "3 小时 20 分后重置" style countdown; null when past or unknown. */
+    /** A weekly reset in days: "3 天后重置", "1 天 5 小时后重置"; under a day, the usual countdown. */
+    static String days(long resetsAtMs, long nowMs) {
+        if (resetsAtMs <= nowMs) return null; long hours = (resetsAtMs - nowMs) / 3_600_000L;
+        if (hours < 24) return countdown(resetsAtMs, nowMs);
+        return hours / 24 + " 天" + (hours % 24 == 0 ? "" : " " + hours % 24 + " 小时") + "后重置";
+    }
     static String countdown(long resetsAtMs, long nowMs) {
         if (resetsAtMs <= 0 || resetsAtMs <= nowMs) return null; long minutes = (resetsAtMs - nowMs) / 60_000L;
         if (minutes < 60) return Math.max(1, minutes) + " 分钟后重置";

@@ -102,7 +102,8 @@ final class TokensPages {
             r.setContentDescription(time(e.at, m.zone) + "，" + e.account + "，" + e.platform + "，" + e.label + (state == null ? "" : "，" + state));
         }
         String missing = QuotaCalendar.missing(m);
-        TextView foot = t.text("仅展示平台已提供的日期" + (missing == null ? "" : " · " + missing) + " · 时间按本机时区", 12, false); foot.setTextColor(t.faint); foot.setPadding(t.dp(6), t.dp(2), t.dp(6), t.dp(10)); box.addView(foot);
+        if (missing != null) { TextView foot = t.text(missing, 12, false); foot.setTextColor(t.faint); foot.setPadding(t.dp(6), t.dp(2), t.dp(6), 0); box.addView(foot); }
+        box.addView(t.info(List.of("只展示平台已提供的重置日期，不按周期推算。", "时间按本机时区显示；灰色圆点表示已过期或读数待核实。")));
     }
     private static LocalDate clamp(LocalDate d, YearMonth m) { return m.atDay(Math.min(d.getDayOfMonth(), m.lengthOfMonth())); }
     private static String time(long at, ZoneId zone) { return DateTimeFormatter.ofPattern("HH:mm").format(java.time.Instant.ofEpochMilli(at).atZone(zone)); }
@@ -192,14 +193,17 @@ final class TokensPages {
                 String note = TiboChallenge.verificationNote(item, challengeDay, m); if (note != null) { TextView w = t.text(note, 12, false); w.setTextColor(t.warning); w.setPadding(0, t.dp(4), 0, 0); d.addView(w); }
                 LinearLayout foot = new LinearLayout(ctx); foot.setGravity(Gravity.END); foot.addView(link(t, "对应原帖 ↗", "查看对应原帖", () -> open(ctx, item.url))); d.addView(foot);
             }
-            TextView n = t.text(("connected".equals(m.summaryStatus) || m.summaryStatus == null ? "自动同步" : "保留上次同步内容") + "，内容更新于 " + (auto.updated > 0 ? DateTimeFormatter.ISO_LOCAL_DATE.format(java.time.Instant.ofEpochMilli(auto.updated).atZone(ZoneId.of("UTC"))) : "未知") + "。摘要来自 Codex Radar，已核对原帖作者；摘要表述不代表你的账号额度已到账。", 12, false);
+            TextView n = t.text(("connected".equals(m.summaryStatus) || m.summaryStatus == null ? "自动同步" : "保留上次同步内容") + " · 内容更新于 " + (auto.updated > 0 ? DateTimeFormatter.ISO_LOCAL_DATE.format(java.time.Instant.ofEpochMilli(auto.updated).atZone(ZoneId.of("UTC"))) : "未知"), 12, false);
             n.setTextColor(t.faint); n.setPadding(0, t.dp(10), 0, 0); d.addView(n);
+            d.addView(t.info(List.of("摘要来自 Codex Radar，已核对原帖作者；摘要的说法不代表你的账号额度已经到账。")));
         } else {
             d.addView(dh); TextView h = t.text("等待官方公布", 15, true); h.setPadding(0, t.dp(8), 0, 0); d.addView(h);
             TextView x = t.text("未收到已核实的当日记录，不代表已经重置额度。", 14, false); x.setPadding(0, t.dp(4), 0, 0); d.addView(x);
         }
-        String source = (m.sourceNote.isEmpty() ? "" : m.sourceNote + "\n") + "自动同步" + (m.syncing() && m.current(now) ? "正常" : "待更新") + " · 最近同步 " + TiboChallenge.format(m.summaryStatus != null ? m.summaryLastSuccess : m.lastSuccess, zone) + " · 每 " + Math.max(1, Math.round(m.interval / 60f)) + " 分钟检查";
-        TextView foot = t.text(source, 12, false); foot.setTextColor(t.faint); foot.setPadding(t.dp(6), t.dp(2), t.dp(6), t.dp(10)); box.addView(foot);
+        String sync = "自动同步" + (m.syncing() && m.current(now) ? "正常" : "待更新") + " · 最近同步 " + TiboChallenge.format(m.summaryStatus != null ? m.summaryLastSuccess : m.lastSuccess, zone) + " · 每 " + Math.max(1, Math.round(m.interval / 60f)) + " 分钟检查";
+        TextView foot = t.text(sync, 12, false); foot.setTextColor(t.faint); foot.setPadding(t.dp(6), t.dp(2), t.dp(6), 0); box.addView(foot);
+        List<String> notes = new ArrayList<>(); if (!m.sourceNote.isEmpty()) notes.add(m.sourceNote); notes.add("帖子先由 Codex Radar 发现、再核对 Tibo 本人账号，可能比 X 上晚几分钟；预告时间到了也不会自动算作已重置。");
+        box.addView(t.info(notes));
     }
     private static int markerColor(ConsoleTheme t, String marker) {
         switch (marker) { case "已重置": return t.success; case "已发卡": return t.accent; case "有更新": return t.ink; case "今天": return t.warning; default: return t.faint; }
@@ -218,7 +222,6 @@ final class TokensPages {
         Switch toggle = new Switch(ctx); toggle.setChecked(on); toggle.setEnabled(!preview && host != null); toggle.setContentDescription("Tibo 重置提醒");
         toggle.setOnCheckedChangeListener((v, checked) -> { if (host != null) host.tiboSwitch(checked); v.post(TokensPages::refreshReminder); });
         top.addView(toggle); c.addView(top);
-        TextView about = t.text("Tibo 发出重置或发卡预告时，用闹钟铃声持续响铃并全屏提醒，直到你点「知道了」；没处理会每 10 分钟再响，最多三轮。每 5 分钟检查一次。", 13, false); about.setPadding(0, t.dp(10), 0, 0); c.addView(about);
         if (on) {
             TextView last = t.text(TiboWatch.status(ctx), 12, false); last.setTextColor(t.faint); last.setPadding(0, t.dp(8), 0, 0); c.addView(last);
             for (String[] problem : TiboWatch.problems(ctx)) {
@@ -228,9 +231,11 @@ final class TokensPages {
                 if (host != null) r.addView(link(t, "去设置", "去设置：" + problem[0], () -> host.tiboFix(problem[1])));
                 c.addView(r);
             }
-            TextView oem = t.text("OPPO / ColorOS 还需在 设置 → 应用 → God → 耗电管理 中允许后台行为，否则锁屏后检查可能被暂停。", 12, false); oem.setTextColor(t.faint); oem.setPadding(0, t.dp(8), 0, 0); c.addView(oem);
             if (host != null) { LinearLayout r = new LinearLayout(ctx); r.setGravity(Gravity.END); r.addView(link(t, "打开应用设置", "打开 God 的系统设置", () -> host.tiboFix("app"))); c.addView(r); }
         }
+        List<String> notes = new ArrayList<>(List.of("Tibo 发出重置或发卡预告时，用闹钟铃声持续响铃并全屏提醒，直到你点「知道了」；没处理会每 10 分钟再响，最多三轮。", "开启后每 5 分钟检查一次，通知栏常驻一条「已开启」。"));
+        if (on) notes.add("OPPO / ColorOS 还需在 设置 → 应用 → God → 耗电管理 中允许后台行为，否则锁屏后检查可能被暂停。");
+        c.addView(t.info(notes));
         if (host != null) { android.widget.Button test = t.button("试响一次", host::tiboTest); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = t.dp(12); c.addView(test, lp); }
     }
     /** Redraws the 重置提醒 card after a settings page or permission dialog, if the page is showing. */

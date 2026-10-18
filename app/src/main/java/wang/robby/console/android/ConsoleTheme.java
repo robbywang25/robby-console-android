@@ -128,6 +128,18 @@ public final class ConsoleTheme {
             default->0;
         };
     }
+    /** Explanatory notes behind a small ⓘ that shows or hides them in place; status stays visible elsewhere on the page. */
+    public LinearLayout info(java.util.List<String> notes){
+        LinearLayout box=new LinearLayout(context);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(0,0,0,dp(6));
+        FrameLayout button=new FrameLayout(context);ImageView glyph=icon("info",muted,16);glyph.setAlpha(.6f);button.addView(glyph,new FrameLayout.LayoutParams(dp(16),dp(16),Gravity.CENTER));
+        button.setBackground(ripple(shape(Color.TRANSPARENT,99),-1));button.setFocusable(true);button.setClickable(true);button.setContentDescription("说明");button.setStateDescription("已收起");
+        box.addView(button,new LinearLayout.LayoutParams(dp(44),dp(44)));
+        LinearLayout panel=new LinearLayout(context);panel.setOrientation(LinearLayout.VERTICAL);panel.setPadding(dp(12),dp(8),dp(12),dp(8));panel.setBackground(shape(soft,14));panel.setVisibility(View.GONE);
+        for(String n:notes){TextView t=text(n,12,false);t.setPadding(0,dp(2),0,dp(2));panel.addView(t);}
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(dp(6),0,dp(6),0);box.addView(panel,lp);
+        button.setOnClickListener(v->{boolean show=panel.getVisibility()!=View.VISIBLE;panel.setVisibility(show?View.VISIBLE:View.GONE);button.setStateDescription(show?"已展开":"已收起");});
+        return box;
+    }
     public View dot(int color,float size){View v=new View(context);GradientDrawable d=new GradientDrawable();d.setShape(GradientDrawable.OVAL);d.setColor(color);v.setBackground(d);v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     /** Liquid "flex": pressed controls sink slightly and spring back. Skipped when motion is reduced. */
     public void press(View v){

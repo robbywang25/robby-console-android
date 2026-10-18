@@ -37,4 +37,13 @@ public final class DashboardTest {
             assertTrue(c.id, c.target == null || FeatureCatalog.find(c.target) != null);
         }
     }
+    @Test public void hiddenTokenAccountsAreRememberedById() {
+        assertTrue(Dashboard.hiddenTokens((String) null).isEmpty());
+        String saved = Dashboard.toggleHidden(null, "today-cn");
+        assertEquals("today-cn", saved);
+        saved = Dashboard.toggleHidden(saved, "codex-2");
+        assertEquals(java.util.Set.of("today-cn", "codex-2"), Dashboard.hiddenTokens(saved));
+        assertEquals("codex-2", Dashboard.toggleHidden(saved, "today-cn"));
+        assertEquals("odd text is dropped", java.util.Set.of("grok"), Dashboard.hiddenTokens("grok, ,Bad Id,<x>"));
+    }
 }

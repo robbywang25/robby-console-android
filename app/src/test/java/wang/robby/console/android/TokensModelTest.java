@@ -144,4 +144,17 @@ public final class TokensModelTest {
         assertNull("stale readings never get a pace", TokensModel.pace(grok.put("status", "stale"), T));
     }
     static Object JSONObjectNull() { return org.json.JSONObject.NULL; }
+    @Test public void claudeBoardLineCountsDownTheWeeklyReset() throws Exception {
+        long now = NOW; java.time.ZoneId zone = java.time.ZoneId.of("Asia/Shanghai");
+        org.json.JSONObject claude = new org.json.JSONObject().put("product", "claude").put("windows", new org.json.JSONArray()
+            .put(window("five_hour", "5 小时", 72, null).put("resetsAt", java.time.Instant.ofEpochMilli(now + 2 * H).toString()))
+            .put(window("seven_day", "每周", 30, null).put("resetsAt", java.time.Instant.ofEpochMilli(now + 72 * H).toString())));
+        assertEquals("每周额度 3 天后重置", TokensModel.boardExtras(claude, true, now, zone));
+        claude.getJSONArray("windows").getJSONObject(1).put("resetsAt", java.time.Instant.ofEpochMilli(now + 47 * H + 59 * 60_000L).toString());
+        assertEquals("每周额度 1 天 23 小时后重置", TokensModel.boardExtras(claude, true, now, zone));
+        claude.getJSONArray("windows").getJSONObject(1).put("resetsAt", java.time.Instant.ofEpochMilli(now + 5 * H).toString());
+        assertEquals("under a day, the usual countdown", "每周额度 " + TokensModel.countdown(now + 5 * H, now), TokensModel.boardExtras(claude, true, now, zone));
+        claude.getJSONArray("windows").getJSONObject(1).put("resetsAt", java.time.Instant.ofEpochMilli(now - 1).toString());
+        assertNull("a passed reset says nothing", TokensModel.boardExtras(claude, true, now, zone));
+    }
 }
