@@ -103,11 +103,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // ColorOS may stop the reminder or refuse to restart it after an update; opening the app brings it back.
         if(!PreviewMode.isBuild()&&TiboWatch.enabled(this))TiboWatch.start(this,TiboWatch.checkDue(this));
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
-        if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L))syncAvatar(false);
+        // A change waiting for a session that may now write (after signing in again) goes at once.
+        if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
     @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
-    @Override public void onAuthChanged(){if(!resumed||isDestroyed())return;avatarCheckedAt=0;if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
+    @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     private static final int AUTH_TAB=41;
     /** After Chrome could not verify the app for the callback domain, later sign-ins use the plain browser + App Link. */
     private boolean browserLogin;
@@ -153,9 +154,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @Override protected void onActivityResult(int request,int result,Intent data){
         super.onActivityResult(request,result,data);
         if(request==PICK_AVATAR){
-            if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri picked=data.getData();
-            updater.execute(()->{try{Avatar.save(this,picked);runOnUiThread(()->{if(!isDestroyed()){build();syncAvatar(true);}});}
-                catch(Exception e){runOnUiThread(()->error("头像未更新","无法读取这张图片，请换一张试试。"));}});
+            // Some galleries (ColorOS among them) answer with the picture in ClipData instead of the data URI.
+            Uri picked=data==null?null:data.getData()!=null?data.getData():data.getClipData()!=null&&data.getClipData().getItemCount()>0?data.getClipData().getItemAt(0).getUri():null;
+            android.util.Log.i("GodAvatar","pick result="+result+" uri="+(picked!=null)+" clip="+(data!=null&&data.getClipData()!=null));
+            if(result!=RESULT_OK||picked==null){if(result==RESULT_OK)error("头像未更新","相册没有返回图片，请再选一次。");return;}
+            updater.execute(()->{try{Avatar.save(this,picked);android.util.Log.i("GodAvatar","saved");runOnUiThread(()->{if(!isDestroyed()){build();syncAvatar(true);}});}
+                catch(Exception e){android.util.Log.w("GodAvatar","save failed "+e.getClass().getSimpleName());runOnUiThread(()->error("头像未更新","无法读取这张图片，请换一张试试。"));}});
             return;
         }
         if(request!=AUTH_TAB||coordinator==null)return;
@@ -572,10 +576,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     /** Sends a change or fetches the server's avatar in the background; only the person's own change reports failures. */
     private void syncAvatar(boolean user){
         if(PreviewMode.isBuild()||!loggedIn())return;avatarCheckedAt=SystemClock.elapsedRealtime();
-        boolean canWrite=auth.hasScope(AuthSession.PROFILE_WRITE);
-        if(user&&Avatar.pending(this)!=null&&!canWrite){avatarSignIn();return;}
-        updater.execute(()->{try{boolean changed=Avatar.sync(this,api,canWrite);runOnUiThread(()->{if(!isDestroyed()&&changed&&"设置".equals(group)&&selectedId==null)build();});}
-            catch(Exception e){runOnUiThread(()->{if(!isDestroyed()&&user)error("头像暂未同步",e instanceof MobileApi.ApiError?e.getMessage():"网络暂不可用，下次打开 App 时会再试。");});}});
+        boolean canWrite=auth.hasScope(AuthSession.PROFILE_WRITE);String pending=Avatar.pending(this);
+        android.util.Log.i("GodAvatar","sync user="+user+" canWrite="+canWrite+" pending="+pending);
+        if(user&&pending!=null&&!canWrite){avatarSignIn();return;}
+        updater.execute(()->{try{boolean changed=Avatar.sync(this,api,canWrite);android.util.Log.i("GodAvatar","sync ok changed="+changed+" pending="+Avatar.pending(this));runOnUiThread(()->{if(!isDestroyed()&&changed&&"设置".equals(group)&&selectedId==null)build();});}
+            catch(Exception e){android.util.Log.w("GodAvatar","sync failed "+(e instanceof MobileApi.ApiError?"http="+((MobileApi.ApiError)e).status+" "+((MobileApi.ApiError)e).code:e.getClass().getSimpleName()));
+                runOnUiThread(()->{if(!isDestroyed()&&user)error("头像暂未同步",e instanceof MobileApi.ApiError?e.getMessage():"网络暂不可用，下次打开 App 时会再试。");});}});
     }
     private void avatarSignIn(){
         show(new AlertDialog.Builder(this).setTitle("同步头像需要重新登录").setMessage("头像已保存在这台手机上。God 需要你重新登录一次，授权把头像保存到服务器；登录后会自动上传。").setNegativeButton("以后再说",null)

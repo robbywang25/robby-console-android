@@ -63,11 +63,13 @@ final class Avatar {
             if (!canWrite) return false;
             if (UPLOAD.equals(pending) && file(c).isFile()) {
                 MobileApi.AvatarResult r = api.avatar("PUT", java.nio.file.Files.readAllBytes(file(c).toPath()), null);
+                android.util.Log.i("GodAvatar", "put status=" + r.status);
                 prefs(c).edit().putString("avatarEtag", r.etag).remove("avatarPending").apply(); return false;
             }
             api.avatar("DELETE", null, null); prefs(c).edit().remove("avatarEtag").remove("avatarPending").apply(); return false;
         }
         MobileApi.AvatarResult r = api.avatar("GET", null, file(c).isFile() ? etag : null);
+        android.util.Log.i("GodAvatar", "get status=" + r.status + " local=" + file(c).isFile() + " etag=" + (etag != null));
         if (r.status == 304) return false;
         if (r.status == 200) { store(c, r.bytes); prefs(c).edit().putString("avatarEtag", r.etag).apply(); return true; }
         // 404: removed elsewhere when this phone had the server's copy; never uploaded when it had not.
