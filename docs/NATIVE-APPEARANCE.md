@@ -232,3 +232,22 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
 - **文案**：「我」里的入口改为「关于 God」。
 
 验证：`check.sh` 通过（103 项 JVM 测试、lint 0 错误、正式证书签名）。预览版经 Tailscale 远程 ADB 装到 Find，只在预览版位于前台时截图（浅色）：「功能」Tab 与三个 Tab 的底栏、搜索「codex」找到 Token 额度；Token 额度页的 Codex、Claude、Grok、TodayAI 中国版和全球版卡片，以及详情页下拉刷新。服务端上线后，用户在 Find 的正式 App 里确认 TodayAI 两张卡片显示正常。未验证：深色和大字体变体；其他功能页的真实数据下拉刷新耗时。
+
+## v0.15.0：重置日历、28 天挑战与 Tibo 重置提醒（2026-10-18，未单独发布）
+
+- **重置日历**（`QuotaCalendar` / `TokensPages.calendar`）：按 quota-calendar.mjs 移植，周一开头的六周网格，服务商颜色圆点，所选日列出时间、账号、平台、额度项与「已过期 / 待核实」；时区名用系统中文名（如「中国标准时间」）。
+- **28 天挑战**（`TiboChallenge` / `TokensPages.challenge`）：按 tibo.mjs 移植，Tibo 美西时钟与官方预告倒计时每秒走，只显示 Tibo 本人账号的已核实帖子。
+- **Tibo 重置提醒**（`TiboWatch` / `TiboWatchService` / `TiboAlarmActivity`）：前台服务（specialUse）加精确闹钟，每 5 分钟读 `tokens/tibo/alerts`；新的重置或发卡预告用闹钟用途的通知渠道、`FLAG_INSISTENT` 和锁屏全屏页提醒，直到「知道了」，每 10 分钟再响，最多三轮。
+- **服务端**：god-mobile-api 新增 `tokens/tibo`、`tokens/tibo/alerts`，`tokens/quotas` 增加 `resetHistory` 与 `tiboReset`（site-admin `d32084f`、`0112e25`，回执 `deploy/ios-live/TOKENS-TIBO-ACCEPTED-20261018.json`）。
+
+验证：`check.sh` 通过（113 项 JVM 测试、lint 0 错误）。预览版在 Find 上只在前台时截图：重置日历、28 天挑战、Codex 卡片的 Tibo 倒计时、「我 → 提醒」。正式包装到 Find 后，用户开启了提醒；服务端上线后在真实数据下检查成功（`check ok alerts=0`）。未验证：真实预告触发的响铃（最近 7 天没有新预告）；深色变体（预览的 `$Dark` 入口截图仍为浅色）。
+
+## v0.16.0：看板可选账号、说明收进 ⓘ（2026-10-18）
+
+- **看板**：编辑看板的「Token 额度卡片」为每个已接入账号提供开关，隐藏的账号 id 存在本机（`tokenBoardHidden`）；Claude 一行下方显示「每周额度 N 天 M 小时后重置」。
+- **底栏**：再点一次已选中的标签回到这一栏首页，已在首页时滚回顶部。
+- **ⓘ**：`ConsoleTheme.info` 把页面底部的纯说明收进小图标，点开就地展开；同步时间和缺数据计数仍直接显示。
+- **红点**：只表示查到比已装版本更新的发布；App 在前台时最多每 30 分钟静默检查一次 GitHub Releases。原「升级后说明未读」规则删除。
+- **提醒恢复**：Find 上 ColorOS 拦截了更新后的 `MY_PACKAGE_REPLACED`（`OplusAppStartupManager: Do not want to launch app … for broadcast`），之后的检查闹钟也没能拉起服务；打开 App 时若提醒开着，就重新启动服务并在需要时立即检查。
+
+验证：`check.sh` 通过（114 项 JVM 测试、lint 0 错误）。预览版截图：看板 Claude 行的每周倒计时、编辑看板的账号开关（关掉 TodayAI 全球版后看板不再显示）、28 天挑战底部 ⓘ 展开、在功能页再点「功能」回到首页。正式包覆盖安装后，打开 App 时提醒服务恢复并完成一次真实检查，下一次检查已排上；「我」的无障碍描述里没有「有新版本可更新」（GitHub 最新为 v0.14.0）。未验证：ColorOS 允许自启动后，更新或长时间锁屏时提醒能否不经打开 App 自行恢复。
