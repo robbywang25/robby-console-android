@@ -56,6 +56,13 @@ final class TiboWatch {
         catch (RuntimeException refused) { Log.w("GodTibo", "service_start_refused"); schedule(c, System.currentTimeMillis() + (check ? 1_000L : INTERVAL)); }
     }
 
+    /** The last read is older than one interval, or there has been none. */
+    static boolean checkDue(Context c) { return System.currentTimeMillis() - prefs(c).getLong("lastCheckAt", 0) >= INTERVAL; }
+    /** Keeps one pending check alarm without pushing an existing one later. */
+    static void ensureScheduled(Context c) {
+        PendingIntent existing = PendingIntent.getBroadcast(c, ACTION_CHECK.hashCode(), new Intent(c, TiboWatchReceiver.class).setAction(ACTION_CHECK), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_NO_CREATE);
+        if (existing == null) schedule(c, System.currentTimeMillis() + INTERVAL);
+    }
     static PendingIntent pending(Context c, String action) {
         return PendingIntent.getBroadcast(c, action.hashCode(), new Intent(c, TiboWatchReceiver.class).setAction(action), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }

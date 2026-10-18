@@ -21,7 +21,7 @@ public final class TiboWatchService extends Service {
             // Started from the background without an exemption: the exact alarm keeps checking instead.
             Log.w("GodTibo", "foreground_refused"); TiboWatch.schedule(this, System.currentTimeMillis() + 1_000L); stopSelf(); return START_NOT_STICKY;
         }
-        if (intent == null || intent.getBooleanExtra("check", false)) TiboWatch.checkAsync(this, null);
+        if (intent == null || intent.getBooleanExtra("check", false)) TiboWatch.checkAsync(this, null); else TiboWatch.ensureScheduled(this);
         return START_STICKY;
     }
     @Override public IBinder onBind(Intent intent) { return null; }
