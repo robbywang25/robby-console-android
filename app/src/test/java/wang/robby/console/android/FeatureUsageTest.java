@@ -31,4 +31,13 @@ public final class FeatureUsageTest {
         assertTrue(FeatureUsage.parse("bad|x|y\nUPPER|1|2\nok|1.5|" + NOW).containsKey("ok"));
         assertEquals(1, FeatureUsage.parse("bad|x|y\nUPPER|1|2\nok|1.5|" + NOW).size());
     }
+    @Test public void recentPutsTheLastOpenedFirstAndKeepsTheRestInOrder() {
+        Map<String, FeatureUsage.Entry> m = new LinkedHashMap<>();
+        m = open(m, "okx", NOW - 30 * DAY, 20);   // often, but long ago
+        m = open(m, "tibo", NOW, 1);              // once, just now
+        m = open(m, "market", NOW - DAY, 1);
+        assertEquals(List.of("tibo", "market", "okx", "observer", "openai"),
+            FeatureUsage.recent(m, List.of("observer", "market", "okx", "openai", "tibo")));
+        assertEquals("nothing opened: catalog order", List.of("a", "b"), FeatureUsage.recent(new LinkedHashMap<>(), List.of("a", "b")));
+    }
 }

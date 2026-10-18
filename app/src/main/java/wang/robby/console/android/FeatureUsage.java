@@ -41,6 +41,15 @@ final class FeatureUsage {
         }
         return next;
     }
+    /**
+     * {@code ids} with the most recently opened first (LRU order, for 功能); ids never opened keep their given order
+     * after them. Stable, so equal times keep the catalog order.
+     */
+    static List<String> recent(Map<String, Entry> usage, List<String> ids) {
+        List<String> out = new ArrayList<>(ids);
+        out.sort((a, b) -> Long.compare(usage.containsKey(b) ? usage.get(b).last : 0, usage.containsKey(a) ? usage.get(a).last : 0));
+        return out;
+    }
     /** The {@code n} strongest known features, strongest first; ties go to the more recent; gaps are filled from {@link #DEFAULT}. */
     static List<String> top(Map<String, Entry> usage, long now, int n, Predicate<String> known) {
         List<String> ids = new ArrayList<>(); for (String id : usage.keySet()) if (known.test(id)) ids.add(id);

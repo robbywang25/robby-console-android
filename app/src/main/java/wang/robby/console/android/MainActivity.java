@@ -497,10 +497,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         featureList(list);restoreViewport();
     }
     private void featureList(LinearLayout list){
-        list.removeAllViews();String q=featureQuery.trim();Set<String> hidden=hiddenFeatures();
+        list.removeAllViews();String q=featureQuery.trim();Set<String> hidden=hiddenFeatures();Map<String,FeatureUsage.Entry> usage=FeatureUsage.parse(prefs().getString("featureUsage",null));
         if(q.isEmpty()){
             for(String section:FeatureCatalog.SECTIONS){List<FeatureCatalog.Feature> shown=new ArrayList<>();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals(section)&&!hidden.contains(f.id))shown.add(f);
-                if(shown.isEmpty())continue;
+                if(shown.isEmpty())continue;shown=lru(usage,shown);
                 TextView t=text(section,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));list.addView(t);
                 LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:shown)featureRow(f,g);}
             TextView tip=text("长按功能可以隐藏，隐藏的功能在「我 → 已隐藏的功能」。",12,MUTED,false);tip.setPadding(dp(6),dp(4),dp(6),dp(8));list.addView(tip);
@@ -508,10 +508,16 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         }
         List<FeatureCatalog.Feature> found=new ArrayList<>();int hiddenMatches=0;
         for(FeatureCatalog.Feature f:FeatureCatalog.search(q))if(hidden.contains(f.id))hiddenMatches++;else found.add(f);
+        found=lru(usage,found);
         TextView count=text(found.isEmpty()?"没有找到与「"+q+"」相关的功能":"找到 "+found.size()+" 个功能",13,MUTED,false);count.setPadding(dp(6),dp(12),0,dp(8));count.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);list.addView(count);
         if(!found.isEmpty()){LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:found)featureRow(f,g);}
         // A search never silently misses a hidden feature: it points to where hidden ones are kept.
         if(hiddenMatches>0){LinearLayout g=groupCard(list);featureRow("已隐藏的功能","有 "+hiddenMatches+" 个已隐藏的功能也匹配","eye",g,this::openHiddenPage);}
+    }
+    /** 功能 lists, and search results, put the most recently opened first; never-opened ones keep catalog order. */
+    private List<FeatureCatalog.Feature> lru(Map<String,FeatureUsage.Entry> usage,List<FeatureCatalog.Feature> features){
+        List<String> ids=new ArrayList<>();for(FeatureCatalog.Feature f:features)ids.add(f.id);
+        List<FeatureCatalog.Feature> out=new ArrayList<>();for(String id:FeatureUsage.recent(usage,ids))out.add(find(id));return out;
     }
     private void featureRow(FeatureCatalog.Feature f){featureRow(f,groupCard());}
     /** A feature in 功能 or 我 → 管理: tap opens it, long-press offers 隐藏. */
