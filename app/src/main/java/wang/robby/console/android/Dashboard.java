@@ -28,7 +28,10 @@ final class Dashboard {
         new Card("okx", "OKX 账户", "总权益与持仓", "trend", "okx/overview", "okx", false),
         new Card("clipboard", "云剪贴板", "剪贴内容条数", "clipboard", "clipboard", "clipboard", false),
         new Card("market", "关注行情", "关注列表的前几项报价", "trend", "market", "market", true),
-        new Card("tokens", "Token 额度", "各账号最紧张的额度与重置倒计时", "gauge", "tokens/quotas", "tokens", true)
+        new Card("tokens", "Token 额度", "各账号最紧张的额度与重置倒计时", "gauge", "tokens/quotas", "tokens", true),
+        new Card("calendar", "重置日历", "接下来的几次额度重置", "calendar", "tokens/quotas", "quota-calendar", true),
+        // No read: the clocks are drawn on the phone from the zones chosen in 编辑看板.
+        new Card("clocks", "时区时钟", "Tibo、北京等时区的当前时间", "history", null, null, true)
     );
     static final List<String> DEFAULT = List.of("services", "instances", "domains", "reminders", "tokens");
 
@@ -39,7 +42,42 @@ final class Dashboard {
         return out;
     }
     static String toggleHidden(String saved, String id) { Set<String> ids = hiddenTokens(saved); if (!ids.remove(id) && id.matches("[a-z0-9-]{1,32}")) ids.add(id); return String.join(",", ids); }
-    static final String HIDDEN_TOKENS = "tokenBoardHidden";
+    static final String HIDDEN_TOKENS = "tokenBoardHidden", CLOCKS = "boardClocks";
+    /** 时区时钟: a name and an IANA zone each; Tibo's Pacific time and Beijing time until the person changes them. */
+    static final class Clock { final String name, zone; Clock(String name, String zone) { this.name = name; this.zone = zone; } }
+    static final List<Clock> DEFAULT_CLOCKS = List.of(new Clock("Tibo", "America/Los_Angeles"), new Clock("北京时间", "Asia/Shanghai"));
+    static final int MAX_CLOCKS = 6;
+    /** Zones offered by 添加时区, with the name a new clock starts with. */
+    static final List<Clock> SUGGESTED = List.of(new Clock("北京时间", "Asia/Shanghai"), new Clock("Tibo", "America/Los_Angeles"), new Clock("新西兰", "Pacific/Auckland"),
+        new Clock("香港", "Asia/Hong_Kong"), new Clock("东京", "Asia/Tokyo"), new Clock("首尔", "Asia/Seoul"), new Clock("新加坡", "Asia/Singapore"), new Clock("迪拜", "Asia/Dubai"),
+        new Clock("伦敦", "Europe/London"), new Clock("巴黎", "Europe/Paris"), new Clock("柏林", "Europe/Berlin"), new Clock("纽约", "America/New_York"),
+        new Clock("芝加哥", "America/Chicago"), new Clock("悉尼", "Australia/Sydney"), new Clock("UTC", "Etc/UTC"));
+    /** 同本机, 晚 15 小时 or 早 5.5 小时: the zone against the phone's own at {@code at}. */
+    static String offsetLabel(String zone, java.time.ZoneId phone, long at) {
+        java.time.Instant i = java.time.Instant.ofEpochMilli(at);
+        int diff = java.time.ZoneId.of(zone).getRules().getOffset(i).getTotalSeconds() - phone.getRules().getOffset(i).getTotalSeconds();
+        if (diff == 0) return "同本机";
+        String hours = diff % 3600 == 0 ? String.valueOf(Math.abs(diff) / 3600) : new java.text.DecimalFormat("0.##").format(Math.abs(diff) / 3600.0);
+        return (diff < 0 ? "晚 " : "早 ") + hours + " 小时";
+    }
+    static List<Clock> clocks(String saved) {
+        if (saved == null) return new ArrayList<>(DEFAULT_CLOCKS);
+        List<Clock> out = new ArrayList<>();
+        for (String part : saved.split("\\n")) { int bar = part.lastIndexOf('|'); if (bar <= 0) continue;
+            String name = clockName(part.substring(0, bar)), zone = part.substring(bar + 1).trim();
+            if (name != null && validZone(zone) && out.size() < MAX_CLOCKS) out.add(new Clock(name, zone)); }
+        return out;
+    }
+    static String serializeClocks(List<Clock> clocks) {
+        List<String> parts = new ArrayList<>(); for (Clock c : clocks) { String name = clockName(c.name); if (name != null && validZone(c.zone) && parts.size() < MAX_CLOCKS) parts.add(name + "|" + c.zone); }
+        return String.join("\n", parts);
+    }
+    /** A display name of 1–12 characters without line breaks or the separator; null when nothing is left. */
+    static String clockName(String raw) {
+        if (raw == null) return null; String s = raw.replaceAll("[\\u0000-\\u001f\\u007f|]", " ").trim();
+        int[] points = s.codePoints().limit(12).toArray(); s = new String(points, 0, points.length).trim(); return s.isEmpty() ? null : s;
+    }
+    static boolean validZone(String zone) { try { return zone != null && zone.matches("[A-Za-z_]+(/[A-Za-z_+-]+){0,2}") && java.time.ZoneId.of(zone) != null; } catch (RuntimeException e) { return false; } }
     static Set<String> hiddenTokens(android.content.Context c) { return hiddenTokens(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(HIDDEN_TOKENS, null)); }
 
     static Card find(String id) { for (Card c : ALL) if (c.id.equals(id)) return c; return null; }
@@ -65,7 +103,7 @@ final class Dashboard {
     }
     /** Distinct API paths the combination needs, in first-use order, so shared reads happen once. */
     static List<String> paths(List<String> ids) {
-        Set<String> out = new LinkedHashSet<>(); for (String id : ids) { Card c = find(id); if (c != null) out.add(c.path); }
+        Set<String> out = new LinkedHashSet<>(); for (String id : ids) { Card c = find(id); if (c != null && c.path != null) out.add(c.path); }
         return new ArrayList<>(out);
     }
 }

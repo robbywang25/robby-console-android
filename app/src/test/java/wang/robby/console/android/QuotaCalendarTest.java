@@ -53,4 +53,11 @@ public final class QuotaCalendarTest {
         assertEquals(42, grid.size()); assertEquals(LocalDate.of(2026, 9, 28), grid.get(0)); assertEquals(DayOfWeek.MONDAY, grid.get(0).getDayOfWeek());
         assertTrue(grid.contains(LocalDate.of(2026, 10, 31)));
     }
+    @Test public void relativeDays() {
+        LocalDate today = LocalDate.of(2026, 10, 18);
+        assertEquals("今天", QuotaCalendar.relativeDay(today, today)); assertEquals("明天", QuotaCalendar.relativeDay(today.plusDays(1), today));
+        assertEquals("10/20 周二", QuotaCalendar.relativeDay(today.plusDays(2), today));
+        assertEquals("周二", QuotaCalendar.shortDay(today.plusDays(2), today)); assertEquals("10/25", QuotaCalendar.shortDay(today.plusDays(7), today));
+        assertEquals("demo-one", QuotaCalendar.shortAccount("demo-one@example.com")); assertEquals("手机尾号 0000", QuotaCalendar.shortAccount("手机尾号 0000"));
+    }
 }

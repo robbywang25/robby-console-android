@@ -82,6 +82,19 @@ final class QuotaCalendar {
         LocalDate first = month.atDay(1), start = first.minusDays(first.getDayOfWeek().getValue() - DayOfWeek.MONDAY.getValue());
         List<LocalDate> out = new ArrayList<>(42); for (int i = 0; i < 42; i++) out.add(start.plusDays(i)); return out;
     }
+    /** 今天, 明天, otherwise 10/20 周二. */
+    static String relativeDay(LocalDate d, LocalDate today) {
+        if (d.equals(today)) return "今天"; if (d.equals(today.plusDays(1))) return "明天";
+        return d.getMonthValue() + "/" + d.getDayOfMonth() + " 周" + "一二三四五六日".charAt(d.getDayOfWeek().getValue() - 1);
+    }
+    /** The 看板's short form: 今天, 明天, 周二 within the coming week, otherwise 10/27. */
+    static String shortDay(LocalDate d, LocalDate today) {
+        if (d.equals(today)) return "今天"; if (d.equals(today.plusDays(1))) return "明天";
+        if (!d.isBefore(today) && d.isBefore(today.plusDays(7))) return "周" + "一二三四五六日".charAt(d.getDayOfWeek().getValue() - 1);
+        return d.getMonthValue() + "/" + d.getDayOfMonth();
+    }
+    /** An email's name part, otherwise the display name as is. */
+    static String shortAccount(String account) { int at = account.indexOf('@'); return at > 0 ? account.substring(0, at) : account; }
     static String statusLabel(Event e) { return EXPIRED.equals(e.status) ? "已过期" : STALE.equals(e.status) ? "待核实" : null; }
 
     private static boolean fresh(Object value, long now) { long at = instant(value); return at > 0 && at <= now && now - at <= FRESH_MS; }

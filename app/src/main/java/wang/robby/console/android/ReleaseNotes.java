@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.17.0", "2026-10-18", "时区时钟、日历看板与头像同步",
+            "新增「时区时钟」看板，默认显示 Tibo 和北京时间，可在编辑看板里增删改名。",
+            "新增「重置日历」看板，列出接下来的几次额度重置。",
+            "个人头像会保存到 God 服务器，重装或换手机后自动同步回来。",
+            "第一次上传头像需要重新登录一次，其他功能不受影响。"),
         new Entry("0.16.0", "2026-10-18", "看板可选账号，说明收进图标",
             "编辑看板里可以单独隐藏 Token 额度卡片中的某个账号。",
             "看板里 Claude 下方显示每周额度还有几天重置。",

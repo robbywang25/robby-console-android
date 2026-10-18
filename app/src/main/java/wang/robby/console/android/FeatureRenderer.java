@@ -161,6 +161,22 @@ public final class FeatureRenderer {
                     if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }
                 if (shown == 0) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");
                 break; }
+            case "calendar": {
+                // The next few resets of every connected account, soonest first; the page has the month.
+                long now = System.currentTimeMillis(); ZoneId zone = ZoneId.systemDefault();
+                QuotaCalendar.Model m = QuotaCalendar.build(tokenAccounts(p), zone, now);
+                List<QuotaCalendar.Event> next = new ArrayList<>(); for (QuotaCalendar.Event e : m.events) if (e.at > now) next.add(e);
+                if (next.isEmpty()) { widgetMessage(context, shell, "暂时没有已知的下一次重置"); break; }
+                for (int i = 0; i < Math.min(4, next.size()); i++) { QuotaCalendar.Event e = next.get(i); boolean live = QuotaCalendar.SCHEDULED.equals(e.status);
+                    LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(i == 0 ? 8 : 5), 0, 0);
+                    TextView when = u.text(QuotaCalendar.shortDay(e.day, m.today) + " " + DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(e.at).atZone(zone)), 13, true);
+                    when.setTextColor(live ? u.theme.ink : u.theme.muted); when.setSingleLine(true); r.addView(when, new LinearLayout.LayoutParams(u.dp(84), -2));
+                    r.addView(u.theme.dot(live ? TokensPages.tint(u.theme, e.product) : u.theme.faint, 7));
+                    TextView what = u.text(e.platform + " " + e.shortLabel(), 14, false); what.setTextColor(u.theme.ink); what.setPadding(u.dp(7), 0, 0, 0); what.setSingleLine(true); what.setEllipsize(android.text.TextUtils.TruncateAt.END); r.addView(what, new LinearLayout.LayoutParams(0, -2, 1));
+                    TextView who = u.text(live ? QuotaCalendar.shortAccount(e.account) : "待核实", 11, false); who.setTextColor(u.theme.faint); who.setSingleLine(true); who.setEllipsize(android.text.TextUtils.TruncateAt.END); who.setMaxWidth(u.dp(84)); who.setPadding(u.dp(8), 0, 0, 0); r.addView(who);
+                    r.setContentDescription(QuotaCalendar.relativeDay(e.day, m.today) + " " + DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(e.at).atZone(zone)) + "，" + e.platform + " " + e.label + "，" + e.account + (live ? "" : "，待核实")); shell.addView(r); }
+                if (next.size() > 4) { TextView more = u.text("之后还有 " + (next.size() - 4) + " 项", 12, false); more.setTextColor(u.theme.faint); more.setPadding(0, u.dp(4), 0, 0); shell.addView(more); }
+                break; }
             case "market": {
                 JSONArray list = arr(p, "watchlist"); if (list.length() == 0) { widgetMessage(context, shell, "关注列表为空"); break; }
                 for (int i = 0; i < Math.min(4, list.length()); i++) { JSONObject n = list.optJSONObject(i); if (n == null) continue;
@@ -173,6 +189,20 @@ public final class FeatureRenderer {
         }
     }
 
+    /** 时区时钟: one row per chosen zone, ticking every second while on screen; no read is involved. */
+    static void clocks(Context context, LinearLayout shell, List<Dashboard.Clock> clocks) {
+        UI u = new UI(context, shell); while (shell.getChildCount() > 1) shell.removeViewAt(1);
+        if (clocks.isEmpty()) { widgetMessage(context, shell, "长按这张卡片，在编辑看板里添加时区"); return; }
+        ZoneId phone = ZoneId.systemDefault(); DateTimeFormatter hm = DateTimeFormatter.ofPattern("HH:mm"), day = DateTimeFormatter.ofPattern("M/d E", Locale.SIMPLIFIED_CHINESE);
+        for (int i = 0; i < clocks.size(); i++) { Dashboard.Clock c = clocks.get(i); ZoneId zone = ZoneId.of(c.zone);
+            LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(i == 0 ? 8 : 6), 0, 0);
+            TextView name = u.text(c.name, 15, false); name.setTextColor(u.theme.ink); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+            TextView meta = u.text("", 12, false); meta.setTextColor(u.theme.faint); meta.setPadding(u.dp(8), 0, u.dp(10), 0); r.addView(meta);
+            TextView time = u.text("", 20, true); time.setTextColor(u.theme.ink); r.addView(time);
+            TokensPages.tick(meta, at -> day.format(Instant.ofEpochMilli(at).atZone(zone)) + " · " + Dashboard.offsetLabel(c.zone, phone, at));
+            TokensPages.tick(time, at -> { String t = hm.format(Instant.ofEpochMilli(at).atZone(zone)); r.setContentDescription(c.name + " " + t + "，" + meta.getText()); return t; });
+            shell.addView(r); }
+    }
     /** Version and minimum container checks; deeper server contract validation is a separate concern. */
     public static boolean isCompatible(FeatureCatalog.Feature f, JSONObject p) {
         if (f == null || p == null) return false;

@@ -102,10 +102,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         TokensPages.refreshReminder();
         // ColorOS may stop the reminder or refuse to restart it after an update; opening the app brings it back.
         if(!PreviewMode.isBuild()&&TiboWatch.enabled(this))TiboWatch.start(this,TiboWatch.checkDue(this));
+        // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
+        if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L))syncAvatar(false);
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
     @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
-    @Override public void onAuthChanged(){if(!resumed||isDestroyed())return;++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
+    @Override public void onAuthChanged(){if(!resumed||isDestroyed())return;avatarCheckedAt=0;if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     private static final int AUTH_TAB=41;
     /** After Chrome could not verify the app for the callback domain, later sign-ins use the plain browser + App Link. */
     private boolean browserLogin;
@@ -152,7 +154,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         super.onActivityResult(request,result,data);
         if(request==PICK_AVATAR){
             if(result!=RESULT_OK||data==null||data.getData()==null)return;Uri picked=data.getData();
-            updater.execute(()->{try{Avatar.save(this,picked);runOnUiThread(()->{if(!isDestroyed())build();});}
+            updater.execute(()->{try{Avatar.save(this,picked);runOnUiThread(()->{if(!isDestroyed()){build();syncAvatar(true);}});}
                 catch(Exception e){runOnUiThread(()->error("头像未更新","无法读取这张图片，请换一张试试。"));}});
             return;
         }
@@ -265,6 +267,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     private List<String> boardCards(){return Dashboard.parse(prefs().getString("dashboard",null));}
     private void saveBoard(List<String> ids){prefs().edit().putString("dashboard",Dashboard.serialize(ids)).apply();}
+    private List<Dashboard.Clock> boardClocks(){return Dashboard.clocks(prefs().getString(Dashboard.CLOCKS,null));}
+    private void saveClocks(List<Dashboard.Clock> clocks){prefs().edit().putString(Dashboard.CLOCKS,Dashboard.serializeClocks(clocks)).apply();}
     private void openBoardEditor(){++generation;selectedId=BOARD;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
     /**
      * Lays out the chosen cards (wide ones on their own row, small ones two to a row), shows any cached reads at
@@ -282,7 +286,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             if(card.wide){row=null;LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(10);shell=FeatureRenderer.widgetShell(this,box,card,lp);}
             else{if(row==null||row.getChildCount()>=2){row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(10);box.addView(row,rp);}
                 LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-1,1);if(row.getChildCount()==1)lp.leftMargin=dp(10);shell=FeatureRenderer.widgetShell(this,row,card,lp);}
-            editOnLongPress(shell);shells.computeIfAbsent(card.path,k->new ArrayList<>()).add(shell);}
+            editOnLongPress(shell);if(card.path==null){FeatureRenderer.clocks(this,shell,boardClocks());continue;}shells.computeIfAbsent(card.path,k->new ArrayList<>()).add(shell);}
         // Keep a lone small card at half width instead of stretching it across the row.
         for(int i=0;i<box.getChildCount();i++){View v=box.getChildAt(i);if(v instanceof LinearLayout&&((LinearLayout)v).getOrientation()==LinearLayout.HORIZONTAL&&((LinearLayout)v).getChildCount()==1){LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,1,1);lp.leftMargin=dp(10);((LinearLayout)v).addView(new View(this),lp);}}
         final int epoch=++generation;final int[] reading={0};
@@ -317,6 +321,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section("已添加");LinearLayout on=groupCard();
         for(int i=0;i<ids.size();i++){Dashboard.Card card=Dashboard.find(ids.get(i));if(card!=null)boardRow(on,card,true,i>0,i<ids.size()-1);}
         if(ids.isEmpty()){TextView t=text("还没有添加卡片",14,MUTED,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(14),dp(12),dp(14));on.addView(t);}
+        if(ids.contains("clocks")){section("时区时钟卡片");LinearLayout zones=groupCard();clockRows(zones);}
         if(ids.contains("tokens")){section("Token 额度卡片");LinearLayout accounts=groupCard();JSONObject cached=snapshots.get("tokens/quotas");
             if(cached!=null)tokenToggles(accounts,cached);
             else{TextView wait=text("正在读取账号…",14,MUTED,false);wait.setPadding(dp(12),dp(14),dp(12),dp(14));accounts.addView(wait);int epoch=generation;
@@ -326,6 +331,34 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!rest.isEmpty()){section("可添加");LinearLayout off=groupCard();for(Dashboard.Card card:rest)boardRow(off,card,false,false,false);}
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.topMargin=dp(6);content.addView(button("恢复默认组合",()->{saveBoard(Dashboard.DEFAULT);build();}),rp);
         restoreViewport();
+    }
+    /** 时区时钟 zones: tap to rename, the bin removes, 添加时区 picks a zone and then its name. Stored on this phone. */
+    private void clockRows(LinearLayout group){
+        group.removeAllViews();List<Dashboard.Clock> list=boardClocks();long now=System.currentTimeMillis();
+        for(int i=0;i<list.size();i++){Dashboard.Clock c=list.get(i);final int index=i;
+            if(group.getChildCount()>0){View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(14),0,dp(14),0);group.addView(divider,d);}
+            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(14),dp(6),dp(4),dp(6));row.setMinimumHeight(dp(56));
+            row.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,18),18));row.setFocusable(true);row.setClickable(true);row.setOnClickListener(v->nameClock(group,index,c.name,c.zone));
+            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.addView(text(c.name,15,INK,false));
+            java.util.TimeZone tz=java.util.TimeZone.getTimeZone(c.zone);TextView zone=text(tz.getDisplayName(tz.inDaylightTime(new Date(now)),java.util.TimeZone.LONG,Locale.SIMPLIFIED_CHINESE)+" · "+Dashboard.offsetLabel(c.zone,java.time.ZoneId.systemDefault(),now),12,MUTED,false);zone.setPadding(0,dp(2),0,0);labels.addView(zone);
+            row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));row.setContentDescription(c.name+"，"+zone.getText()+"，点按改名");
+            FrameLayout remove=circle("trash","移除 "+c.name,()->{List<Dashboard.Clock> next=boardClocks();if(index<next.size())next.remove(index);saveClocks(next);clockRows(group);});row.addView(remove,new LinearLayout.LayoutParams(dp(48),dp(48)));
+            group.addView(row);}
+        if(list.isEmpty()){TextView t=text("还没有时区",14,MUTED,false);t.setPadding(dp(14),dp(14),dp(14),dp(6));group.addView(t);}
+        if(list.size()<Dashboard.MAX_CLOCKS){if(group.getChildCount()>0){View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,dp(.5f));d.setMargins(dp(14),0,dp(14),0);group.addView(divider,d);}
+            LinearLayout add=new LinearLayout(this);add.setGravity(Gravity.CENTER_VERTICAL);add.setPadding(dp(14),dp(6),dp(14),dp(6));add.setMinimumHeight(dp(52));add.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,18),18));add.setFocusable(true);add.setClickable(true);
+            add.addView(theme.icon("plus",ACCENT,18),new LinearLayout.LayoutParams(dp(18),dp(18)));TextView l=text("添加时区",15,ACCENT,false);l.setPadding(dp(10),0,0,0);add.addView(l);
+            add.setOnClickListener(v->{String[] names=new String[Dashboard.SUGGESTED.size()];for(int i=0;i<names.length;i++)names[i]=Dashboard.SUGGESTED.get(i).name+"  ·  "+Dashboard.SUGGESTED.get(i).zone;
+                show(new AlertDialog.Builder(this).setTitle("添加时区").setItems(names,(d,w)->nameClock(group,-1,Dashboard.SUGGESTED.get(w).name,Dashboard.SUGGESTED.get(w).zone)).setNegativeButton("取消",null));});
+            group.addView(add);}
+    }
+    /** Names a new clock ({@code index} -1) or renames one; up to 12 characters. */
+    private void nameClock(LinearLayout group,int index,String name,String zone){
+        EditText input=new EditText(this);theme.input(input);input.setSingleLine(true);input.setText(name);input.setSelection(input.getText().length());input.setHint("名称，例如 Tibo");
+        input.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(24)});
+        FrameLayout wrap=new FrameLayout(this);wrap.setPadding(dp(20),dp(8),dp(20),0);wrap.addView(input);
+        show(new AlertDialog.Builder(this).setTitle(index<0?"时区名称":"修改名称").setView(wrap).setPositiveButton("保存",(d,w)->{String clean=Dashboard.clockName(input.getText().toString());if(clean==null)return;
+            List<Dashboard.Clock> next=boardClocks();Dashboard.Clock c=new Dashboard.Clock(clean,zone);if(index<0){if(next.size()<Dashboard.MAX_CLOCKS)next.add(c);}else if(index<next.size())next.set(index,c);saveClocks(next);clockRows(group);}).setNegativeButton("取消",null));
     }
     /** One switch per connected Token account: whether its row shows on the 看板's Token 额度 card, remembered on this phone by account. */
     private void tokenToggles(LinearLayout group,JSONObject p){
@@ -495,7 +528,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section("提醒");LinearLayout alerts=groupCard();boolean watching=!PreviewMode.isBuild()&&TiboWatch.enabled(this);
         featureRow("Tibo 重置提醒",watching?TiboWatch.status(this):"未开启 · Tibo 发出重置预告时像闹钟一样响铃","bell",alerts,()->{FeatureCatalog.Feature f=find("tibo");if(f!=null&&loggedIn())open(f);else if(f!=null)error("登录后开启","登录 God 后才能读取 Tibo 的重置预告。");});
         section("关于");LinearLayout about=groupCard();
-        featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
+        featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
         String version=versionName();LinearLayout info=featureRow("关于 God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
         View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);
         aboutDot=red;aboutRow=info;aboutDescription=String.valueOf(info.getContentDescription());showDots();
@@ -514,7 +547,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         avatar.setFocusable(true);avatar.setClickable(true);avatar.setContentDescription(picture==null?"设置头像":"更换头像");avatar.setOnClickListener(v->avatarMenu());theme.press(avatar);
         c.addView(avatar,new LinearLayout.LayoutParams(dp(60),dp(60)));
         LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(16),0,dp(8),0);labels.addView(text(logged?"已登录":"尚未登录",20,INK,true));
-        TextView detail=text(logged?"Passkey · 设备加密存储":"使用 Passkey 或已有设备登录",13,MUTED,false);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
+        TextView detail=text(!logged?"使用 Passkey 或已有设备登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":"Passkey · 设备加密存储",13,MUTED,false);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
         c.addView(labels,new LinearLayout.LayoutParams(0,-2,1));ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);c.addView(chevron);
     }
     private static final int PICK_AVATAR=42;
@@ -527,11 +560,28 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         f.setLayoutParams(new LinearLayout.LayoutParams(dp(24),dp(24)));return f;
     }
     private void avatarMenu(){
-        boolean has=Avatar.get(this)!=null;
-        show(new AlertDialog.Builder(this).setTitle("个人头像").setItems(has?new String[]{"从相册选择","移除头像"}:new String[]{"从相册选择"},(d,w)->{
-            if(w==0)pickAvatar();else{Avatar.clear(this);build();}
+        boolean has=Avatar.get(this)!=null,waiting=avatarWaiting();
+        List<String> items=new ArrayList<>(List.of("从相册选择"));if(has)items.add("移除头像");if(waiting)items.add("重新登录以同步头像");
+        show(new AlertDialog.Builder(this).setTitle("个人头像").setItems(items.toArray(new String[0]),(d,w)->{
+            String item=items.get(w);if(item.equals("从相册选择"))pickAvatar();else if(item.equals("移除头像")){Avatar.clear(this);build();syncAvatar(true);}else avatarSignIn();
         }).setNegativeButton("取消",null));
     }
+    private long avatarCheckedAt;
+    /** A change on this phone waits for a session that may write the avatar (signed in before 0.17.0). */
+    private boolean avatarWaiting(){return !PreviewMode.isBuild()&&loggedIn()&&Avatar.pending(this)!=null&&!auth.hasScope(AuthSession.PROFILE_WRITE);}
+    /** Sends a change or fetches the server's avatar in the background; only the person's own change reports failures. */
+    private void syncAvatar(boolean user){
+        if(PreviewMode.isBuild()||!loggedIn())return;avatarCheckedAt=SystemClock.elapsedRealtime();
+        boolean canWrite=auth.hasScope(AuthSession.PROFILE_WRITE);
+        if(user&&Avatar.pending(this)!=null&&!canWrite){avatarSignIn();return;}
+        updater.execute(()->{try{boolean changed=Avatar.sync(this,api,canWrite);runOnUiThread(()->{if(!isDestroyed()&&changed&&"设置".equals(group)&&selectedId==null)build();});}
+            catch(Exception e){runOnUiThread(()->{if(!isDestroyed()&&user)error("头像暂未同步",e instanceof MobileApi.ApiError?e.getMessage():"网络暂不可用，下次打开 App 时会再试。");});}});
+    }
+    private void avatarSignIn(){
+        show(new AlertDialog.Builder(this).setTitle("同步头像需要重新登录").setMessage("头像已保存在这台手机上。God 需要你重新登录一次，授权把头像保存到服务器；登录后会自动上传。").setNegativeButton("以后再说",null)
+            .setPositiveButton("重新登录",(d,w)->{signOut();account();}));
+    }
+    private void signOut(){++generation;snapshots.clear();navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}
     /** System photo picker where available (no storage permission); otherwise any app that offers an image. */
     private void pickAvatar(){
         // Launch directly: package visibility hides the picker from resolveActivity() on Android 11+.
@@ -731,7 +781,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     private void deviceLogin(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy())return;coordinator.loginWithDevice();}
     private void login(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy()||nativeLogin.running())return;session.setText("正在准备安全登录…");coordinator.login();}
-    private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){show(new AlertDialog.Builder(this).setTitle("登录 God").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录"},(d,w)->{if(w==0)deviceLogin();else login();}).setNegativeButton("取消",null));return;}show(new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->{++generation;snapshots.clear();navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}));}
+    private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){show(new AlertDialog.Builder(this).setTitle("登录 God").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录"},(d,w)->{if(w==0)deviceLogin();else login();}).setNegativeButton("取消",null));return;}show(new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->signOut()));}
     private void goBack(){if(coordinator==null){finish();return;}if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){saveViewport();++generation;if(project!=null){project=null;ledgerCursor=null;ledgerPages.clear();showFeature(find(selectedId),true);}else{selectedId=null;enterFrom=-1;build();}}else if(!group.equals("总览")){switchTab("总览");}else moveTaskToBack(true);}
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")

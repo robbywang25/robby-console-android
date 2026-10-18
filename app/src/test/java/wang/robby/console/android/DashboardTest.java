@@ -33,7 +33,8 @@ public final class DashboardTest {
     }
     @Test public void everyCardReadsAReleasedFeature() {
         for (Dashboard.Card c : Dashboard.ALL) {
-            assertTrue(c.id, "overview".equals(c.path) || FeatureCatalog.all().stream().anyMatch(f -> f.path.equals(c.path)));
+            // A card without a read (时区时钟) is drawn on the phone.
+            assertTrue(c.id, c.path == null || "overview".equals(c.path) || FeatureCatalog.all().stream().anyMatch(f -> f.path.equals(c.path)));
             assertTrue(c.id, c.target == null || FeatureCatalog.find(c.target) != null);
         }
     }
@@ -45,5 +46,25 @@ public final class DashboardTest {
         assertEquals(java.util.Set.of("today-cn", "codex-2"), Dashboard.hiddenTokens(saved));
         assertEquals("codex-2", Dashboard.toggleHidden(saved, "today-cn"));
         assertEquals("odd text is dropped", java.util.Set.of("grok"), Dashboard.hiddenTokens("grok, ,Bad Id,<x>"));
+    }
+    @Test public void clocksDefaultToTiboAndBeijingAndKeepOnlyValidZones() {
+        List<Dashboard.Clock> d = Dashboard.clocks(null);
+        assertEquals("Tibo", d.get(0).name); assertEquals("America/Los_Angeles", d.get(0).zone); assertEquals("北京时间", d.get(1).name);
+        String saved = Dashboard.serializeClocks(List.of(new Dashboard.Clock("新西兰", "Pacific/Auckland"), new Dashboard.Clock("坏|名字\n", "Asia/Tokyo"), new Dashboard.Clock("无效", "Mars/Base")));
+        List<Dashboard.Clock> back = Dashboard.clocks(saved);
+        assertEquals(2, back.size()); assertEquals("新西兰", back.get(0).name); assertEquals("坏 名字", back.get(1).name);
+        assertTrue("removing every clock is kept, not reset to the defaults", Dashboard.clocks("").isEmpty());
+        assertEquals("names are cut to 12 characters", 12, Dashboard.clockName("一二三四五六七八九十一二三四").length());
+        assertNull(Dashboard.clockName("  | "));
+    }
+    @Test public void offsetsReadAgainstThePhone() {
+        long at = java.time.Instant.parse("2026-10-18T10:00:00Z").toEpochMilli(); java.time.ZoneId beijing = java.time.ZoneId.of("Asia/Shanghai");
+        assertEquals("晚 15 小时", Dashboard.offsetLabel("America/Los_Angeles", beijing, at));
+        assertEquals("同本机", Dashboard.offsetLabel("Asia/Shanghai", beijing, at));
+        assertEquals("早 5 小时", Dashboard.offsetLabel("Pacific/Auckland", beijing, at));
+        assertEquals("晚 2.5 小时", Dashboard.offsetLabel("Asia/Kolkata", beijing, at));
+    }
+    @Test public void clockCardNeedsNoRead() {
+        assertEquals(List.of("tokens/quotas"), Dashboard.paths(List.of("clocks", "tokens", "calendar")));
     }
 }

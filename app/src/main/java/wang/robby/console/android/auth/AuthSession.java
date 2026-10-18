@@ -29,11 +29,20 @@ public final class AuthSession {
     public static final String CLIENT_ID = "robby-console-android";
     public static final String AUDIENCE = "https://god.robby.wang/api/mobile/v1";
     public static final String REDIRECT_URI = "https://god.robby.wang/mobile/android/callback";
-    public static final String SCOPES = "openid offline_access god.mobile.read god.mobile.clipboard.read "
+    /** The set 0.10.1–0.16.0 signed in with; such a session stays valid without the avatar write scope. */
+    static final String PREVIOUS_SCOPES = "openid offline_access god.mobile.read god.mobile.clipboard.read "
             + "god.mobile.travel.read god.mobile.travel.current.read god.mobile.analytics.read "
             + "god.mobile.sites.health.read god.mobile.domains.read god.mobile.okx.read "
             + "god.mobile.wechat.read god.mobile.prompts.read "
             + "god.mobile.travel.entries.write god.mobile.travel.people.write god.mobile.tokens.read";
+    public static final String PROFILE_WRITE = "god.mobile.profile.write";
+    /** Every new sign-in asks for exactly this set. */
+    public static final String SCOPES = PREVIOUS_SCOPES + " " + PROFILE_WRITE;
+    /**
+     * A stored or refreshed session may hold the current set or the previous, strictly smaller one, so adding the
+     * avatar scope does not sign anyone out; only uploading the avatar asks for a new sign-in. Anything else is invalid.
+     */
+    static boolean acceptedScope(String scope) { return SCOPES.equals(scope) || PREVIOUS_SCOPES.equals(scope); }
     private static final Object STATE_LOCK = new Object();
     private static final Object REFRESH_LOCK = new Object();
     private static long generation;
@@ -256,6 +265,17 @@ public final class AuthSession {
         }
     }
 
+    /** Whether the stored session was granted {@code scope}; false when there is none. */
+    public boolean hasScope(String scope) {
+        synchronized (STATE_LOCK) {
+            try {
+                JSONObject session = readPreserving().optJSONObject("session");
+                if (session == null) return false; validateStored(session);
+                return java.util.Arrays.asList(string(session, "scope").split(" ")).contains(scope);
+            } catch (Exception ignored) { return false; }
+        }
+    }
+
     /** Locally stored session presence only; does not claim server validity. */
     public boolean hasSession() {
         synchronized (STATE_LOCK) {
@@ -310,7 +330,7 @@ public final class AuthSession {
     private static void validateStored(JSONObject token) throws Exception {
         OAuthGuards.require(OAuthGuards.safeToken(string(token, "access_token"), 32768)
                 && OAuthGuards.safeToken(string(token, "refresh_token"), 32768)
-                && SCOPES.equals(string(token, "scope")) && token.getLong("expires_at") > 0);
+                && acceptedScope(string(token, "scope")) && token.getLong("expires_at") > 0);
     }
     private static Token token(JSONObject body) throws Exception {
         return token(body, null);
@@ -325,14 +345,16 @@ public final class AuthSession {
             TokenResponsePolicy.require(body.opt("token_type") instanceof String && "Bearer".equalsIgnoreCase((String) body.opt("token_type")), "token_type");
             String scope = TokenResponsePolicy.field(body.has("scope"), body.opt("scope"),
                     previous == null ? null : string(previous, "scope"), "scope");
-            TokenResponsePolicy.require(OAuthGuards.exactScopes(scope, SCOPES), "scope");
+            // A new sign-in must hold the full current set; a refresh must keep exactly what the session already had.
+            String expected = previous == null ? SCOPES : string(previous, "scope");
+            TokenResponsePolicy.require(acceptedScope(expected) && OAuthGuards.exactScopes(scope, expected), "scope");
             Object expiry = body.opt("expires_in");
             TokenResponsePolicy.require(expiry instanceof Integer || expiry instanceof Long, "expires_in");
             long seconds = ((Number) expiry).longValue();
             TokenResponsePolicy.require(seconds >= 60 && seconds <= 86400, "expires_in");
             validateTokenClaims(access);
             JSONObject saved = new JSONObject().put("access_token", access).put("refresh_token", refresh)
-                    .put("scope", SCOPES).put("expires_at", System.currentTimeMillis() + seconds * 1000L);
+                    .put("scope", expected).put("expires_at", System.currentTimeMillis() + seconds * 1000L);
             return new Token(saved, access, refresh);
         } catch (TokenResponsePolicy.Invalid failure) {
             Log.w("GodAuth", TokenResponsePolicy.diagnostic(failure.reason));
