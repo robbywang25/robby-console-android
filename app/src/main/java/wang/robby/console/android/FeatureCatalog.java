@@ -51,6 +51,16 @@ public final class FeatureCatalog {
     ));
     public static List<Feature> all() { return FEATURES; }
 
+    /**
+     * Features that ship hidden because they do not read yet, with the reason 已隐藏的功能 shows. From the signed
+     * device read check of 2026-10-19: umami/overview answers 503, and every PostHog source reports notConfigured.
+     * The person can show them again; an entry leaves this list once its source works.
+     */
+    public static final Map<String, String> DEFAULT_HIDDEN_REASONS = Map.of(
+        "umami", "暂未接通 · 接口暂不可用",
+        "posthog", "暂未接通 · 数据源未配置");
+    public static final java.util.Set<String> DEFAULT_HIDDEN = DEFAULT_HIDDEN_REASONS.keySet();
+
     /** The sections of the 功能 tab, in order; 设置 entries stay in 我 but are still found by search. */
     public static final List<String> SECTIONS = List.of("洞察", "资产", "工具");
     // Only static feature metadata is searched, as on iOS: never account data, credentials or clipboard contents.

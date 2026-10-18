@@ -23,32 +23,52 @@ import android.widget.*;
 public final class ConsoleTheme {
     public final Context context;
     public final boolean dark, contrast, effects, blur;
+    /** The 我 → 外观 choice: Liquid Glass on or off, and its level from 0 (清透) through 50 (default) to 100 (着色). */
+    public final boolean glassOn; public final int glassLevel;
+    public static final String GLASS_ON="glassOn", GLASS_LEVEL="glassLevel"; public static final int GLASS_DEFAULT=50;
     public final int canvas, surface, ink, muted, faint, accent, accentStrong, line, soft, danger, success, warning, glassFill, dockFill, lensFill, skyTop;
     /** WeChat's unread red (WeUI #FA5151): only for "something new you have not opened yet". */
     public final int unread=0xfffa5151;
     private final int skyMid, skyBottom;
-    public ConsoleTheme(Context c) {
-        context=c;
+    public ConsoleTheme(Context c) {this(c,prefs(c).getBoolean(GLASS_ON,true),prefs(c).getInt(GLASS_LEVEL,GLASS_DEFAULT));}
+    private static android.content.SharedPreferences prefs(Context c){return c.getSharedPreferences("god-ui",Context.MODE_PRIVATE);}
+    /** A theme for an explicit glass choice; 外观 uses it to preview a level while the slider is dragged. */
+    public ConsoleTheme(Context c,boolean on,int level) {
+        context=c;glassOn=on;glassLevel=Math.max(0,Math.min(100,level));
         dark=(c.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)==Configuration.UI_MODE_NIGHT_YES;
         AccessibilityManager a=(AccessibilityManager)c.getSystemService(Context.ACCESSIBILITY_SERVICE);
         contrast=Build.VERSION.SDK_INT>=36 && a!=null && a.isHighContrastTextEnabled();
         android.os.PowerManager power=(android.os.PowerManager)c.getSystemService(Context.POWER_SERVICE);
         effects=!contrast&&android.animation.ValueAnimator.areAnimatorsEnabled()&&(power==null||!power.isPowerSaveMode());
-        blur=effects&&Build.VERSION.SDK_INT>=31;
+        blur=effects&&Build.VERSION.SDK_INT>=31&&glassOn;
         accentStrong=0xff0052d9;
+        // Each translucent fill has a 清透 end, the default look at level 50, and a 着色 end that is solid; glass off is
+        // the solid end. At 清透 cards are a faint veil over the sky: the rim and text carry them.
         if(dark){
             skyTop=0xff11203b;skyMid=0xff090c14;skyBottom=0xff050608;canvas=0xff080b12;
-            surface=contrast?0xff161a22:0x1affffff;ink=Color.WHITE;muted=0xffa7aebb;faint=0xff737b8a;
+            surface=contrast?0xff161a22:glass(0x05ffffff,0x1affffff,0xff1a1e26);ink=Color.WHITE;muted=0xffa7aebb;faint=0xff737b8a;
             accent=0xff4582e6;line=contrast?0xff5a6170:0x1affffff;soft=0x1affffff;
             danger=0xffff8a80;success=0xff5ccb93;warning=0xfff2b552;
-            glassFill=contrast?0xff1c212b:0x26ffffff;dockFill=blur?0x99161a22:0xf2161a22;lensFill=0x24ffffff;
+            glassFill=contrast?0xff1c212b:glass(0x08ffffff,0x26ffffff,0xff232833);dockFill=blur?glass(0x1f161a22,0x99161a22,0xf2161a22):0xf2161a22;lensFill=0x24ffffff;
         }else{
             skyTop=0xffcfe1f6;skyMid=0xffedf1f8;skyBottom=0xfff6ece3;canvas=0xffeef2f8;
-            surface=contrast?Color.WHITE:0xd9ffffff;ink=0xff0f1115;muted=0xff5b6270;faint=0xff8a909c;
+            surface=contrast?Color.WHITE:glass(0x2effffff,0xd9ffffff,0xffffffff);ink=0xff0f1115;muted=0xff5b6270;faint=0xff8a909c;
             accent=0xff0052d9;line=contrast?0xff8a909c:0x170b1a33;soft=0x0f0b1a33;
             danger=0xffd54941;success=0xff1f9a62;warning=0xffc96a0a;
-            glassFill=contrast?Color.WHITE:0xb8ffffff;dockFill=blur?0xa6ffffff:0xf5ffffff;lensFill=0x140b1a33;
+            glassFill=contrast?Color.WHITE:glass(0x1fffffff,0xb8ffffff,0xffffffff);dockFill=blur?glass(0x26ffffff,0xa6ffffff,0xf7ffffff):0xf5ffffff;lensFill=0x140b1a33;
         }
+    }
+    /** The fill for the current glass choice: the solid end when glass is off, otherwise blended through the default. */
+    private int glass(int clear,int normal,int solid){
+        if(!glassOn)return solid;
+        return glassLevel<=GLASS_DEFAULT?blend(clear,normal,glassLevel/(float)GLASS_DEFAULT):blend(normal,solid,(glassLevel-GLASS_DEFAULT)/(float)(100-GLASS_DEFAULT));
+    }
+    /** Premultiplied blend, so a faint white veil turns into a solid dark face without a bright grey in between. */
+    static int blend(int from,int to,float t){
+        float a0=(from>>>24)/255f,a1=(to>>>24)/255f,a=a0+(a1-a0)*t;if(a<=0)return 0;
+        int out=Math.round(a*255)<<24;
+        for(int shift=16;shift>=0;shift-=8){float c0=((from>>shift)&0xff)*a0,c1=((to>>shift)&0xff)*a1;out|=Math.max(0,Math.min(255,Math.round((c0+(c1-c0)*t)/a)))<<shift;}
+        return out;
     }
     public int dp(float n){return Math.round(n*context.getResources().getDisplayMetrics().density);}
     public GradientDrawable shape(int color,float radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
@@ -58,10 +78,10 @@ public final class ConsoleTheme {
     public Drawable card(){return card(24);}
     public Drawable card(float radius){if(contrast){GradientDrawable d=shape(surface,radius);d.setStroke(dp(1.5f),muted);return d;}return new Glass(surface,dp(radius),dp(1),dark,false);}
     /** Control-layer glass. A negative radius is a capsule. */
-    public Drawable glass(float radius){if(contrast){GradientDrawable d=shape(glassFill,radius<0?99:radius);d.setStroke(dp(1.5f),muted);return d;}return new Glass(glassFill,radius<0?-1:dp(radius),dp(1),dark,true);}
+    public Drawable glass(float radius){if(contrast){GradientDrawable d=shape(glassFill,radius<0?99:radius);d.setStroke(dp(1.5f),muted);return d;}return new Glass(glassFill,radius<0?-1:dp(radius),dp(1),dark,glassOn);}
     /** Bottom scroll-edge: transparent to the sky's bottom colour, so text never sits bare under the gesture bar. */
     public Drawable bottomFade(){int base=contrast?canvas:skyBottom;return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{base&0x00ffffff,(base&0x00ffffff)|0xcc000000,base});}
-    public Drawable dock(){if(contrast){GradientDrawable d=shape(dockFill,99);d.setStroke(dp(1.5f),muted);return d;}return new Glass(dockFill,-1,dp(1),dark,true);}
+    public Drawable dock(){if(contrast){GradientDrawable d=shape(dockFill,99);d.setStroke(dp(1.5f),muted);return d;}return new Glass(dockFill,-1,dp(1),dark,glassOn);}
     public Drawable lens(){if(contrast)return shape(soft,99);return new Glass(lensFill,-1,dp(.75f),dark,false);}
     public Drawable ripple(Drawable base){return ripple(base,22);}
     public Drawable ripple(Drawable base,float radius){return new RippleDrawable(ColorStateList.valueOf(dark?0x22ffffff:0x140b1a33),base,radius<0?new Glass(Color.WHITE,-1,0,dark,false):shape(Color.WHITE,radius));}
@@ -92,7 +112,7 @@ public final class ConsoleTheme {
     private static int hue(String symbol){return switch(symbol){
         case "chart","trend"->0xff3b82f6;case "ledger","plus","edit"->0xfff59e0b;case "globe","server"->0xff14b8a6;case "pulse"->0xff22c55e;
         case "clipboard","document","history","gauge","calendar"->0xff8b5cf6;case "bell"->0xffef4444;case "chat"->0xff07c160;case "image"->0xffec4899;case "shield","key","user","people","download"->0xff0052d9;
-        case "trash"->0xffef4444;default->0xff64748b;};}
+        case "trash"->0xffef4444;case "drop"->0xff0ea5e9;default->0xff64748b;};}
     public ImageView icon(String name,int color,int size){if("grid".equals(name))return tabIcon(name,true,size);ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,ink));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     public ImageView tabIcon(String name,boolean selected,int size){
         int asset=switch(name){
@@ -229,6 +249,8 @@ public final class ConsoleTheme {
                 case "download":line(c,12,4,12,15);line(c,7,10,12,15,17,10);line(c,5,20,19,20);break;
                 case "drag":line(c,5,8,19,8);line(c,5,12,19,12);line(c,5,16,19,16);break;
                 case "calendar":box(c,4,5.5f,16,14.5f);line(c,4,10,20,10);line(c,8.5f,3.5f,8.5f,7.5f);line(c,15.5f,3.5f,15.5f,7.5f);line(c,8,14,8.1f,14);line(c,12,14,12.1f,14);line(c,16,14,16.1f,14);line(c,8,17,8.1f,17);break;
+                case "drop":{Path q=new Path();q.moveTo(12,3);q.cubicTo(12,3,5,10.5f,5,14.5f);q.cubicTo(5,18.4f,8.1f,21,12,21);q.cubicTo(15.9f,21,19,18.4f,19,14.5f);q.cubicTo(19,10.5f,12,3,12,3);c.drawPath(q,p);c.drawArc(8,12,12,18,100,80,false,p);break;}
+                case "eye":c.drawArc(2,5,22,25,200,140,false,p);c.drawArc(2,-1,22,19,20,140,false,p);c.drawCircle(12,12,3,p);line(c,4,20,20,4);break;
                 case "bell":line(c,6,16.5f,6,11);c.drawArc(6,5,18,17,180,180,false,p);line(c,18,11,18,16.5f);line(c,4.5f,16.5f,19.5f,16.5f);line(c,10,19.5f,14,19.5f);line(c,12,3.5f,12,5);break;
                 default: c.drawCircle(12,12,8,p);
             }c.restoreToCount(s);

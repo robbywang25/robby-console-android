@@ -33,6 +33,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private static final String ABOUT="about";
     /** Pseudo feature id for the 看板 editor, in the 总览 tab's reading context. */
     private static final String BOARD="board";
+    /** Pseudo feature id for 我 → 已隐藏的功能. */
+    private static final String HIDDEN_PAGE="hidden";
     /** Release-note cards the reader expanded; process memory only, like the other reading context. */
     private final Set<String> expandedNotes=new HashSet<>();
     /** In-app update for the 关于 page. State is process memory only; network work runs off the UI thread. */
@@ -198,8 +200,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // The stage holds the sky and the page. The floating dock blurs the stage, never itself.
         FrameLayout stage=new FrameLayout(this);stage.setBackground(theme.backdrop());root.addView(stage,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);stage.addView(body,new FrameLayout.LayoutParams(-1,-1));
-        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId);if(detail==null&&!about&&!boardEdit)selectedId=null;
-        boolean nested=device!=null||detail!=null||about||boardEdit;
+        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId),hiddenPage=HIDDEN_PAGE.equals(selectedId);if(detail==null&&!about&&!boardEdit&&!hiddenPage)selectedId=null;
+        boolean nested=device!=null||detail!=null||about||boardEdit||hiddenPage;
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
         leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
@@ -266,6 +268,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(device!=null){nav.setVisibility(View.GONE);showDeviceAuthorization(device);}
         else if(about)about();
         else if(boardEdit)boardEditor();
+        else if(hiddenPage)hiddenPage();
         else if(detail!=null)showFeature(detail,false);
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else features();
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
@@ -287,7 +290,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新看板",()->loadBoard(true,page::finishRefresh));
             board=new LinearLayout(this);board.setOrientation(LinearLayout.VERTICAL);content.addView(board,new LinearLayout.LayoutParams(-1,-2));loadBoard(false);
         }
-        section("常用");quick(FeatureUsage.top(FeatureUsage.parse(prefs().getString("featureUsage",null)),System.currentTimeMillis(),4,id->find(id)!=null&&!"overview".equals(id)));
+        section("常用");Set<String> hidden=hiddenFeatures();quick(FeatureUsage.top(FeatureUsage.parse(prefs().getString("featureUsage",null)),System.currentTimeMillis(),4,id->find(id)!=null&&!"overview".equals(id)&&!hidden.contains(id)));
         restoreViewport();
     }
     private List<String> boardCards(){return Dashboard.parse(prefs().getString("dashboard",null));}
@@ -494,19 +497,72 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         featureList(list);restoreViewport();
     }
     private void featureList(LinearLayout list){
-        list.removeAllViews();String q=featureQuery.trim();
+        list.removeAllViews();String q=featureQuery.trim();Set<String> hidden=hiddenFeatures();
         if(q.isEmpty()){
-            for(String section:FeatureCatalog.SECTIONS){TextView t=text(section,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));list.addView(t);
-                LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals(section))featureRow(f,g);}
+            for(String section:FeatureCatalog.SECTIONS){List<FeatureCatalog.Feature> shown=new ArrayList<>();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals(section)&&!hidden.contains(f.id))shown.add(f);
+                if(shown.isEmpty())continue;
+                TextView t=text(section,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));list.addView(t);
+                LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:shown)featureRow(f,g);}
+            TextView tip=text("长按功能可以隐藏，隐藏的功能在「我 → 已隐藏的功能」。",12,MUTED,false);tip.setPadding(dp(6),dp(4),dp(6),dp(8));list.addView(tip);
             return;
         }
-        List<FeatureCatalog.Feature> found=FeatureCatalog.search(q);
+        List<FeatureCatalog.Feature> found=new ArrayList<>();int hiddenMatches=0;
+        for(FeatureCatalog.Feature f:FeatureCatalog.search(q))if(hidden.contains(f.id))hiddenMatches++;else found.add(f);
         TextView count=text(found.isEmpty()?"没有找到与「"+q+"」相关的功能":"找到 "+found.size()+" 个功能",13,MUTED,false);count.setPadding(dp(6),dp(12),0,dp(8));count.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);list.addView(count);
-        if(found.isEmpty())return;
-        LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:found)featureRow(f,g);
+        if(!found.isEmpty()){LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:found)featureRow(f,g);}
+        // A search never silently misses a hidden feature: it points to where hidden ones are kept.
+        if(hiddenMatches>0){LinearLayout g=groupCard(list);featureRow("已隐藏的功能","有 "+hiddenMatches+" 个已隐藏的功能也匹配","eye",g,this::openHiddenPage);}
     }
     private void featureRow(FeatureCatalog.Feature f){featureRow(f,groupCard());}
-    private void featureRow(FeatureCatalog.Feature f,LinearLayout list){featureRow(f.title,f.subtitle,ConsoleTheme.symbol(f.id),list,()->open(f));}
+    /** A feature in 功能 or 我 → 管理: tap opens it, long-press offers 隐藏. */
+    private void featureRow(FeatureCatalog.Feature f,LinearLayout list){
+        LinearLayout row=featureRow(f.title,f.subtitle,ConsoleTheme.symbol(f.id),list,()->open(f));
+        longPress(row,"隐藏或更多操作",()->{row.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            show(new AlertDialog.Builder(this).setTitle(f.title).setItems(new String[]{"打开","隐藏"},(d,w)->{if(w==0)open(f);else hide(f);}).setNegativeButton("取消",null));});
+    }
+    /** Long-press on {@code row}, announced to screen readers by {@code label}. */
+    private void longPress(View row,String label,Runnable action){
+        row.setLongClickable(true);row.setOnLongClickListener(v->{action.run();return true;});
+        row.setAccessibilityDelegate(new View.AccessibilityDelegate(){@Override public void onInitializeAccessibilityNodeInfo(View host,android.view.accessibility.AccessibilityNodeInfo info){
+            super.onInitializeAccessibilityNodeInfo(host,info);info.addAction(new android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_LONG_CLICK,label));}});
+    }
+    private Set<String> userHidden(){return FeatureVisibility.parse(prefs().getString(FeatureVisibility.HIDDEN,null));}
+    private Set<String> userShown(){return FeatureVisibility.parse(prefs().getString(FeatureVisibility.SHOWN,null));}
+    /** Features left out of 功能, 我 → 管理 and 常用; they stay reachable from 已隐藏的功能, shortcuts and the board. */
+    private Set<String> hiddenFeatures(){return FeatureVisibility.hidden(userHidden(),userShown(),FeatureCatalog.DEFAULT_HIDDEN);}
+    private void saveVisibility(List<Set<String>> next){prefs().edit().putString(FeatureVisibility.HIDDEN,FeatureVisibility.serialize(next.get(0))).putString(FeatureVisibility.SHOWN,FeatureVisibility.serialize(next.get(1))).apply();}
+    private void hide(FeatureCatalog.Feature f){
+        saveVisibility(FeatureVisibility.hide(userHidden(),userShown(),f.id));build();
+        Toast.makeText(this,"已隐藏「"+f.title+"」，可在「我 → 已隐藏的功能」恢复",Toast.LENGTH_SHORT).show();
+    }
+    private void unhide(FeatureCatalog.Feature f){
+        saveVisibility(FeatureVisibility.show(userHidden(),userShown(),f.id,FeatureCatalog.DEFAULT_HIDDEN));build();
+        Toast.makeText(this,"「"+f.title+"」已放回"+("设置".equals(f.group)?"「我 → 管理」":"「功能」"),Toast.LENGTH_SHORT).show();
+    }
+    private void openHiddenPage(){
+        // From a 功能 search this crosses to 我, keeping 功能's own reading context as a tab switch does.
+        if(!"设置".equals(group)){saveViewport();navigation.switchTo(group,"设置",new NavigationMemory.Destination(selectedId,project,ledgerCursor,ledgerPages));group="设置";}
+        ++generation;selectedId=HIDDEN_PAGE;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
+    /**
+     * 我 → 已隐藏的功能: everything hidden, in catalog order. Tap opens a feature as usual; 显示 puts it back where it
+     * was. Features hidden by default say why, so a person knows what to expect before showing them again.
+     */
+    private void hiddenPage(){
+        heading.setText("已隐藏的功能");
+        leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));
+        Set<String> hidden=hiddenFeatures(),mine=userHidden();
+        TextView hint=text("在「功能」里长按可以隐藏功能。点「显示」放回原处；暂未接通的功能默认隐藏。",13,MUTED,false);hint.setPadding(dp(6),dp(4),dp(6),dp(8));content.addView(hint);
+        LinearLayout g=groupCard();
+        for(FeatureCatalog.Feature f:FeatureCatalog.all()){if(!hidden.contains(f.id))continue;
+            String why=!mine.contains(f.id)?FeatureCatalog.DEFAULT_HIDDEN_REASONS.get(f.id):null;
+            LinearLayout row=featureRow(f.title,why==null?f.subtitle:why,ConsoleTheme.symbol(f.id),g,()->open(f));
+            Button restore=button("显示",()->unhide(f));restore.setContentDescription("显示 "+f.title);restore.setPadding(dp(16),0,dp(16),0);
+            LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-2,dp(40));sp.rightMargin=dp(6);row.addView(restore,row.getChildCount()-1,sp);
+            longPress(row,"显示或打开",()->{row.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                show(new AlertDialog.Builder(this).setTitle(f.title).setItems(new String[]{"打开","显示"},(d,w)->{if(w==0)open(f);else unhide(f);}).setNegativeButton("取消",null));});}
+        if(g.getChildCount()==0){TextView none=text("没有隐藏的功能",15,MUTED,false);none.setPadding(dp(12),dp(16),dp(12),dp(16));g.addView(none);}
+        restoreViewport();
+    }
     private LinearLayout groupCard(){return groupCard(content);}
     private LinearLayout groupCard(LinearLayout parent){LinearLayout c=theme.card(parent);c.setPadding(dp(4),dp(4),dp(4),dp(4));return c;}
     /** Grouped-list cell: tinted icon tile, title, optional one-line subtitle, chevron when it navigates. A null action is a plain info row. */
@@ -592,16 +648,61 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     private void settings(){
         profile();
-        section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
+        Set<String> hidden=hiddenFeatures();
+        section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置")&&!hidden.contains(f.id))featureRow(f,management);
+        int hiddenCount=0;for(FeatureCatalog.Feature f:FeatureCatalog.all())if(hidden.contains(f.id))hiddenCount++;
+        featureRow("已隐藏的功能",hiddenCount==0?"在「功能」里长按可以隐藏":hiddenCount+" 个功能","eye",management,this::openHiddenPage);
         section("提醒");LinearLayout alerts=groupCard();boolean watching=!PreviewMode.isBuild()&&TiboWatch.enabled(this);
         featureRow("Tibo 重置提醒",watching?TiboWatch.status(this):"未开启 · Tibo 发出重置预告时像闹钟一样响铃","bell",alerts,()->{FeatureCatalog.Feature f=find("tibo");if(f!=null&&loggedIn())open(f);else if(f!=null)error("登录后开启","登录 God 后才能读取 Tibo 的重置预告。");});
         section("小组件");LinearLayout widgets=groupCard();featureRow("God 小组件","桌面、锁屏与快捷设置 · 只显示公开的 Tibo 预告","grid",widgets,this::widgetSheet);
+        appearance();
         section("关于");LinearLayout about=groupCard();
         featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
         String version=versionName();LinearLayout info=featureRow("关于 God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
         View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);
         aboutDot=red;aboutRow=info;aboutDescription=String.valueOf(info.getContentDescription());showDots();
         restoreViewport();
+    }
+    /**
+     * 我 → 外观, after iOS 26's Liquid Glass setting: a switch for glass, and a 清透 ↔ 着色 slider while it is on.
+     * Dragging repaints this page's cards and the dock as a live preview; the level is saved when the drag ends (or
+     * at once for screen-reader and keyboard steps) and every page drawn afterwards uses it. High-contrast text
+     * always uses solid surfaces, so both controls are off there.
+     */
+    private void appearance(){
+        section("外观");LinearLayout look=groupCard();boolean usable=!theme.contrast;
+        LinearLayout row=featureRow("Liquid Glass",!usable?"高对比度文字开启时使用不透明表面":theme.glassOn?"半透明玻璃与背景模糊":"已关闭 · 不透明表面，没有模糊","drop",look,null);
+        Switch toggle=new Switch(this);toggle.setChecked(theme.glassOn);toggle.setEnabled(usable);toggle.setContentDescription("Liquid Glass");toggle.setMinimumHeight(dp(48));
+        toggle.setOnCheckedChangeListener((b,on)->{prefs().edit().putBoolean(ConsoleTheme.GLASS_ON,on).apply();b.post(()->{theme=new ConsoleTheme(this);build();});});
+        row.addView(toggle);
+        LinearLayout slider=new LinearLayout(this);slider.setOrientation(LinearLayout.VERTICAL);slider.setPadding(dp(10),0,dp(10),dp(10));
+        SeekBar bar=new SeekBar(this);bar.setMax(100);bar.setProgress(theme.glassLevel);bar.setEnabled(usable&&theme.glassOn);
+        bar.setProgressTintList(android.content.res.ColorStateList.valueOf(theme.accent));bar.setThumbTintList(android.content.res.ColorStateList.valueOf(theme.accent));bar.setProgressBackgroundTintList(android.content.res.ColorStateList.valueOf(theme.muted));
+        bar.setContentDescription("Liquid Glass 透明度");bar.setStateDescription(glassLabel(theme.glassLevel));
+        slider.addView(bar,new LinearLayout.LayoutParams(-1,dp(48)));
+        LinearLayout ends=new LinearLayout(this);ends.setPadding(dp(6),0,dp(6),0);ends.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        ends.addView(text("清透",12,MUTED,false));ends.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));ends.addView(text("默认",12,MUTED,false));ends.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));ends.addView(text("着色",12,MUTED,false));
+        slider.addView(ends);if(!bar.isEnabled())slider.setAlpha(.4f);look.addView(slider);
+        final boolean[] dragging={false};
+        bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
+            @Override public void onProgressChanged(SeekBar s,int level,boolean user){if(!user)return;s.setStateDescription(glassLabel(level));
+                if(dragging[0])previewGlass(new ConsoleTheme(MainActivity.this,true,level));else saveGlassLevel(s,level);}
+            @Override public void onStartTrackingTouch(SeekBar s){dragging[0]=true;}
+            @Override public void onStopTrackingTouch(SeekBar s){dragging[0]=false;saveGlassLevel(s,s.getProgress());}
+        });
+    }
+    /** Keeps a level, snapping to the default when within 3 of it, and repaints this page with it. */
+    private void saveGlassLevel(SeekBar s,int level){
+        int kept=Math.abs(level-ConsoleTheme.GLASS_DEFAULT)<=3?ConsoleTheme.GLASS_DEFAULT:level;if(kept!=level){s.setProgress(kept);s.setStateDescription(glassLabel(kept));}
+        prefs().edit().putInt(ConsoleTheme.GLASS_LEVEL,kept).apply();theme=new ConsoleTheme(this);previewGlass(theme);
+    }
+    private static String glassLabel(int level){return level==ConsoleTheme.GLASS_DEFAULT?"默认":(level<ConsoleTheme.GLASS_DEFAULT?"清透 ":"着色 ")+Math.abs(level-ConsoleTheme.GLASS_DEFAULT)*2+"%";}
+    /** Repaints this page's cards and the dock for {@code t} without rebuilding, so the dragged slider keeps its touch. */
+    private void previewGlass(ConsoleTheme t){
+        for(int i=0;i<content.getChildCount();i++){View v=content.getChildAt(i);android.graphics.drawable.Drawable b=v.getBackground();
+            if(b instanceof ConsoleTheme.Glass)v.setBackground(t.card());
+            else if(b instanceof android.graphics.drawable.RippleDrawable&&v.isClickable())v.setBackground(t.ripple(t.card(),24));}
+        if(nav!=null)nav.setBackground(t.dock());
     }
     /** Account card at the top of 我, in WeChat's profile position; opens the same sign-in / sign-out choices as before. */
     private void profile(){

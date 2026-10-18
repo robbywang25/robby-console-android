@@ -13,9 +13,9 @@ import wang.robby.console.android.auth.AuthSession;
  * Results contain fixed booleans/status codes, never tokens, identities or business data.
  */
 public final class LiveReadAcceptance extends Instrumentation {
-    private boolean approved, allFeatures;
+    private boolean approved, allFeatures, sourceStates;
     private String featureFilter="";
-    @Override public void onCreate(Bundle args) {super.onCreate(args);approved=args!=null&&"true".equals(args.getString("live_read_check"));allFeatures=args!=null&&"true".equals(args.getString("all_features"));featureFilter=args==null?"":args.getString("feature_filter","");start();}
+    @Override public void onCreate(Bundle args) {super.onCreate(args);approved=args!=null&&"true".equals(args.getString("live_read_check"));allFeatures=args!=null&&"true".equals(args.getString("all_features"));sourceStates=args!=null&&"true".equals(args.getString("source_states"));featureFilter=args==null?"":args.getString("feature_filter","");start();}
     @Override public void onStart() {
         Bundle out=new Bundle();
         if(!approved){out.putString("result","explicit_live_read_check_required");finish(Activity.RESULT_CANCELED,out);return;}
@@ -52,6 +52,7 @@ public final class LiveReadAcceptance extends Instrumentation {
                     if(!featureFilter.isEmpty()&&!java.util.Arrays.asList(featureFilter.split(",")).contains(f.id))continue;
                     android.os.SystemClock.sleep(2200);
                     try { JSONObject data=api.get(f.path);boolean compatible=FeatureRenderer.isCompatible(f,data);out.putBoolean("read_"+f.id,compatible);
+                        if(sourceStates){java.util.Map<String,Integer> seen=new java.util.TreeMap<>();states(data,0,seen);StringBuilder s=new StringBuilder();for(java.util.Map.Entry<String,Integer> e:seen.entrySet())s.append(s.length()==0?"":",").append(e.getKey()).append('x').append(e.getValue());out.putString("states_"+f.id,s.toString());}
                         if(!compatible){java.util.List<String> shape=new java.util.ArrayList<>();java.util.Iterator<String> keys=data.keys();while(keys.hasNext()){String k=keys.next();if(k.matches("[A-Za-z][A-Za-z0-9]{0,50}")){Object v=data.opt(k);shape.add(k+":"+(v instanceof JSONObject?"object":v instanceof JSONArray?"array":v instanceof String?"string":v instanceof Number?"number":v instanceof Boolean?"bool":"null"));}}java.util.Collections.sort(shape);out.putString("shape_"+f.id,String.join(",",shape));out.putInt("schema_"+f.id,data.optInt("schemaVersion",-1));} }
                     catch(MobileApi.ApiError e){out.putInt("http_"+f.id,e.status);}
                     catch(Exception e){out.putBoolean("read_"+f.id,false);}
@@ -59,5 +60,18 @@ public final class LiveReadAcceptance extends Instrumentation {
             }
             out.putBoolean("business_writes_performed",false);finish(Activity.RESULT_OK,out);
         } catch(Exception ignored){out.putString("result","acceptance_unavailable");finish(Activity.RESULT_CANCELED,out);}
+    }
+    /**
+     * Counts source-health flags two levels deep (state/status/available/stale/configured/partial): booleans and
+     * enum-like lowercase words only, so a response that reads fine but reports an unconfigured or failing source shows.
+     */
+    private static void states(Object node,int depth,java.util.Map<String,Integer> seen){
+        if(depth>2)return;
+        if(node instanceof JSONArray){JSONArray a=(JSONArray)node;for(int i=0;i<Math.min(a.length(),40);i++)states(a.opt(i),depth+1,seen);return;}
+        if(!(node instanceof JSONObject))return;JSONObject o=(JSONObject)node;
+        for(String key:new String[]{"state","status","available","stale","configured","partial"}){Object v=o.opt(key);
+            String word=v instanceof Boolean?String.valueOf(v):v instanceof String&&((String)v).matches("[A-Za-z_]{1,24}")?(String)v:null;
+            if(word!=null)seen.merge(key+"="+word,1,Integer::sum);}
+        java.util.Iterator<String> keys=o.keys();while(keys.hasNext()){Object v=o.opt(keys.next());if(v instanceof JSONObject||v instanceof JSONArray)states(v,depth+1,seen);}
     }
 }

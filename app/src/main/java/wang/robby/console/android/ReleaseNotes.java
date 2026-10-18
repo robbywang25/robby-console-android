@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.21.0", "2026-10-19", "调节玻璃，隐藏功能",
+            "「我 → 外观」可以关闭 Liquid Glass，或拖动滑块在清透和着色之间调节。",
+            "在「功能」里长按可以隐藏功能，「我 → 已隐藏的功能」可以随时放回。",
+            "暂未接通的访问统计和产品分析默认隐藏。",
+            "搜索到已隐藏的功能时会提示，点一下就能找到。"),
         new Entry("0.20.0", "2026-10-19", "全屏显示",
             "总览、功能和「我」铺满整个屏幕，上滑时卡片从状态栏下面穿过。",
             "「功能」和「我」的大标题跟着页面一起滑走。",
