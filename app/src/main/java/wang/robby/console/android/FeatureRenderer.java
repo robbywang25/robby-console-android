@@ -91,6 +91,24 @@ public final class FeatureRenderer {
         } else c.setBackground(u.theme.card());
         c.addView(head); parent.addView(c, params); return c;
     }
+    /**
+     * While a card's read is under way: the Token card draws the rows it showed last time (product labels only, kept on
+     * the phone by account id) with placeholders for the figures, so the list is there at once and the numbers follow.
+     */
+    static void widgetLoading(Context context, LinearLayout shell) {
+        List<String[]> rows = "tokens".equals(shell.getTag()) ? Dashboard.tokenRows(context) : List.of();
+        if (rows.isEmpty()) { widgetMessage(context, shell, "正在读取…"); return; }
+        UI u = new UI(context, shell); while (shell.getChildCount() > 1) shell.removeViewAt(1);
+        for (int i = 0; i < rows.size(); i++) {
+            LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(i == 0 ? 8 : 5), 0, 0);
+            r.addView(u.theme.dot(u.theme.line, 7));
+            TextView name = u.text(rows.get(i)[1], 14, false); name.setTextColor(u.theme.ink); name.setPadding(u.dp(8), 0, 0, 0); name.setSingleLine(true); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+            View bar = new View(context); bar.setBackground(u.theme.shape(u.theme.soft, 6)); r.addView(bar, new LinearLayout.LayoutParams(u.dp(64), u.dp(12)));
+            if (u.theme.effects) { android.animation.ObjectAnimator pulse = android.animation.ObjectAnimator.ofFloat(bar, View.ALPHA, 1f, .35f); pulse.setDuration(700); pulse.setRepeatMode(android.animation.ValueAnimator.REVERSE); pulse.setRepeatCount(android.animation.ValueAnimator.INFINITE); pulse.start(); }
+            shell.addView(r);
+        }
+        shell.setContentDescription("Token 额度，正在读取");
+    }
     /** A one-line body for loading and failures, so a broken source never blanks the whole 看板. */
     static void widgetMessage(Context context, LinearLayout shell, String message) {
         UI u = new UI(context, shell); while (shell.getChildCount() > 1) shell.removeViewAt(1);
@@ -138,9 +156,9 @@ public final class FeatureRenderer {
             case "tokens": {
                 // One row per connected account; accounts not set up are left off the board (the page lists them).
                 long now = System.currentTimeMillis(); int shown = 0; java.text.DecimalFormat whole = new java.text.DecimalFormat("0");
-                List<JSONObject> accounts = tokenAccounts(p); Set<String> hidden = Dashboard.hiddenTokens(context); boolean anyHidden = false;
+                List<JSONObject> accounts = tokenAccounts(p); Set<String> hidden = Dashboard.hiddenTokens(context); boolean anyHidden = false; List<String[]> rowsShown = new ArrayList<>();
                 for (JSONObject a : accounts) { String st = a.optString("status");
-                    if (!TokensModel.shownOnPage(a)) continue; if (hidden.contains(a.optString("id"))) { anyHidden = true; continue; } if (shown >= 8) continue; shown++;
+                    if (!TokensModel.shownOnPage(a)) continue; if (hidden.contains(a.optString("id"))) { anyHidden = true; continue; } if (shown >= 8) continue; shown++; rowsShown.add(new String[]{a.optString("id"), s(a, "label")});
                     List<TokensModel.Period> periods = TokensModel.boardWindows(a);
                     Double min = null; for (TokensModel.Period pd : periods) { Double pc = TokensModel.remaining(pd.window); if (pc != null && (min == null || pc < min)) min = pc; }
                     // The countdown is the first window's: Claude's 5 hours, otherwise the tightest window.
@@ -160,6 +178,7 @@ public final class FeatureRenderer {
                     String extras = TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault());
                     if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }
                 if (shown == 0) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");
+                Dashboard.saveTokenRows(context, rowsShown);
                 break; }
             case "calendar": {
                 // The next few resets of every connected account, soonest first; the page has the month.

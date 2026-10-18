@@ -33,9 +33,14 @@ public final class MobileApi {
      */
     public JSONObject get(String path) throws Exception {
         checkedPath(path);
-        try { return request("GET",path,null,auth.accessToken()); }
+        long started=android.os.SystemClock.elapsedRealtime();String token=auth.accessToken();long signed=android.os.SystemClock.elapsedRealtime();
+        try { JSONObject result=request("GET",path,null,token);timing(path,started,signed);return result; }
         catch (ApiError error) { if (!retryWithFreshToken(error)) throw error; }
         return request("GET",path,null,auth.accessToken(true));
+    }
+    /** Route and milliseconds only (sign-in vs the read itself); never the token, query or data. */
+    private static void timing(String path,long started,long signed){
+        long now=android.os.SystemClock.elapsedRealtime();android.util.Log.i("GodApi",path.split("\\?",2)[0]+" token="+(signed-started)+"ms http="+(now-signed)+"ms");
     }
     static boolean retryWithFreshToken(ApiError error){return error.status==401;}
     /** One avatar exchange: 200 with bytes (GET) or a new ETag (PUT), 304 unchanged, 404 not set. */
@@ -85,6 +90,9 @@ public final class MobileApi {
         c.setRequestProperty("Authorization", "Bearer " + accessToken);
         c.setRequestProperty("Accept", "application/json"); c.setRequestProperty("Cache-Control", "no-store");
         c.setRequestProperty("X-Request-ID",UUID.randomUUID().toString()); c.setUseCaches(false);
+        // A fully read response leaves the connection in the pool, so the next read skips the TCP and TLS handshake
+        // (most of a read's time from the phone); anything that did not finish cleanly is disconnected instead.
+        boolean reusable=false;
         try {
             if(body!=null){byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);if(bytes.length>16384)throw new IOException("提交内容过大");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json; charset=utf-8");c.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=c.getOutputStream()){out.write(bytes);}}
             int status = c.getResponseCode();
@@ -99,7 +107,7 @@ public final class MobileApi {
             }
             if(status!=200){String code=result==null?"http_error":result.optString("code","http_error");if(!code.matches("[a-z0-9_]{1,80}"))code="http_error";
                 throw new ApiError(status,code,switch(status){case 401->"会话已失效，请重新登录";case 403->"当前账号没有此功能的权限";case 404->"此移动接口尚未启用";case 409->"数据已变化，请刷新后重试";case 429->"请求较多，请稍后刷新";default->status>=500?"服务暂不可用，请稍后重试":"服务器未返回预期结果";});}
-            if(result==null)throw new IOException("接口返回格式不匹配");return result;
-        } finally { c.disconnect(); }
+            if(result==null)throw new IOException("接口返回格式不匹配");reusable=true;return result;
+        } finally { if(!reusable)c.disconnect(); }
     }
 }

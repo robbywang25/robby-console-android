@@ -443,6 +443,8 @@ public final class AuthSession {
         connection.setUseCaches(false);
         connection.setRequestProperty("Accept", "application/json");
         connection.setRequestProperty("Cache-Control", "no-store");
+        // A fully read reply leaves the connection pooled, so discovery and the token request share one TLS handshake.
+        boolean reusable = false;
         try {
             if (form != null) {
                 byte[] bytes = form(form).getBytes(StandardCharsets.UTF_8);
@@ -483,9 +485,9 @@ public final class AuthSession {
                     throw new DeviceOAuthFailure(code);
                 }
                 if (deviceErrors) OAuthGuards.require(status == 200 && !body.has("error"));
-                return body;
+                reusable = true; return body;
             }
-        } finally { connection.disconnect(); }
+        } finally { if (!reusable) connection.disconnect(); }
     }
     private static String protocolError(HttpsURLConnection connection) {
         try {

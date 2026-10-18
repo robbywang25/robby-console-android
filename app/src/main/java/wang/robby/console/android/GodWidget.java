@@ -71,7 +71,8 @@ public final class GodWidget extends AppWidgetProvider {
         long now = System.currentTimeMillis(); Status s = current(c, now);
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.god_widget);
         Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        v.setOnClickPendingIntent(R.id.widget_root, PendingIntent.getActivity(c, 11, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
+        PendingIntent tap = PendingIntent.getActivity(c, 11, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        v.setOnClickPendingIntent(R.id.widget_frame, tap); v.setOnClickPendingIntent(R.id.widget_root, tap);
         v.setTextViewText(R.id.widget_status, s.line);
         if (s.deadline > now) {
             v.setViewVisibility(R.id.widget_countdown, View.VISIBLE);

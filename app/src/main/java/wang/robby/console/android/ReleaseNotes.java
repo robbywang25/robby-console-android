@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.19.0", "2026-10-18", "拖拽排序，日历直接看重置",
+            "编辑看板改成按住右侧的 ≡ 拖动排序。",
+            "总览的 Token 卡片先列出账号，额度随后填上，读取也更快。",
+            "重置日历的每个格子里直接显示当天的重置项。",
+            "「常用」按最近打开和打开次数自动排序。",
+            "小组件更紧凑；长按 God 图标可以直接打开 28 天挑战等页面。"),
         new Entry("0.18.0", "2026-10-18", "God 小组件与快捷设置",
             "新增 God 小组件，可放在桌面；Pixel 也可放在锁屏上。",
             "小组件只显示 God 图标和 Tibo 的重置预告倒计时，点按打开 App。",

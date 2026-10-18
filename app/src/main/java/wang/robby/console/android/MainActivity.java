@@ -21,6 +21,8 @@ import wang.robby.console.android.auth.NativePasskeyFlow;
 public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host {
     private int INK, MUTED, ACCENT, BG; private ConsoleTheme theme;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
+    /** 看板 reads run side by side (overview, Token 额度, …) instead of queueing behind one another. */
+    private final ExecutorService boardReads=Executors.newFixedThreadPool(3);
     private AuthSession auth; private AuthCoordinator coordinator; private MobileApi api; private LedgerActions ledger;
     private String ledgerCursor=null; private final Deque<String> ledgerPages=new ArrayDeque<>();
     private FrameLayout root,leading; private LinearLayout content,trailing; private GlassPane nav; private TextView heading,session;
@@ -79,15 +81,26 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // spurious "登录未完成或已过期" error. Fresh callbacks always arrive as a new launch or onNewIntent.
         if(state==null&&!launchedFromHistory(getIntent()))handle(getIntent()); else getIntent().setData(null);
         openRequested(getIntent());
-        UpdateReceiver.listener=updateListener;
+        UpdateReceiver.listener=updateListener;publishShortcuts();
         if(Build.VERSION.SDK_INT>=33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::goBack);
     }
     @Override protected void onSaveInstanceState(Bundle state) {super.onSaveInstanceState(state);state.putString("group",group);state.putString("feature",selectedId);state.putString("project",project);saveViewport();state.putInt("scroll",ledgerCursor==null?navigation.offset(routeKey()):0);}
     @Override protected void onNewIntent(Intent intent) {super.onNewIntent(intent);setIntent(intent);if(!launchedFromHistory(intent))handle(intent);else intent.setData(null);openRequested(intent);}
-    /** The Tibo reminder's notification and alarm page open 28 天挑战; only that fixed page can be requested. */
+    /** The reminder, the alarm page and launcher shortcuts open one page of the fixed catalog; nothing else can be requested. */
     private void openRequested(Intent intent){
-        if(intent==null||!"tibo".equals(intent.getStringExtra(TiboWatch.EXTRA_OPEN)))return;intent.removeExtra(TiboWatch.EXTRA_OPEN);
-        if(launchedFromHistory(intent)||!loggedIn())return;FeatureCatalog.Feature f=find("tibo");if(f==null)return;if(!group.equals("功能")){saveViewport();group="功能";}open(f);
+        String id=intent==null?null:intent.getStringExtra(TiboWatch.EXTRA_OPEN);if(id==null)return;intent.removeExtra(TiboWatch.EXTRA_OPEN);
+        FeatureCatalog.Feature f=find(id);if(f==null||"overview".equals(id)||launchedFromHistory(intent)||!loggedIn())return;
+        String tab=FeatureCatalog.SECTIONS.contains(f.group)?"功能":"设置";if(!group.equals(tab)){saveViewport();group=tab;}open(f);
+    }
+    /** Long-pressing the God icon offers these pages; they can also be dragged out as icons of their own. */
+    private void publishShortcuts(){
+        if(PreviewMode.isBuild())return;
+        try{android.content.pm.ShortcutManager m=getSystemService(android.content.pm.ShortcutManager.class);if(m==null)return;List<android.content.pm.ShortcutInfo> list=new ArrayList<>();int rank=0;
+            for(String[] s:new String[][]{{"tibo","28 天挑战","Tibo 28 天挑战","bell"},{"tokens","Token 额度","查看 Token 额度","gauge"},{"quota-calendar","重置日历","额度重置日历","calendar"}}){
+                Intent go=new Intent(Intent.ACTION_VIEW,null,this,MainActivity.class).putExtra(TiboWatch.EXTRA_OPEN,s[0]);
+                list.add(new android.content.pm.ShortcutInfo.Builder(this,s[0]).setShortLabel(s[1]).setLongLabel(s[2]).setIcon(android.graphics.drawable.Icon.createWithAdaptiveBitmap(theme.shortcutBitmap(s[3]))).setIntent(go).setRank(rank++).build());}
+            m.setDynamicShortcuts(list);}
+        catch(RuntimeException ignored){}
     }
     static boolean launchedFromHistory(Intent intent){return intent!=null&&(intent.getFlags()&Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY)!=0;}
     private void handle(Intent intent) {
@@ -266,7 +279,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新看板",()->loadBoard(true,page::finishRefresh));
             board=new LinearLayout(this);board.setOrientation(LinearLayout.VERTICAL);content.addView(board,new LinearLayout.LayoutParams(-1,-2));loadBoard(false);
         }
-        section("常用");quick(List.of("travel-ledger","clipboard","openai","domains"));
+        section("常用");quick(FeatureUsage.top(FeatureUsage.parse(prefs().getString("featureUsage",null)),System.currentTimeMillis(),4,id->find(id)!=null&&!"overview".equals(id)));
         restoreViewport();
     }
     private List<String> boardCards(){return Dashboard.parse(prefs().getString("dashboard",null));}
@@ -296,11 +309,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         final int epoch=++generation;final int[] reading={0};
         final Runnable finished=()->{if(--reading[0]==0&&done!=null)done.run();};
         for(String path:Dashboard.paths(ids)){final List<LinearLayout> targets=shells.get(path);JSONObject cached=snapshots.get(path);
-            if(cached!=null)fillBoard(targets,cached);else for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"正在读取…");
+            if(cached!=null)fillBoard(targets,cached);else for(LinearLayout shell:targets)FeatureRenderer.widgetLoading(this,shell);
             if(cached!=null&&!refresh)continue;
             reading[0]++;
-            worker.execute(()->{if(epoch!=generation){runOnUiThread(finished);return;}
-                try{JSONObject data=read(path);runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);GodWidget.observe(this,path,data);fillBoard(targets,data);restoreViewport();}finally{finished.run();}});}
+            boardReads.execute(()->{if(epoch!=generation){runOnUiThread(finished);return;}long started=SystemClock.elapsedRealtime();
+                try{JSONObject data=read(path);android.util.Log.i("GodBoard",path+" ms="+(SystemClock.elapsedRealtime()-started));runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);GodWidget.observe(this,path,data);fillBoard(targets,data);restoreViewport();}finally{finished.run();}});}
                 catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;
                     // A refresh may have invalidated the stored session: show sign-in instead of a board that can only fail.
                     if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
@@ -321,7 +334,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         heading.setText("编辑看板");
         leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));
         List<String> ids=boardCards();
-        TextView hint=text("打开的卡片会按顺序显示在总览，用箭头调整顺序。",13,MUTED,false);hint.setPadding(dp(6),dp(4),dp(6),dp(4));content.addView(hint);
+        TextView hint=text("打开的卡片会按顺序显示在总览，按住右侧的 ≡ 拖动调整顺序。",13,MUTED,false);hint.setPadding(dp(6),dp(4),dp(6),dp(4));content.addView(hint);
         section("已添加");LinearLayout on=groupCard();
         for(int i=0;i<ids.size();i++){Dashboard.Card card=Dashboard.find(ids.get(i));if(card!=null)boardRow(on,card,true,i>0,i<ids.size()-1);}
         if(ids.isEmpty()){TextView t=text("还没有添加卡片",14,MUTED,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(14),dp(12),dp(14));on.addView(t);}
@@ -386,16 +399,57 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         row.addView(theme.tile(card.symbol,36),new LinearLayout.LayoutParams(dp(36),dp(36)));
         LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(14),0,dp(6),0);labels.addView(text(card.title,15,INK,false));
         TextView sub=text(card.subtitle+(card.wide?" · 整行":" · 半宽"),12,MUTED,false);sub.setPadding(0,dp(2),0,0);labels.addView(sub);row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
-        if(added){row.addView(arrow(card,-1,canUp));row.addView(arrow(card,1,canDown));}
         Switch toggle=new Switch(this);toggle.setChecked(added);toggle.setContentDescription((added?"移除":"添加")+card.title);toggle.setMinimumHeight(dp(48));
         toggle.setOnCheckedChangeListener((b,checked)->{saveBoard(Dashboard.toggle(boardCards(),card.id));b.post(this::build);});
-        row.addView(toggle);group.addView(row);
+        row.addView(toggle);
+        if(added){row.setTag(card.id);row.setPadding(dp(12),dp(8),dp(2),dp(8));
+            FrameLayout handle=new FrameLayout(this);ImageView grip=theme.icon("drag",INK,20);grip.setAlpha(.5f);handle.addView(grip,new FrameLayout.LayoutParams(dp(20),dp(20),Gravity.CENTER));
+            handle.setContentDescription("拖动调整 "+card.title+" 的位置");row.addView(handle,new LinearLayout.LayoutParams(dp(44),dp(48)));
+            dragToReorder(group,row,handle);movable(row,card,canUp,canDown);}
+        group.addView(row);
     }
-    private View arrow(Dashboard.Card card,int delta,boolean enabled){
-        FrameLayout f=new FrameLayout(this);ImageView icon=theme.icon("chevron",INK,14);icon.setRotation(delta<0?-90:90);f.addView(icon,new FrameLayout.LayoutParams(dp(14),dp(14),Gravity.CENTER));
-        f.setContentDescription((delta<0?"上移":"下移")+card.title);f.setEnabled(enabled);f.setAlpha(enabled?1f:.25f);
-        if(enabled){f.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,20),20));f.setFocusable(true);f.setClickable(true);f.setOnClickListener(v->{saveBoard(Dashboard.move(boardCards(),card.id,delta));build();});}
-        f.setLayoutParams(new LinearLayout.LayoutParams(dp(40),dp(48)));return f;
+    /** Screen readers move a card with 上移 / 下移 instead of dragging. */
+    private void movable(View row,Dashboard.Card card,boolean canUp,boolean canDown){
+        row.setAccessibilityDelegate(new View.AccessibilityDelegate(){
+            @Override public void onInitializeAccessibilityNodeInfo(View host,android.view.accessibility.AccessibilityNodeInfo info){super.onInitializeAccessibilityNodeInfo(host,info);
+                if(canUp)info.addAction(new android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_up,"上移"));
+                if(canDown)info.addAction(new android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction(R.id.action_move_down,"下移"));}
+            @Override public boolean performAccessibilityAction(View host,int action,Bundle args){
+                if(action==R.id.action_move_up||action==R.id.action_move_down){saveBoard(Dashboard.move(boardCards(),card.id,action==R.id.action_move_up?-1:1));build();return true;}
+                return super.performAccessibilityAction(host,action,args);}});
+    }
+    /**
+     * Press the ≡ handle and drag: the row follows the finger above the others, the rows it passes slide out of the way
+     * with a tick, and releasing saves the new order. The page does not scroll while a row is held.
+     */
+    // The handle only drags; it is not a button. Screen readers move cards with the row's 上移 / 下移 actions instead.
+    @android.annotation.SuppressLint("ClickableViewAccessibility")
+    private void dragToReorder(LinearLayout group,LinearLayout row,View handle){
+        final float[] start=new float[1];final int[] from={-1},to={-1};
+        handle.setOnTouchListener((v,e)->{
+            List<View> rows=new ArrayList<>();for(int i=0;i<group.getChildCount();i++){View c=group.getChildAt(i);if(c.getTag() instanceof String)rows.add(c);}
+            int pitch=rows.size()>1?rows.get(1).getTop()-rows.get(0).getTop():row.getHeight();
+            switch(e.getActionMasked()){
+                case MotionEvent.ACTION_DOWN:
+                    start[0]=e.getRawY();from[0]=to[0]=rows.indexOf(row);v.getParent().requestDisallowInterceptTouchEvent(true);
+                    row.setBackground(theme.card(20));row.setElevation(dp(10));row.setTranslationZ(dp(4));v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                    for(int i=0;i<group.getChildCount();i++)if(!(group.getChildAt(i).getTag() instanceof String))group.getChildAt(i).setAlpha(0f);
+                    return true;
+                case MotionEvent.ACTION_MOVE:{
+                    if(from[0]<0)return true;float dy=e.getRawY()-start[0];row.setTranslationY(dy);
+                    int target=Math.max(0,Math.min(rows.size()-1,from[0]+Math.round(dy/Math.max(1,pitch))));
+                    if(target!=to[0]){to[0]=target;v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                        for(int j=0;j<rows.size();j++){View other=rows.get(j);if(other==row)continue;float shift=j>from[0]&&j<=target?-pitch:j<from[0]&&j>=target?pitch:0;
+                            if(theme.effects)other.animate().translationY(shift).setDuration(150).start();else other.setTranslationY(shift);}}
+                    return true;}
+                case MotionEvent.ACTION_UP: case MotionEvent.ACTION_CANCEL:{
+                    if(from[0]<0)return true;List<String> order=new ArrayList<>();for(View r:rows)if(r!=row)order.add((String)r.getTag());
+                    int at=Math.max(0,Math.min(order.size(),to[0]));order.add(at,(String)row.getTag());from[0]=-1;
+                    for(View r:rows){r.animate().cancel();r.setTranslationY(0);}row.setElevation(0);row.setTranslationZ(0);
+                    if(to[0]!=rows.indexOf(row))saveBoard(order);v.post(this::build);return true;}
+                default:return false;
+            }
+        });
     }
     /** One-tap shortcuts in a single glass card, like WeChat's Discover entries: icon first, short name below. */
     private void quick(List<String> ids){
@@ -460,7 +514,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(action!=null){ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);row.addView(chevron);}
         parent.addView(row);return row;
     }
-    private void open(FeatureCatalog.Feature f){++generation;selectedId=f.id;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
+    private void open(FeatureCatalog.Feature f){recordUse(f.id);++generation;selectedId=f.id;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
+    /** Counts an open for 常用; only the feature id and time are kept, on this phone. */
+    private void recordUse(String id){if("overview".equals(id))return;prefs().edit().putString("featureUsage",FeatureUsage.serialize(FeatureUsage.record(FeatureUsage.parse(prefs().getString("featureUsage",null)),id,System.currentTimeMillis()))).apply();}
     @Override public void openFeature(String id){FeatureCatalog.Feature f=find(id);if(f!=null&&loggedIn())open(f);}
     private void showFeature(FeatureCatalog.Feature f,boolean refresh){showFeature(f,refresh,null);}
     /** {@code done} runs on the main thread when this call's read has finished (at once when it starts none). */

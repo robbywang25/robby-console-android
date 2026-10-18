@@ -42,7 +42,20 @@ final class Dashboard {
         return out;
     }
     static String toggleHidden(String saved, String id) { Set<String> ids = hiddenTokens(saved); if (!ids.remove(id) && id.matches("[a-z0-9-]{1,32}")) ids.add(id); return String.join(",", ids); }
-    static final String HIDDEN_TOKENS = "tokenBoardHidden", CLOCKS = "boardClocks";
+    static final String HIDDEN_TOKENS = "tokenBoardHidden", CLOCKS = "boardClocks", TOKEN_ROWS = "tokenBoardRows";
+    /** The Token card's last rows as id and product label (ChatGPT Codex, Claude…): layout only, never figures or emails. */
+    static List<String[]> tokenRows(String saved) {
+        List<String[]> out = new ArrayList<>(); if (saved == null) return out;
+        for (String part : saved.split("\n")) { int bar = part.indexOf('|'); if (bar <= 0 || out.size() >= 8) continue;
+            String id = part.substring(0, bar), label = label(part.substring(bar + 1), 32); if (id.matches("[a-z0-9-]{1,32}") && label != null) out.add(new String[]{id, label}); }
+        return out;
+    }
+    static String serializeTokenRows(List<String[]> rows) {
+        List<String> parts = new ArrayList<>(); for (String[] r : rows) { String label = label(r[1], 32); if (r[0].matches("[a-z0-9-]{1,32}") && label != null && parts.size() < 8) parts.add(r[0] + "|" + label); }
+        return String.join("\n", parts);
+    }
+    static List<String[]> tokenRows(android.content.Context c) { return tokenRows(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(TOKEN_ROWS, null)); }
+    static void saveTokenRows(android.content.Context c, List<String[]> rows) { c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).edit().putString(TOKEN_ROWS, serializeTokenRows(rows)).apply(); }
     /** 时区时钟: a name and an IANA zone each; Tibo's Pacific time and Beijing time until the person changes them. */
     static final class Clock { final String name, zone; Clock(String name, String zone) { this.name = name; this.zone = zone; } }
     static final List<Clock> DEFAULT_CLOCKS = List.of(new Clock("Tibo", "America/Los_Angeles"), new Clock("北京时间", "Asia/Shanghai"));
@@ -73,9 +86,11 @@ final class Dashboard {
         return String.join("\n", parts);
     }
     /** A display name of 1–12 characters without line breaks or the separator; null when nothing is left. */
-    static String clockName(String raw) {
+    static String clockName(String raw) { return label(raw, 12); }
+    /** Up to {@code max} characters without line breaks or the separator; null when nothing is left. */
+    static String label(String raw, int max) {
         if (raw == null) return null; String s = raw.replaceAll("[\\u0000-\\u001f\\u007f|]", " ").trim();
-        int[] points = s.codePoints().limit(12).toArray(); s = new String(points, 0, points.length).trim(); return s.isEmpty() ? null : s;
+        int[] points = s.codePoints().limit(max).toArray(); s = new String(points, 0, points.length).trim(); return s.isEmpty() ? null : s;
     }
     static boolean validZone(String zone) { try { return zone != null && zone.matches("[A-Za-z_]+(/[A-Za-z_+-]+){0,2}") && java.time.ZoneId.of(zone) != null; } catch (RuntimeException e) { return false; } }
     static Set<String> hiddenTokens(android.content.Context c) { return hiddenTokens(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(HIDDEN_TOKENS, null)); }

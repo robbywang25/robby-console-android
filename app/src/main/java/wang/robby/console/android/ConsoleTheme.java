@@ -140,6 +140,12 @@ public final class ConsoleTheme {
         button.setOnClickListener(v->{boolean show=panel.getVisibility()!=View.VISIBLE;panel.setVisibility(show?View.VISIBLE:View.GONE);button.setStateDescription(show?"已展开":"已收起");});
         return box;
     }
+    /** A symbol on a tinted adaptive-icon square, for launcher shortcuts. */
+    public android.graphics.Bitmap shortcutBitmap(String name){
+        int px=dp(108);android.graphics.Bitmap b=android.graphics.Bitmap.createBitmap(px,px,android.graphics.Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);
+        c.drawColor((hue(name)&0x00ffffff)|0x2e000000);c.drawColor(dark?0xff1c1f26:0xfff6f8fc,android.graphics.PorterDuff.Mode.DST_OVER);
+        Symbol s=new Symbol(name,0xff0f1115);int g=dp(44);s.setBounds((px-g)/2,(px-g)/2,(px+g)/2,(px+g)/2);s.draw(c);return b;
+    }
     public View dot(int color,float size){View v=new View(context);GradientDrawable d=new GradientDrawable();d.setShape(GradientDrawable.OVAL);d.setColor(color);v.setBackground(d);v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     /** Liquid "flex": pressed controls sink slightly and spring back. Skipped when motion is reduced. */
     public void press(View v){
@@ -221,6 +227,7 @@ public final class ConsoleTheme {
                 case "info":c.drawCircle(12,12,9,p);line(c,12,11,12,16.5f);line(c,12,7.6f,12,7.7f);break;
                 case "gauge":c.drawArc(3,5,21,23,180,180,false,p);line(c,12,14,16.5f,8.5f);c.drawCircle(12,14,1.2f,p);break;
                 case "download":line(c,12,4,12,15);line(c,7,10,12,15,17,10);line(c,5,20,19,20);break;
+                case "drag":line(c,5,8,19,8);line(c,5,12,19,12);line(c,5,16,19,16);break;
                 case "calendar":box(c,4,5.5f,16,14.5f);line(c,4,10,20,10);line(c,8.5f,3.5f,8.5f,7.5f);line(c,15.5f,3.5f,15.5f,7.5f);line(c,8,14,8.1f,14);line(c,12,14,12.1f,14);line(c,16,14,16.1f,14);line(c,8,17,8.1f,17);break;
                 case "bell":line(c,6,16.5f,6,11);c.drawArc(6,5,18,17,180,180,false,p);line(c,18,11,18,16.5f);line(c,4.5f,16.5f,19.5f,16.5f);line(c,10,19.5f,14,19.5f);line(c,12,3.5f,12,5);break;
                 default: c.drawCircle(12,12,8,p);

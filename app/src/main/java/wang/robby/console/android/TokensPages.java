@@ -46,7 +46,7 @@ final class TokensPages {
         TextView zone = t.text(TimeZone.getTimeZone(m.zone).getDisplayName(TimeZone.getTimeZone(m.zone).inDaylightTime(new Date()), TimeZone.LONG, Locale.SIMPLIFIED_CHINESE), 12, false); zone.setTextColor(t.faint); top.addView(zone); head.addView(top);
         TextView summary = t.text(QuotaCalendar.monthSummary(m, month), 13, false); summary.setPadding(0, t.dp(4), 0, 0); head.addView(summary);
 
-        LinearLayout c = t.card(box); c.setPadding(t.dp(10), t.dp(12), t.dp(10), t.dp(12));
+        LinearLayout c = t.card(box); c.setPadding(t.dp(4), t.dp(12), t.dp(4), t.dp(12));
         LinearLayout bar = new LinearLayout(ctx); bar.setGravity(Gravity.CENTER_VERTICAL); bar.setPadding(t.dp(6), 0, 0, t.dp(8));
         TextView label = t.text(month.getYear() + " 年 " + month.getMonthValue() + " 月", 16, true); bar.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
         bar.addView(link(t, "‹", "上一个月", () -> { month = month.minusMonths(1); day = clamp(day, month); drawCalendar(ctx, t, box, m); }));
@@ -61,23 +61,21 @@ final class TokensPages {
             LinearLayout row = new LinearLayout(ctx);
             for (int i = 0; i < 7; i++) {
                 LocalDate d = grid.get(week * 7 + i); List<QuotaCalendar.Event> events = m.on(d);
-                boolean inMonth = YearMonth.from(d).equals(month), today = d.equals(m.today), selected = d.equals(day), current = false;
-                for (QuotaCalendar.Event e : events) current |= QuotaCalendar.SCHEDULED.equals(e.status);
-                LinearLayout cell = new LinearLayout(ctx); cell.setOrientation(LinearLayout.VERTICAL); cell.setGravity(Gravity.CENTER_HORIZONTAL); cell.setMinimumHeight(t.dp(50)); cell.setPadding(0, t.dp(5), 0, t.dp(4));
-                GradientDrawable bg = t.shape(selected ? t.soft : Color.TRANSPARENT, 12); if (selected) bg.setStroke(t.dp(1.2f), t.accent);
-                cell.setBackground(t.ripple(bg, 12)); cell.setFocusable(true); cell.setClickable(true);
-                TextView number = t.text(String.valueOf(d.getDayOfMonth()), 14, today || selected); number.setGravity(Gravity.CENTER);
-                number.setTextColor(today ? t.accent : !inMonth ? t.faint : t.ink); if (!inMonth) number.setAlpha(.55f); cell.addView(number);
-                LinearLayout dots = new LinearLayout(ctx); dots.setGravity(Gravity.CENTER); dots.setPadding(0, t.dp(4), 0, 0);
-                for (int k = 0; k < Math.min(3, events.size()); k++) { View dot = t.dot(QuotaCalendar.SCHEDULED.equals(events.get(k).status) ? tint(t, events.get(k).product) : t.faint, 5); ((LinearLayout.LayoutParams) dot.getLayoutParams()).setMargins(t.dp(1), 0, t.dp(1), 0); dots.addView(dot); }
-                if (events.size() > 3) { TextView more = t.text("+" + (events.size() - 3), 9, false); more.setTextColor(t.faint); dots.addView(more); }
-                // A day with only elapsed or unverified resets is dimmed, as the web's is-historical cells.
-                cell.addView(dots); if (!events.isEmpty() && !current) cell.setAlpha(.75f);
+                boolean inMonth = YearMonth.from(d).equals(month), today = d.equals(m.today), selected = d.equals(day);
+                // As the web's phone layout: the day number, then every reset of that day as a small block in the cell.
+                LinearLayout cell = new LinearLayout(ctx); cell.setOrientation(LinearLayout.VERTICAL); cell.setMinimumHeight(t.dp(64)); cell.setPadding(t.dp(1), t.dp(3), t.dp(1), t.dp(4));
+                GradientDrawable bg = t.shape(selected ? t.soft : Color.TRANSPARENT, 0); bg.setStroke(Math.max(1, t.dp(.5f)), selected ? t.accent : t.line);
+                cell.setBackground(t.ripple(bg, 0)); cell.setFocusable(true); cell.setClickable(true);
+                TextView number = t.text(String.valueOf(d.getDayOfMonth()), 12, today || selected); number.setGravity(Gravity.CENTER); number.setIncludeFontPadding(false);
+                number.setTextColor(today ? Color.WHITE : !inMonth ? t.faint : t.ink); if (today) number.setBackground(t.shape(t.accent, 99)); if (!inMonth) number.setAlpha(.55f);
+                LinearLayout.LayoutParams np = new LinearLayout.LayoutParams(t.dp(22), t.dp(22)); np.leftMargin = t.dp(2); np.bottomMargin = t.dp(2); cell.addView(number, np);
+                for (QuotaCalendar.Event e : events) cell.addView(chip(ctx, t, e, m.zone), chipParams(t));
+                if (!inMonth && !events.isEmpty()) cell.setAlpha(.6f);
                 StringBuilder say = new StringBuilder(d.getMonthValue() + "月" + d.getDayOfMonth() + "日" + (today ? "，今天" : "") + "，" + events.size() + " 项额度重置");
-                for (QuotaCalendar.Event e : events) say.append("，").append(time(e.at, m.zone)).append(" ").append(e.platform).append(" ").append(e.shortLabel());
+                for (QuotaCalendar.Event e : events) say.append("，").append(time(e.at, m.zone)).append(" ").append(e.platform).append(" ").append(e.account).append(" ").append(e.shortLabel()).append(QuotaCalendar.statusLabel(e) == null ? "" : " " + QuotaCalendar.statusLabel(e));
                 cell.setContentDescription(say); cell.setSelected(selected);
                 cell.setOnClickListener(v -> { day = d; month = YearMonth.from(d); drawCalendar(ctx, t, box, m); });
-                row.addView(cell, new LinearLayout.LayoutParams(0, -2, 1));
+                row.addView(cell, new LinearLayout.LayoutParams(0, -1, 1));
             }
             c.addView(row);
         }
@@ -105,6 +103,27 @@ final class TokensPages {
         if (missing != null) { TextView foot = t.text(missing, 12, false); foot.setTextColor(t.faint); foot.setPadding(t.dp(6), t.dp(2), t.dp(6), 0); box.addView(foot); }
         box.addView(t.info(List.of("只展示平台已提供的重置日期，不按周期推算。", "时间按本机时区显示；灰色圆点表示已过期或读数待核实。")));
     }
+    /** One reset inside a day cell: provider-coloured left edge on a light wash; time, platform, account and window. */
+    private static View chip(Context ctx, ConsoleTheme t, QuotaCalendar.Event e, ZoneId zone) {
+        boolean live = QuotaCalendar.SCHEDULED.equals(e.status); int tint = live ? tint(t, e.product) : t.faint;
+        LinearLayout chip = new LinearLayout(ctx); chip.setOrientation(LinearLayout.HORIZONTAL);
+        chip.setBackground(t.shape((tint & 0x00ffffff) | (t.dark ? 0x33000000 : 0x1f000000), 3));
+        View edge = new View(ctx); edge.setBackgroundColor(tint); chip.addView(edge, new LinearLayout.LayoutParams(t.dp(2), -1));
+        LinearLayout lines = new LinearLayout(ctx); lines.setOrientation(LinearLayout.VERTICAL); lines.setPadding(t.dp(2), t.dp(2), t.dp(1), t.dp(2));
+        lines.addView(tiny(t, time(e.at, zone), live ? t.ink : t.muted, true, 1));
+        lines.addView(tiny(t, e.platform, live ? t.ink : t.muted, true, 2));
+        lines.addView(tiny(t, QuotaCalendar.shortAccount(e.account), t.muted, false, 2));
+        lines.addView(tiny(t, e.shortLabel(), t.muted, false, 2));
+        String state = QuotaCalendar.statusLabel(e); if (state != null) lines.addView(tiny(t, state, t.faint, false, 1));
+        chip.addView(lines, new LinearLayout.LayoutParams(0, -2, 1));
+        chip.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+        return chip;
+    }
+    private static TextView tiny(ConsoleTheme t, String value, int color, boolean bold, int lines) {
+        TextView v = t.text(value, 9, bold); v.setTextColor(color); v.setMaxLines(lines); v.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        v.setIncludeFontPadding(false); v.setLineSpacing(0, 1f); v.setBreakStrategy(android.graphics.text.LineBreaker.BREAK_STRATEGY_SIMPLE); return v;
+    }
+    private static LinearLayout.LayoutParams chipParams(ConsoleTheme t) { LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2); p.topMargin = t.dp(3); return p; }
     private static LocalDate clamp(LocalDate d, YearMonth m) { return m.atDay(Math.min(d.getDayOfMonth(), m.lengthOfMonth())); }
     private static String time(long at, ZoneId zone) { return DateTimeFormatter.ofPattern("HH:mm").format(java.time.Instant.ofEpochMilli(at).atZone(zone)); }
     /** The same provider colours as the Token 额度 tiles. */

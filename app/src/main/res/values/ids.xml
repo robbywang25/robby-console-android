@@ -2,4 +2,7 @@
 <resources>
     <!-- Accessibility action on pages with pull-to-refresh (PullScrollView). -->
     <item name="action_pull_refresh" type="id" />
+    <!-- 编辑看板: moving a card without dragging, for screen readers. -->
+    <item name="action_move_up" type="id" />
+    <item name="action_move_down" type="id" />
 </resources>

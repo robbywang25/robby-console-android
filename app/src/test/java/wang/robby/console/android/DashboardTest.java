@@ -67,4 +67,10 @@ public final class DashboardTest {
     @Test public void clockCardNeedsNoRead() {
         assertEquals(List.of("tokens/quotas"), Dashboard.paths(List.of("clocks", "tokens", "calendar")));
     }
+    @Test public void tokenRowsKeepIdsAndProductLabelsOnly() {
+        String saved = Dashboard.serializeTokenRows(List.of(new String[]{"codex-1", "ChatGPT Codex"}, new String[]{"today-cn", "TodayAI 中国版"}, new String[]{"Bad Id", "x"}, new String[]{"grok", "a|b\nc"}));
+        List<String[]> back = Dashboard.tokenRows(saved);
+        assertEquals(3, back.size()); assertEquals("ChatGPT Codex", back.get(0)[1]); assertEquals("TodayAI 中国版", back.get(1)[1]); assertEquals("a b c", back.get(2)[1]);
+        assertTrue(Dashboard.tokenRows((String) null).isEmpty());
+    }
 }
