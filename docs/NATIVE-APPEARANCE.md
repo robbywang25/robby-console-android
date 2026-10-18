@@ -299,3 +299,11 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
 - **默认隐藏**：`FeatureCatalog.DEFAULT_HIDDEN_REASONS` 包含 `umami`（接口暂不可用）和 `posthog`（数据源未配置）。依据是 2026-10-19 在 Find 上用正式签名的只读验收（`LiveReadAcceptance`，新增 `source_states` 参数，只回报状态枚举和布尔值）：24 个功能接口中，`umami/overview` 返回 503；`posthog/overview` 能读，但 3 个数据源都是 `notConfigured`。其余功能都能读，部分功能里有个别子项没配置或失败（Token 额度有 2 个账号未接入，访问洞察报告有 4 份 failed，公众号发布有 1 个来源不可用），这几个功能本身可用，所以不隐藏。验收只发 GET，`business_writes_performed=false`，跑完已卸载测试包。
 
 验证：`check.sh` 通过（132 项 JVM 测试，含新增 `FeatureVisibilityTest` 6 项；Debug/Release lint 0 错误）。预览版装到 Find（安装文件 SHA256 与构建一致）后截图检查了这些画面：功能页「洞察」里没有访问统计和产品分析；「我 → 管理」显示「已隐藏的功能 · 2 个功能」；外观卡片；滑块拖到着色端后卡片变实，拖到清透端后卡片只剩淡白纱和高光边，总览、功能、我页和 Dock 都能看到后面的内容；关闭开关后卡片不透明、滑块变灰；长按 Visit Observer 弹出「打开 / 隐藏」；已隐藏页列出两项，带原因和「显示」按钮。根据产品拥有者的反馈「最透明的不够透明」，清透端已调低一次（浅色卡片约 18%，控件约 12%，Dock 约 15%）。未验证：深色模式、大字体、读屏操作滑块、真实数据下的正式包。
+
+## v0.21.1：App 内更新改走 API 资源地址（2026-10-19）
+
+- **问题**：0.21.0 发布后，Find 上的 App 内更新提示「网络连接失败」。在 Find 上用 curl 复现（同一网络）：`api.github.com` 200（0.9 秒），所以能检查到新版本；`github.com` 的 HTTPS 连接 25 秒超时（ping 正常）。`release-assets.githubusercontent.com` 和 `objects.githubusercontent.com` 都能连通。原来的下载地址是 `browser_download_url`（github.com，会跳转到资源主机），所以下载这一步失败了。
+- **修复**：`AppUpdate.assetUrl` 优先用资源的 API 地址 `api.github.com/repos/…/releases/assets/<id>`，请求时 `Accept: application/octet-stream`，接口直接 302 跳到资源主机。github.com 的下载链接只作为失败后的兜底。用户取消下载时不走兜底；超时虽然也是 `InterruptedIOException`，但按取消标记区分，照样会走兜底。校验、签名和 versionCode 检查不变。
+- **设备上的证据**：Find 上用 curl 走 API 资源地址下载 v0.21.0 的 SHA256SUMS 和 APK，各跳转 1 次到 release-assets，APK 503,237 字节、用时 1.3 秒，SHA256 与 Release 一致。
+
+验证：`check.sh` 通过（133 项 JVM 测试，新增资源地址与 Accept 头的用例；Debug/Release lint 0 错误）。已装的 0.20.0 / 0.21.0 仍用旧下载地址，在这个网络下没法用 App 内更新升到 0.21.1，这一次要换一种方式安装。

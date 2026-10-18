@@ -44,6 +44,20 @@ public final class AppUpdateTest {
         assertFalse(AppUpdate.allowed(new URL("https://user@github.com/a")));
         assertFalse(AppUpdate.allowed(new URL("https://github.com:8443/a")));
     }
+    @Test public void assetsComeThroughTheApiFirstAndGitHubComOnlyAsFallback() throws Exception {
+        String json = "[{\"tag_name\":\"v0.21.1\",\"draft\":false,\"name\":\"v0.21.1 · x\",\"body\":\"\",\"published_at\":\"2026-10-19T00:00:00Z\",\"assets\":["
+            + "{\"name\":\"robby-console-android-0.21.1.apk\",\"size\":500000,\"url\":\"https://api.github.com/repos/a/b/releases/assets/11\",\"browser_download_url\":\"https://github.com/a/b/releases/download/v0.21.1/robby-console-android-0.21.1.apk\"},"
+            + "{\"name\":\"SHA256SUMS-0.21.1.txt\",\"size\":99,\"url\":\"https://api.github.com/repos/a/b/releases/assets/12\",\"browser_download_url\":\"https://github.com/a/b/releases/download/v0.21.1/SHA256SUMS-0.21.1.txt\"}]}]";
+        AppUpdate.Release r = AppUpdate.parse(json).get(0);
+        assertEquals("https://api.github.com/repos/a/b/releases/assets/11", r.apkUrl);
+        assertEquals("https://api.github.com/repos/a/b/releases/assets/12", r.sumsUrl);
+        assertTrue(r.apkMirror.startsWith("https://github.com/") && r.sumsMirror.startsWith("https://github.com/"));
+        assertEquals("application/octet-stream", AppUpdate.accept(new URL(r.apkUrl)));
+        assertEquals("application/vnd.github+json", AppUpdate.accept(new URL(AppUpdate.RELEASES)));
+        assertNull(AppUpdate.accept(new URL("https://release-assets.githubusercontent.com/x")));
+        assertEquals("no API address: the download link is used", "https://github.com/x",
+            AppUpdate.assetUrl(new org.json.JSONObject("{\"url\":\"https://example.com/a\",\"browser_download_url\":\"https://github.com/x\"}")));
+    }
     @Test public void titleAndSummaryAreShortPlainText() {
         assertEquals("Liquid Glass 外观与更新记录", AppUpdate.theme("v0.4.0 · Liquid Glass 外观与更新记录", "0.4.0"));
         assertEquals("0.4.0", AppUpdate.theme(null, "0.4.0"));

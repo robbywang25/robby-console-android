@@ -32,9 +32,13 @@ final class AppUpdate {
     static final long MAX_JSON = 2_000_000, MAX_SUMS = 4_096, MAX_APK = 60_000_000;
 
     static final class Release {
-        final String version, title, summary, date, apkName, apkUrl, sumsUrl; final long size;
+        /** {@code apkUrl}/{@code sumsUrl} are tried first; the mirrors (github.com download links) only when those fail. */
+        final String version, title, summary, date, apkName, apkUrl, sumsUrl, apkMirror, sumsMirror; final long size;
         Release(String version, String title, String summary, String date, String apkName, String apkUrl, long size, String sumsUrl) {
-            this.version = version; this.title = title; this.summary = summary; this.date = date; this.apkName = apkName; this.apkUrl = apkUrl; this.size = size; this.sumsUrl = sumsUrl;
+            this(version, title, summary, date, apkName, apkUrl, size, sumsUrl, null, null);
+        }
+        Release(String version, String title, String summary, String date, String apkName, String apkUrl, long size, String sumsUrl, String apkMirror, String sumsMirror) {
+            this.version = version; this.title = title; this.summary = summary; this.date = date; this.apkName = apkName; this.apkUrl = apkUrl; this.size = size; this.sumsUrl = sumsUrl; this.apkMirror = apkMirror; this.sumsMirror = sumsMirror;
         }
     }
     interface Progress { void on(long done, long total); }
@@ -77,17 +81,28 @@ final class AppUpdate {
         for (int i = 0; i < list.length(); i++) {
             JSONObject r = list.optJSONObject(i); if (r == null || r.optBoolean("draft")) continue;
             String v = version(r.optString("tag_name")); if (v == null) continue;
-            String apkName = "robby-console-android-" + v + ".apk", sumsName = "SHA256SUMS-" + v + ".txt", apkUrl = null, sumsUrl = null; long size = -1;
+            String apkName = "robby-console-android-" + v + ".apk", sumsName = "SHA256SUMS-" + v + ".txt", apkUrl = null, sumsUrl = null, apkMirror = null, sumsMirror = null; long size = -1;
             JSONArray assets = r.optJSONArray("assets");
             for (int j = 0; assets != null && j < assets.length(); j++) { JSONObject a = assets.optJSONObject(j); if (a == null) continue;
-                if (apkName.equals(a.optString("name"))) { apkUrl = a.optString("browser_download_url"); size = a.optLong("size", -1); }
-                if (sumsName.equals(a.optString("name"))) sumsUrl = a.optString("browser_download_url"); }
+                if (apkName.equals(a.optString("name"))) { apkUrl = assetUrl(a); apkMirror = a.optString("browser_download_url", null); size = a.optLong("size", -1); }
+                if (sumsName.equals(a.optString("name"))) { sumsUrl = assetUrl(a); sumsMirror = a.optString("browser_download_url", null); } }
             if (apkUrl == null || sumsUrl == null || size <= 0 || size > MAX_APK) continue;
             String date = r.optString("published_at", ""); date = date.length() >= 10 ? date.substring(0, 10) : "";
-            out.add(new Release(v, theme(r.optString("name", null), v), summary(r.optString("body", "")), date, apkName, apkUrl, size, sumsUrl));
+            out.add(new Release(v, theme(r.optString("name", null), v), summary(r.optString("body", "")), date, apkName, apkUrl, size, sumsUrl, apkMirror, sumsMirror));
         }
         return out;
     }
+    /**
+     * Where an asset is fetched first: its API address, which answers with a redirect straight to the asset host.
+     * Some networks time out on github.com while api.github.com and the asset hosts work, so the github.com download
+     * link is only the fallback. Null when the asset has no usable address.
+     */
+    static String assetUrl(JSONObject asset) {
+        String api = asset.optString("url", ""); if (api.startsWith("https://api.github.com/repos/") && api.contains("/releases/assets/")) return api;
+        String web = asset.optString("browser_download_url", ""); return web.isEmpty() ? null : web;
+    }
+    /** API asset addresses return the file itself only when asked for octet-stream; everything else on the API is JSON. */
+    static String accept(URL u) { return !"api.github.com".equals(u.getHost()) ? null : u.getPath().contains("/releases/assets/") ? "application/octet-stream" : "application/vnd.github+json"; }
     /**
      * 关于 checks again whenever it opens, at most once a minute (GitHub's anonymous API budget), and never while a
      * check, download or install is under way; the first open of a run always checks.
@@ -109,7 +124,7 @@ final class AppUpdate {
             HttpsURLConnection c = (HttpsURLConnection) u.openConnection();
             try {
                 c.setInstanceFollowRedirects(false); c.setConnectTimeout(15_000); c.setReadTimeout(20_000);
-                c.setRequestProperty("User-Agent", "God-Android"); if ("api.github.com".equals(u.getHost())) c.setRequestProperty("Accept", "application/vnd.github+json");
+                c.setRequestProperty("User-Agent", "God-Android"); String accept = accept(u); if (accept != null) c.setRequestProperty("Accept", accept);
                 int code = c.getResponseCode();
                 if (code >= 300 && code < 400) { String to = c.getHeaderField("Location"); if (to == null || hop >= 4) throw new IOException("下载跳转异常"); u = new URL(u, to); continue; }
                 if (code == 403 || code == 429) throw new IOException("GitHub 暂时限制了请求，请稍后再试");
@@ -130,16 +145,24 @@ final class AppUpdate {
 
     /** Downloads the release APK into the app cache and returns it only after every check passed. */
     static File download(Context context, Release r, Progress progress, AtomicBoolean cancel) throws Exception {
-        ByteArrayOutputStream sums = new ByteArrayOutputStream(); fetch(r.sumsUrl, MAX_SUMS, sums, null, cancel);
+        ByteArrayOutputStream sums = new ByteArrayOutputStream();
+        try { fetch(r.sumsUrl, MAX_SUMS, sums, null, cancel); }
+        catch (IOException e) { if (r.sumsMirror == null || cancelled(cancel)) throw e; sums.reset(); fetch(r.sumsMirror, MAX_SUMS, sums, null, cancel); }
         String want = expectedSha(sums.toString("UTF-8"), r.apkName); if (want == null) throw new IOException("校验文件里没有这个安装包");
         File dir = new File(context.getCacheDir(), "updates"); clear(dir); if (!dir.mkdirs() && !dir.isDirectory()) throw new IOException("无法写入缓存");
         File apk = new File(dir, r.apkName); MessageDigest sha = MessageDigest.getInstance("SHA-256");
         try (OutputStream out = new DigestOutputStream(new BufferedOutputStream(new FileOutputStream(apk)), sha)) { fetch(r.apkUrl, MAX_APK, out, progress, cancel); }
-        catch (IOException e) { apk.delete(); throw e; }
+        catch (IOException e) {
+            apk.delete(); if (r.apkMirror == null || cancelled(cancel)) throw e; sha.reset();
+            try (OutputStream out = new DigestOutputStream(new BufferedOutputStream(new FileOutputStream(apk)), sha)) { fetch(r.apkMirror, MAX_APK, out, progress, cancel); }
+            catch (IOException again) { apk.delete(); throw again; }
+        }
         if (!want.equals(hex(sha.digest()))) { apk.delete(); throw new IOException("安装包校验失败，已删除"); }
         try { verifyArchive(context, apk); } catch (Exception e) { apk.delete(); throw e; }
         return apk;
     }
+    /** A timeout is also an InterruptedIOException, so only the flag says the person cancelled. */
+    private static boolean cancelled(AtomicBoolean cancel) { return cancel != null && cancel.get(); }
     static void clear(File dir) { File[] files = dir.listFiles(); if (files != null) for (File f : files) f.delete(); }
     private static String hex(byte[] b) { StringBuilder s = new StringBuilder(); for (byte x : b) s.append(String.format(Locale.ROOT, "%02x", x)); return s.toString(); }
 

@@ -15,6 +15,8 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.21.1", "2026-10-19", "更新下载更稳",
+            "连不上 github.com 的网络下，App 内更新也能下载新版本。"),
         new Entry("0.21.0", "2026-10-19", "调节玻璃，隐藏功能",
             "「我 → 外观」可以关闭 Liquid Glass，或拖动滑块在清透和着色之间调节。",
             "在「功能」里长按可以隐藏功能，「我 → 已隐藏的功能」可以随时放回。",
