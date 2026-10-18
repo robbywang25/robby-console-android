@@ -300,7 +300,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             if(cached!=null&&!refresh)continue;
             reading[0]++;
             worker.execute(()->{if(epoch!=generation){runOnUiThread(finished);return;}
-                try{JSONObject data=read(path);runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);fillBoard(targets,data);restoreViewport();}finally{finished.run();}});}
+                try{JSONObject data=read(path);runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);GodWidget.observe(this,path,data);fillBoard(targets,data);restoreViewport();}finally{finished.run();}});}
                 catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;
                     // A refresh may have invalidated the stored session: show sign-in instead of a board that can only fail.
                     if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
@@ -483,7 +483,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(cached!=null&&!reload){if(done!=null)done.run();return;}
         if(!resumed){if(done!=null)done.run();return;}
         int epoch=++generation;
-        worker.execute(()->{if(epoch!=generation){if(done!=null)runOnUiThread(done);return;}try{JSONObject data=read(key);runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");render(f,result,data);restoreViewport();}finally{if(done!=null)done.run();}});}
+        worker.execute(()->{if(epoch!=generation){if(done!=null)runOnUiThread(done);return;}try{JSONObject data=read(key);runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);GodWidget.observe(this,key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");render(f,result,data);restoreViewport();}finally{if(done!=null)done.run();}});}
         catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);TextView warning=text(explain(f.path,e),15,theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();}finally{if(done!=null)done.run();}});}});
     }
     private void render(FeatureCatalog.Feature f,LinearLayout result,JSONObject data) {
@@ -531,6 +531,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置"))featureRow(f,management);
         section("提醒");LinearLayout alerts=groupCard();boolean watching=!PreviewMode.isBuild()&&TiboWatch.enabled(this);
         featureRow("Tibo 重置提醒",watching?TiboWatch.status(this):"未开启 · Tibo 发出重置预告时像闹钟一样响铃","bell",alerts,()->{FeatureCatalog.Feature f=find("tibo");if(f!=null&&loggedIn())open(f);else if(f!=null)error("登录后开启","登录 God 后才能读取 Tibo 的重置预告。");});
+        section("小组件");LinearLayout widgets=groupCard();featureRow("God 小组件","桌面、锁屏与快捷设置 · 只显示公开的 Tibo 预告","grid",widgets,this::widgetSheet);
         section("关于");LinearLayout about=groupCard();
         featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
         String version=versionName();LinearLayout info=featureRow("关于 God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
@@ -569,6 +570,24 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         show(new AlertDialog.Builder(this).setTitle("个人头像").setItems(items.toArray(new String[0]),(d,w)->{
             String item=items.get(w);if(item.equals("从相册选择"))pickAvatar();else if(item.equals("移除头像")){Avatar.clear(this);build();syncAvatar(true);}else avatarSignIn();
         }).setNegativeButton("取消",null));
+    }
+    /** The widget as it looks now, plus the ways to place it: home screen, Pixel lock screen and 快捷设置. */
+    private void widgetSheet(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(20),dp(8),dp(20),0);
+        FrameLayout frame=new FrameLayout(this);try{frame.addView(GodWidget.views(this).apply(this,frame));}catch(RuntimeException ignored){}
+        box.addView(frame,new LinearLayout.LayoutParams(-1,dp(68)));
+        TextView how=text("桌面：点「添加到桌面」，或长按桌面空白处 → 小组件 → God。\n\nPixel 锁屏（Android 16 QPR2 起）：设置 → 显示与触控 → 锁定屏幕 → 锁屏上的微件，打开后在锁屏上编辑并添加 God。锁屏上点按会先要求解锁。\n\n快捷设置：点「添加到快捷设置」，或下拉快捷设置 → 编辑 → 把 God 拖进来。\n\n小组件只显示 God 图标和 Tibo 的公开预告，不显示账号数据。",13,MUTED,false);
+        how.setPadding(0,dp(14),0,0);box.addView(how);
+        android.appwidget.AppWidgetManager widgets=android.appwidget.AppWidgetManager.getInstance(this);
+        AlertDialog.Builder b=new AlertDialog.Builder(this).setTitle("God 小组件").setView(box).setNegativeButton("关闭",null);
+        if(widgets!=null&&widgets.isRequestPinAppWidgetSupported())b.setPositiveButton("添加到桌面",(d,w)->widgets.requestPinAppWidget(new ComponentName(this,GodWidget.class),null,null));
+        if(Build.VERSION.SDK_INT>=33)b.setNeutralButton("添加到快捷设置",(d,w)->addTile());
+        show(b);
+    }
+    private void addTile(){
+        if(Build.VERSION.SDK_INT<33)return;
+        try{getSystemService(android.app.StatusBarManager.class).requestAddTileService(new ComponentName(this,GodTileService.class),"God",android.graphics.drawable.Icon.createWithResource(this,R.drawable.tab_home_solid),getMainExecutor(),result->{});}
+        catch(RuntimeException e){error("无法添加","请下拉快捷设置 → 编辑，把 God 拖进来。");}
     }
     private long avatarCheckedAt;
     /** A change on this phone waits for a session that may write the avatar (signed in before 0.17.0). */

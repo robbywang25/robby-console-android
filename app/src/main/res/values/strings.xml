@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_description">God 图标和 Tibo 的公开重置预告，点按打开 App</string>
+    <string name="widget_open">打开 God</string>
+    <string name="widget_title">God</string>
+</resources>

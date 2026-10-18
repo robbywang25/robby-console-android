@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- keyguard lets Pixel's lock-screen widgets (Android 16 QPR2+) offer it; tapping there asks to unlock first. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="180dp" android:minHeight="40dp" android:minResizeWidth="110dp" android:minResizeHeight="40dp"
+    android:targetCellWidth="3" android:targetCellHeight="1" android:resizeMode="horizontal|vertical" android:updatePeriodMillis="0"
+    android:initialLayout="@layout/god_widget" android:previewLayout="@layout/god_widget"
+    android:description="@string/widget_description" android:widgetCategory="home_screen|keyguard" />

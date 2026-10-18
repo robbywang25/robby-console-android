@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.18.0", "2026-10-18", "God 小组件与快捷设置",
+            "新增 God 小组件，可放在桌面；Pixel 也可放在锁屏上。",
+            "小组件只显示 God 图标和 Tibo 的重置预告倒计时，点按打开 App。",
+            "新增快捷设置磁贴，下拉通知栏一点就打开 God。",
+            "在「我 → 小组件」里预览，并一键添加到桌面或快捷设置。"),
         new Entry("0.17.0", "2026-10-18", "时区时钟、日历看板与头像同步",
             "新增「时区时钟」看板，默认显示 Tibo 和北京时间，可在编辑看板里增删改名。",
             "新增「重置日历」看板，列出接下来的几次额度重置。",

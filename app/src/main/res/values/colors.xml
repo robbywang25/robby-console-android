@@ -1,1 +1,1 @@
-<resources><color name="launcher_background">#000000</color></resources>
+<resources><color name="launcher_background">#000000</color><color name="widget_surface">#F2FFFFFF</color><color name="widget_ink">#0F1115</color><color name="widget_muted">#5B6270</color><color name="widget_alert">#C5221F</color></resources>

@@ -92,7 +92,8 @@ final class TiboWatch {
         try {
             AuthSession auth = new AuthSession(c);
             if (!auth.hasSession()) { record(p, now, "登录后才能检查"); return; }
-            List<TiboAlert> alerts = TiboAlert.parse(new MobileApi(auth).get("tokens/tibo/alerts"));
+            JSONObject view = new MobileApi(auth).get("tokens/tibo/alerts"); List<TiboAlert> alerts = TiboAlert.parse(view);
+            GodWidget.observe(c, "tokens/tibo/alerts", view);
             Set<String> seen = new HashSet<>(p.getStringSet("seen", Collections.emptySet()));
             List<TiboAlert> due = TiboAlert.due(alerts, seen, p.getBoolean("primed", false), p.getLong("enabledAt", now), now);
             if (seen.size() > 400) seen.clear(); for (TiboAlert a : alerts) seen.add(a.id);
