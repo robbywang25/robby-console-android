@@ -46,6 +46,7 @@ public final class FeatureCatalog {
         f("wechat-publishing", "公众号发布", "文章、草稿历史与发布状态", "工具", "wechat/blog-drafts/overview", "god.mobile.wechat.read"),
         f("miniprogram-catalog", "小程序目录", "目录内容与同步状态", "工具", "miniprogram/catalog-sync/status", "god.mobile.wechat.read"),
         f("prompts", "Prompt 配置", "模型、来源与版本", "工具", "prompts/asset-daily-briefing", "god.mobile.prompts.read"),
+        f("deepseek", "DeepSeek 模型", "官方模型列表、上下文、价格与能力", "工具", "deepseek/models", "god.mobile.read"),
         f("wechat-login-audit", "微信登录审计", "绑定状态与脱敏登录事件", "设置", "wechat/audit", "god.mobile.wechat.read"),
         f("secrets", "凭据配置", "服务配置状态", "设置", "secrets/status", "god.mobile.read")
     ));
@@ -87,6 +88,7 @@ public final class FeatureCatalog {
         Map.entry("wechat-publishing", "公众号 文章 草稿 publish"),
         Map.entry("miniprogram-catalog", "小程序 mini program"),
         Map.entry("prompts", "提示词 prompt"),
+        Map.entry("deepseek", "深度求索 模型 价格 上下文 定价 API model pricing context deepseek.robby.wang"),
         Map.entry("wechat-login-audit", "微信 登录 审计 wechat login"),
         Map.entry("secrets", "密钥 凭证 credential"));
 

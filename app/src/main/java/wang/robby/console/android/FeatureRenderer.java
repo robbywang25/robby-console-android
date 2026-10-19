@@ -40,7 +40,8 @@ public final class FeatureRenderer {
         }
         // 总览 carries its snapshot time inside the summary card instead of a separate row.
         // 28 天挑战 shows its own sync line; the quota pages count a reading older than two minutes as stale.
-        if (!feature.id.equals("overview") && !feature.id.equals("tibo")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.path.equals("tokens/quotas") ? 120 : 600);
+        // DeepSeek 模型 states when the official list was fetched inside its own summary card.
+        if (!feature.id.equals("overview") && !feature.id.equals("tibo") && !feature.id.equals("deepseek")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.path.equals("tokens/quotas") ? 120 : 600);
         switch (feature.id) {
             case "overview": overview(ui, payload); break;
             case "infrastructure": infrastructure(ui, obj(payload, "infrastructure")); break;
@@ -67,6 +68,7 @@ public final class FeatureRenderer {
             case "tokens": tokens(ui, payload); break;
             case "quota-calendar": TokensPages.calendar(context, container, payload); break;
             case "tibo": TokensPages.challenge(context, container, payload); break;
+            case "deepseek": deepseek(ui, payload); break;
             default: ui.message("暂未接入", "此功能尚无原生数据视图。");
         }
         if (!ui.explanations.isEmpty()) container.addView(ui.theme.info(ui.explanations));
@@ -251,6 +253,7 @@ public final class FeatureRenderer {
             case "prompts": return (version(p, 1) || version(p, 2)) && p.opt("version") instanceof String && p.opt("model") instanceof String;
             case "image-workshop": return version(p, 1) && p.optJSONObject("inventory") != null;
             case "visit-insight-reports": return version(p, 1) && p.optJSONArray("reports") != null;
+            case "deepseek": return version(p, 1) && p.optJSONArray("models") != null && p.optJSONObject("response") != null;
             default: return false;
         }
     }
@@ -743,6 +746,39 @@ public final class FeatureRenderer {
     private static String unitLabel(String unit) {
         switch (unit) { case "tokens": return " Token"; case "requests": return " 次"; case "messages": return " 条"; case "credits": return " 点"; case "USD": return " USD"; default: return ""; }
     }
+    /**
+     * DeepSeek 模型. The official GET /models is called by deepseek.robby.wang's server (its key never reaches the phone) and
+     * reaches the app through God's gateway. One row per model opens to every official field, the site's verified price and
+     * its state there; the complete official response follows as plain text. This is the one screen that also lists fields
+     * the app does not know by name, because the owner asked to see everything the official list returns; the gateway has
+     * already bounded the answer and refused anything that looks like a credential, and nothing here becomes a link.
+     */
+    private static void deepseek(UI u, JSONObject p) {
+        JSONObject r = obj(p, "response"); JSONArray models = arr(p, "models");
+        LinearLayout c = u.card("官方模型列表");
+        u.metrics(c, "官方模型", String.valueOf(DeepSeekModels.listed(models)), "本站可用", String.valueOf(DeepSeekModels.available(models)), "待核验", String.valueOf(DeepSeekModels.pending(models)));
+        u.row(c, "列表状态", DeepSeekModels.listState(r));
+        if (Boolean.TRUE.equals(r.opt("refreshFailed"))) u.paragraph(c, "这次刷新官方列表失败，下面是上次成功获取的结果。");
+        u.row(c, "获取时间", date(r, "fetchedAt"));
+        u.row(c, "官方接口", "GET /models");
+        u.row(c, "调用方", "deepseek.robby.wang");
+        LinearLayout g = u.list("模型");
+        for (JSONObject m : rows(p, "models")) u.expand(g, DeepSeekModels.title(m), DeepSeekModels.state(m), DeepSeekModels.summary(m), "deepseek|" + DeepSeekModels.plain(m.opt("id")), body -> {
+            List<String> official = DeepSeekModels.officialRows(m);
+            if (!official.isEmpty()) { u.subhead(body, "官方返回"); pairs(u, body, official); }
+            u.subhead(body, "价格（USD / 百万 Token）与能力 · 本站登记"); pairs(u, body, DeepSeekModels.policyRows(m));
+            u.subhead(body, "状态"); pairs(u, body, DeepSeekModels.siteRows(m));
+        });
+        empty(u, p, "models", "官方列表暂无模型");
+        String json = DeepSeekModels.pretty(r.opt("body"));
+        LinearLayout raw = u.list("接口完整返回");
+        u.expand(raw, "GET /models", "HTTP " + number(r, "status"), join("获取于 " + date(r, "fetchedAt"), DeepSeekModels.grouped(json.length()) + " 字符"), "deepseek|raw", body -> {
+            TextView t = u.text(json, 12, false); t.setTypeface(Typeface.MONOSPACE); t.setTextColor(u.theme.ink); t.setTextIsSelectable(true); t.setPadding(0, u.dp(4), 0, u.dp(4)); body.addView(t); });
+        u.explain("模型列表实时取自 DeepSeek 官方 GET /models（api.deepseek.com）：由 deepseek.robby.wang（下称本站）的服务端调用并经 God 转发，App 不持有 DeepSeek API Key；同一结果一分钟内复用。");
+        u.explain("上下文窗口按官方定义包含输入和输出。上下文、输出上限、输入类型与思考强度以官方返回为准；价格与本站能力是 deepseek.robby.wang 按 DeepSeek 官方定价页登记的单价（本站按高峰时段保守计费），每个模型注明核对日期与有效期。错峰时段的折扣以官方定价页为准。");
+        u.explain("官方新出现、本站还没登记价格的模型显示「待核验」，不会显示为免费。");
+    }
+    private static void pairs(UI u, LinearLayout c, List<String> rows) { for (int i = 0; i + 1 < rows.size(); i += 2) u.row(c, rows.get(i), rows.get(i + 1)); }
     private static void secrets(UI u, JSONObject p) {
         int total = 0, configured = 0; for (JSONObject n : rows(p, "services")) { total++; if (Boolean.TRUE.equals(n.opt("configured"))) configured++; }
         u.metrics(u.card("配置概览"), "服务", String.valueOf(total), "已配置", String.valueOf(configured), "未配置", String.valueOf(total - configured));
@@ -899,6 +935,26 @@ public final class FeatureRenderer {
                 head.setOnClickListener(v->{boolean show=body.getVisibility()!=View.VISIBLE;if(show)OPEN.add(key);else OPEN.remove(key);body.setVisibility(show?View.VISIBLE:View.GONE);head.setStateDescription(show?"已展开":"已收起");
                     if(theme.effects)chevron.animate().rotation(show?-90:90).setDuration(200).start();else chevron.setRotation(show?-90:90);});
             }
+            group.addView(box);
+        }
+        /** A row like {@link #item} whose expanded body is built by {@code fill}: sections of key/value rows or plain text. */
+        void expand(LinearLayout group,String title,String trailing,String meta,String key,java.util.function.Consumer<LinearLayout> fill){
+            if(group.getChildCount()>0){View d=new View(context);d.setBackgroundColor(border);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(.5f));lp.setMargins(dp(14),0,dp(12),0);group.addView(d,lp);}
+            LinearLayout box=new LinearLayout(context);box.setOrientation(LinearLayout.VERTICAL);
+            LinearLayout head=new LinearLayout(context);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(dp(14),dp(9),dp(10),dp(9));head.setMinimumHeight(dp(48));
+            LinearLayout texts=new LinearLayout(context);texts.setOrientation(LinearLayout.VERTICAL);TextView t=text(title,15,false);t.setTextColor(theme.ink);texts.addView(t);
+            if(meta!=null&&!meta.isEmpty()){TextView m=text(meta,12,false);m.setPadding(0,dp(2),0,0);texts.addView(m);}
+            head.addView(texts,new LinearLayout.LayoutParams(0,-2,1));
+            int tone=theme.status(trailing);
+            if(trailing!=null&&!trailing.isEmpty()){LinearLayout right=new LinearLayout(context);right.setGravity(Gravity.CENTER_VERTICAL);right.setPadding(dp(10),0,0,0);
+                if(tone!=0){View dot=theme.dot(tone,6);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(5);right.addView(dot);}
+                TextView v=text(trailing,14,true);v.setGravity(Gravity.END);right.addView(v);head.addView(right);}
+            boolean open=OPEN.contains(key);ImageView chevron=theme.icon("chevron",theme.muted,12);chevron.setAlpha(.4f);chevron.setRotation(open?-90:90);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(12),dp(12));cp.leftMargin=dp(6);head.addView(chevron,cp);
+            box.addView(head);LinearLayout body=details();body.setPadding(dp(14),0,dp(16),dp(10));fill.accept(body);body.setVisibility(open?View.VISIBLE:View.GONE);box.addView(body);
+            head.setContentDescription(title+(trailing==null||trailing.isEmpty()?"":"，"+trailing)+(meta==null||meta.isEmpty()?"":"，"+meta));head.setStateDescription(open?"已展开":"已收起");
+            head.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,16),16));head.setFocusable(true);head.setClickable(true);
+            head.setOnClickListener(v->{boolean show=body.getVisibility()!=View.VISIBLE;if(show)OPEN.add(key);else OPEN.remove(key);body.setVisibility(show?View.VISIBLE:View.GONE);head.setStateDescription(show?"已展开":"已收起");
+                if(theme.effects)chevron.animate().rotation(show?-90:90).setDuration(200).start();else chevron.setRotation(show?-90:90);});
             group.addView(box);
         }
         /** Figure card with label and tinted symbol; opens {@code target} when the host supports it. */

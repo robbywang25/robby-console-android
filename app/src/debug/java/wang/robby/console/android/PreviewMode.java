@@ -95,6 +95,29 @@ final class PreviewMode {
    .put("upcoming",tiboPost("2111600000000000013",13,"reset-scheduled","官方预计太平洋时间今晚重置",now.minusSeconds(1800),now.plusSeconds(2*3600+1234)).put("state","scheduled"))
    .put("events",events).put("dailySummaries",summaries);
  }
+ /**
+  * DeepSeek 模型 in the gateway's shape: the two public models as DeepSeek's own documentation example describes them, the
+  * site's published prices, one synthetic model the site has not priced and one priced model the official list dropped.
+  */
+ private static JSONObject deepseek(String time)throws Exception{
+  JSONObject body=new JSONObject("""
+   {"object":"list","data":[
+    {"id":"deepseek-flash","object":"model","owned_by":"deepseek","name":"DeepSeek-V4.1-Flash","context_window":1048576,"max_output_tokens":393216,"input_modalities":["text","image"],"output_modalities":["text"],"effort":{"supported_levels":["low","high","max"],"default_level":"high"},"api_capabilities":{"anthropic_messages":{"system_prompt_update":"in-history"}}},
+    {"id":"deepseek-v4-pro","object":"model","owned_by":"deepseek","name":"DeepSeek-V4-Pro","context_window":1048576,"max_output_tokens":393216,"input_modalities":["text"],"output_modalities":["text"],"effort":{"supported_levels":["low","high","max"],"default_level":"high"},"api_capabilities":{"anthropic_messages":{"system_prompt_update":"leading-only"}}},
+    {"id":"preview-new-model","object":"model","owned_by":"deepseek","context_window":131072,"preview_field":"合成预览字段"}]}
+   """);
+  String policy="{\"name\":\"NAME\",\"currency\":\"USD\",\"unit\":\"1M tokens\",\"input\":IN,\"cachedInput\":HIT,\"output\":OUT,\"context\":1000000,\"maxOutput\":393216,\"vision\":VISION,\"thinking\":true,\"efforts\":[\"low\",\"high\",\"max\"],\"enabled\":true,\"verifiedAt\":\"2026-10-15T06:15:00.000Z\",\"expiresAt\":\"2026-10-22T06:15:00.000Z\",\"source\":\"https://api-docs.deepseek.com/quick_start/pricing/\"}";
+  org.json.JSONArray models=new org.json.JSONArray()
+   .put(new JSONObject().put("id","deepseek-flash").put("listed",true).put("official",body.getJSONArray("data").get(0)).put("site",new JSONObject().put("available",true).put("reason","可用"))
+    .put("policy",new JSONObject(policy.replace("NAME","DeepSeek V4.1 Flash").replace("IN","0.3").replace("HIT","0.006").replace("OUT","1.2").replace("VISION","true"))))
+   .put(new JSONObject().put("id","deepseek-v4-pro").put("listed",true).put("official",body.getJSONArray("data").get(1)).put("site",new JSONObject().put("available",true).put("reason","可用"))
+    .put("policy",new JSONObject(policy.replace("NAME","DeepSeek V4 Pro").replace("IN","1.32").replace("HIT","0.044").replace("OUT","3.96").replace("VISION","false"))))
+   .put(new JSONObject().put("id","preview-new-model").put("listed",true).put("official",body.getJSONArray("data").get(2)).put("site",new JSONObject().put("available",false).put("reason","能力与价格待配置")).put("policy",JSONObject.NULL))
+   .put(new JSONObject().put("id","preview-retired-model").put("listed",false).put("official",JSONObject.NULL).put("site",new JSONObject().put("available",false).put("reason","官方列表中不存在"))
+    .put("policy",new JSONObject(policy.replace("NAME","合成已下线模型").replace("IN","0.5").replace("HIT","0.01").replace("OUT","2").replace("VISION","false"))));
+  return new JSONObject().put("schemaVersion",1).put("site","deepseek.robby.wang").put("checkedAt",time).put("models",models)
+   .put("response",new JSONObject().put("endpoint","https://api.deepseek.com/models").put("method","GET").put("status",200).put("fetchedAt",time).put("stale",false).put("refreshFailed",false).put("body",body));
+ }
  static JSONObject data(String path)throws Exception{
  String time=java.time.Instant.now().toString();
  if(path.equals("overview"))return new JSONObject("{\"apiVersion\":\"2026-08-01\",\"summary\":{\"servicesOnline\":18,\"servicesKnown\":20,\"servicesTotal\":22,\"infrastructureInstances\":4,\"domainAssets\":12},\"status\":{\"schemaVersion\":2,\"summary\":{},\"sites\":[],\"upstreams\":[]},\"notices\":[{\"title\":\"演示域名即将到期\",\"severity\":\"warning\",\"detail\":\"合成提醒 · 请查看域名资产\"}]} ").put("generatedAt",time).put("status",status(time));
@@ -117,6 +140,7 @@ final class PreviewMode {
  }
  if(path.equals("tokens/quotas"))return tokens();
  if(path.equals("tokens/tibo"))return tibo();
+ if(path.equals("deepseek/models"))return deepseek(time);
  if(path.equals("market"))return new JSONObject("{\"apiVersion\":\"2026-07-01\",\"sourceStatus\":{},\"watchlist\":[{\"label\":\"合成行情 A\",\"price\":123.45,\"currency\":\"USD\",\"changePct\":1.23}],\"sectors\":[],\"benchmarks\":[],\"aiUpstream\":[],\"disclaimer\":{\"text\":\"完全合成的界面预览数据\"}}").put("generatedAt",time);
  throw new IllegalStateException("此预览不连接真实服务");
  }
