@@ -196,6 +196,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         getWindow().setStatusBarColor(Color.TRANSPARENT);getWindow().setNavigationBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarContrastEnforced(false);
         WindowInsetsController insetController=getWindow().getInsetsController();
+        applyStatusBar();
         if(insetController!=null)insetController.setSystemBarsAppearance(theme.dark?0:WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
         // The stage holds the sky and the page. The floating dock blurs the stage, never itself.
         FrameLayout stage=new FrameLayout(this);stage.setBackground(theme.backdrop());root.addView(stage,new FrameLayout.LayoutParams(-1,-1));
@@ -211,7 +212,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         session.addTextChangedListener(new android.text.TextWatcher(){
             @Override public void beforeTextChanged(CharSequence t,int a,int b,int c){}
             @Override public void onTextChanged(CharSequence t,int a,int b,int c){}
-            @Override public void afterTextChanged(android.text.Editable t){session.setVisibility(t.length()==0?View.GONE:View.VISIBLE);}
+            @Override public void afterTextChanged(android.text.Editable t){boolean shown=t.length()>0;session.setVisibility(shown?View.VISIBLE:View.GONE);if(!nested)header.setVisibility(shown?View.VISIBLE:View.GONE);}
         });if(session.length()>0)session.setVisibility(View.VISIBLE);
         if(nested){
             // Detail pages: WeChat-style centred title between two round glass controls of equal width.
@@ -223,9 +224,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             heading=theme.title(ConsoleTheme.tabLabel(group));heading.setVisibility(View.GONE);titles.addView(session);titles.addView(heading);
             header.addView(titles,new LinearLayout.LayoutParams(0,-2,1));header.addView(trailing,new LinearLayout.LayoutParams(-2,dp(48)));
         }
-        // Signed-in tab roots have no header at all: 总览 starts with its board, 功能 with search, 我 with the account
-        // card. Signed out keeps the header's one line, where sign-in progress is shown.
-        boolean bare=!nested&&loggedIn();if(bare)header.setVisibility(View.GONE);
+        // Tab roots have no header: 总览 starts with its board or sign-in card, 功能 with search, 我 with the account
+        // card, right under the status bar. The header comes back only while its line reports sign-in progress.
+        boolean bare=!nested&&(loggedIn()||session.length()==0);if(bare)header.setVisibility(View.GONE);
         // Tab roots run edge to edge: the page scrolls under the status bar and their large title scrolls away with it.
         // Detail pages keep a fixed header, so back and 记一笔 stay one tap away.
         final boolean edge=!nested;
@@ -266,13 +267,16 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         }
         final LinearLayout page=content;final GlassPane bar=nav;final PullScrollView pager=scroll;
         root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
+            // With the status bar hidden (我 → 外观) tab roots start just below the screen edge; detail pages still keep
+            // their header clear of the camera cutout so the back control and title are never under it.
+            if(!insets.isVisible(WindowInsets.Type.statusBars())){int top=edge?dp(6):insets.getInsets(WindowInsets.Type.displayCutout()).top;bars=android.graphics.Insets.of(bars.left,top,bars.right,bars.bottom);}
             body.setPadding(bars.left,edge?0:bars.top,bars.right,0);
             // Edge to edge the page starts below the status bar, and content scrolled up fades out across its height.
             if(edge){column.setPadding(0,bars.top,0,0);pager.setFadingEdgeLength(Math.max(dp(28),bars.top));}
             pager.setTopInset(edge?bars.top:0);
             FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)bar.getLayoutParams();lp.leftMargin=bars.left+dp(16);lp.rightMargin=bars.right+dp(16);lp.bottomMargin=bars.bottom+dp(10);bar.setLayoutParams(lp);
             fade.getLayoutParams().height=bars.bottom+dp(28);fade.requestLayout();
-            page.setPadding(dp(16),dp(4),dp(16),bars.bottom+(bar.getVisibility()==View.GONE?dp(24):dockHeight+dp(10+24)));return insets;});root.requestApplyInsets();
+            page.setPadding(dp(16),edge?0:dp(4),dp(16),bars.bottom+(bar.getVisibility()==View.GONE?dp(24):dockHeight+dp(10+24)));return insets;});root.requestApplyInsets();
         if(device!=null){nav.setVisibility(View.GONE);showDeviceAuthorization(device);}
         else if(about)about();
         else if(boardEdit)boardEditor();
@@ -281,6 +285,15 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else features();
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
     }
+    private static final String HIDE_STATUS_BAR="hideStatusBar";
+    /** 我 → 外观 → 隐藏状态栏: hidden until swiped in from the top edge, shown again when the switch is off. */
+    private void applyStatusBar(){
+        WindowInsetsController c=getWindow().getInsetsController();if(c==null)return;
+        if(prefs().getBoolean(HIDE_STATUS_BAR,false)){c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);c.hide(WindowInsets.Type.statusBars());}
+        else c.show(WindowInsets.Type.statusBars());
+    }
+    // Dialogs and other windows can bring the status bar back; hide it again whenever the page regains focus.
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)applyStatusBar();}
     /** What the status line says when nothing is in progress: only the preview build's label. */
     private static String idleSession(){return PreviewMode.isBuild()?"界面预览 · 合成数据":"";}
     /** Round glass header control (e.g. 记一笔); refreshing is pull-to-refresh on every page, never a header button. */
@@ -698,6 +711,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         LinearLayout ends=new LinearLayout(this);ends.setPadding(dp(6),0,dp(6),0);ends.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         ends.addView(text("清透",12,MUTED,false));ends.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));ends.addView(text("默认",12,MUTED,false));ends.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));ends.addView(text("着色",12,MUTED,false));
         slider.addView(ends);if(!bar.isEnabled())slider.setAlpha(.4f);look.addView(slider);
+        LinearLayout statusRow=featureRow("隐藏状态栏","全屏显示，从屏幕顶端下滑可临时看到时间和图标","eye",look,null);
+        Switch hideStatus=new Switch(this);hideStatus.setChecked(prefs().getBoolean(HIDE_STATUS_BAR,false));hideStatus.setContentDescription("隐藏状态栏");hideStatus.setMinimumHeight(dp(48));
+        hideStatus.setOnCheckedChangeListener((b,on)->{prefs().edit().putBoolean(HIDE_STATUS_BAR,on).apply();applyStatusBar();});statusRow.addView(hideStatus);
         final boolean[] dragging={false};
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             @Override public void onProgressChanged(SeekBar s,int level,boolean user){if(!user)return;s.setStateDescription(glassLabel(level));
