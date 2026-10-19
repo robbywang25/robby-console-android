@@ -43,21 +43,25 @@ public final class ConsoleTheme {
         blur=effects&&Build.VERSION.SDK_INT>=31&&glassOn;
         accentStrong=0xff0052d9;
         // Each translucent fill has a 清透 end, the default look at level 50, and a 着色 end that is solid; glass off is
-        // the solid end. At 清透 cards are a faint veil over the sky: the rim and text carry them.
+        // the solid end. At 清透 fills are almost clear (cards about 5% white): the rim and text carry them, and the dock blur and sheen thin out too.
         if(dark){
             skyTop=0xff11203b;skyMid=0xff090c14;skyBottom=0xff050608;canvas=0xff080b12;
-            surface=contrast?0xff161a22:glass(0x05ffffff,0x1affffff,0xff1a1e26);ink=Color.WHITE;muted=0xffa7aebb;faint=0xff737b8a;
+            surface=contrast?0xff161a22:glass(0x03ffffff,0x1affffff,0xff1a1e26);ink=Color.WHITE;muted=0xffa7aebb;faint=0xff737b8a;
             accent=0xff4582e6;line=contrast?0xff5a6170:0x1affffff;soft=0x1affffff;
             danger=0xffff8a80;success=0xff5ccb93;warning=0xfff2b552;
-            glassFill=contrast?0xff1c212b:glass(0x08ffffff,0x26ffffff,0xff232833);dockFill=blur?glass(0x1f161a22,0x99161a22,0xf2161a22):0xf2161a22;lensFill=0x24ffffff;
+            glassFill=contrast?0xff1c212b:glass(0x05ffffff,0x26ffffff,0xff232833);dockFill=blur?glass(0x0d161a22,0x99161a22,0xf2161a22):0xf2161a22;lensFill=0x24ffffff;
         }else{
             skyTop=0xffcfe1f6;skyMid=0xffedf1f8;skyBottom=0xfff6ece3;canvas=0xffeef2f8;
-            surface=contrast?Color.WHITE:glass(0x2effffff,0xd9ffffff,0xffffffff);ink=0xff0f1115;muted=0xff5b6270;faint=0xff8a909c;
+            surface=contrast?Color.WHITE:glass(0x0dffffff,0xd9ffffff,0xffffffff);ink=0xff0f1115;muted=0xff5b6270;faint=0xff8a909c;
             accent=0xff0052d9;line=contrast?0xff8a909c:0x170b1a33;soft=0x0f0b1a33;
             danger=0xffd54941;success=0xff1f9a62;warning=0xffc96a0a;
-            glassFill=contrast?Color.WHITE:glass(0x1fffffff,0xb8ffffff,0xffffffff);dockFill=blur?glass(0x26ffffff,0xa6ffffff,0xf7ffffff):0xf5ffffff;lensFill=0x140b1a33;
+            glassFill=contrast?Color.WHITE:glass(0x0affffff,0xb8ffffff,0xffffffff);dockFill=blur?glass(0x14ffffff,0xa6ffffff,0xf7ffffff):0xf5ffffff;lensFill=0x140b1a33;
         }
     }
+    /** 0 at the default and toward 着色, rising to 1 at the 清透 end: how much of the frost (blur, sheen) to take away. */
+    public float clearness(){return glassOn&&glassLevel<GLASS_DEFAULT?(GLASS_DEFAULT-glassLevel)/(float)GLASS_DEFAULT:0f;}
+    /** Dock backdrop blur: 22 dp by default, down to 4 dp at 清透 so what passes beneath stays legible as shapes. */
+    public float blurRadius(){return dp(22-18*clearness());}
     /** The fill for the current glass choice: the solid end when glass is off, otherwise blended through the default. */
     private int glass(int clear,int normal,int solid){
         if(!glassOn)return solid;
@@ -78,10 +82,10 @@ public final class ConsoleTheme {
     public Drawable card(){return card(24);}
     public Drawable card(float radius){if(contrast){GradientDrawable d=shape(surface,radius);d.setStroke(dp(1.5f),muted);return d;}return new Glass(surface,dp(radius),dp(1),dark,false);}
     /** Control-layer glass. A negative radius is a capsule. */
-    public Drawable glass(float radius){if(contrast){GradientDrawable d=shape(glassFill,radius<0?99:radius);d.setStroke(dp(1.5f),muted);return d;}return new Glass(glassFill,radius<0?-1:dp(radius),dp(1),dark,glassOn);}
+    public Drawable glass(float radius){if(contrast){GradientDrawable d=shape(glassFill,radius<0?99:radius);d.setStroke(dp(1.5f),muted);return d;}return new Glass(glassFill,radius<0?-1:dp(radius),dp(1),dark,glassOn).sheen(1-.85f*clearness());}
     /** Bottom scroll-edge: transparent to the sky's bottom colour, so text never sits bare under the gesture bar. */
     public Drawable bottomFade(){int base=contrast?canvas:skyBottom;return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,new int[]{base&0x00ffffff,(base&0x00ffffff)|0xcc000000,base});}
-    public Drawable dock(){if(contrast){GradientDrawable d=shape(dockFill,99);d.setStroke(dp(1.5f),muted);return d;}return new Glass(dockFill,-1,dp(1),dark,glassOn);}
+    public Drawable dock(){if(contrast){GradientDrawable d=shape(dockFill,99);d.setStroke(dp(1.5f),muted);return d;}return new Glass(dockFill,-1,dp(1),dark,glassOn).sheen(1-.85f*clearness());}
     public Drawable lens(){if(contrast)return shape(soft,99);return new Glass(lensFill,-1,dp(.75f),dark,false);}
     public Drawable ripple(Drawable base){return ripple(base,22);}
     public Drawable ripple(Drawable base,float radius){return new RippleDrawable(ColorStateList.valueOf(dark?0x22ffffff:0x140b1a33),base,radius<0?new Glass(Color.WHITE,-1,0,dark,false):shape(Color.WHITE,radius));}
@@ -194,13 +198,16 @@ public final class ConsoleTheme {
     /** Translucent fill, a rim that is brighter where light hits the top edge, and an optional top sheen. Radius &lt; 0 is a capsule. */
     static final class Glass extends Drawable {
         private final Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG),rim=new Paint(Paint.ANTI_ALIAS_FLAG),sheen=new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final float radius,stroke;private final boolean dark,shine;private final RectF r=new RectF(),in=new RectF();
+        private final float radius,stroke;private final boolean dark,shine;private float sheenScale=1f;private final RectF r=new RectF(),in=new RectF();
+        /** Scales the top sheen; 清透 keeps only a trace of it so the glass reads clear rather than frosted. */
+        Glass sheen(float scale){sheenScale=Math.max(0f,Math.min(1f,scale));return this;}
         Glass(int color,float radius,float stroke,boolean dark,boolean shine){this.radius=radius;this.stroke=stroke;this.dark=dark;this.shine=shine;fill.setColor(color);rim.setStyle(Paint.Style.STROKE);rim.setStrokeWidth(stroke);}
         private float corner(RectF b){return radius<0?b.height()/2f:Math.min(radius,Math.min(b.width(),b.height())/2f);}
         @Override protected void onBoundsChange(Rect b){
             r.set(b);float h=stroke/2f;in.set(r.left+h,r.top+h,r.right-h,r.bottom-h);
             rim.setShader(stroke<=0?null:new LinearGradient(0,b.top,0,b.bottom,dark?new int[]{0x47ffffff,0x14ffffff,0x0dffffff}:new int[]{0xffffffff,0x99ffffff,0x1f0b1a33},new float[]{0,.55f,1},Shader.TileMode.CLAMP));
-            sheen.setShader(new LinearGradient(0,b.top,0,b.top+b.height()*.6f,dark?0x14ffffff:0x66ffffff,0x00ffffff,Shader.TileMode.CLAMP));
+            int top=Math.round((dark?0x14:0x66)*sheenScale)<<24|0x00ffffff;
+            sheen.setShader(new LinearGradient(0,b.top,0,b.top+b.height()*.6f,top,0x00ffffff,Shader.TileMode.CLAMP));
         }
         @Override public void draw(Canvas c){float k=corner(r);c.drawRoundRect(r,k,k,fill);if(shine)c.drawRoundRect(r,k,k,sheen);if(stroke>0){float j=corner(in);c.drawRoundRect(in,j,j,rim);}}
         @Override public void getOutline(Outline o){Rect b=getBounds();o.setRoundRect(b,radius<0?b.height()/2f:Math.min(radius,Math.min(b.width(),b.height())/2f));}

@@ -15,6 +15,8 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.22.1", "2026-10-19", "清透更透",
+            "「我 → 外观」滑块拖到清透时，卡片和玻璃几乎全透明，底栏的模糊和高光也变淡。"),
         new Entry("0.22.0", "2026-10-19", "功能按最近使用排序",
             "「功能」每个分区里，最近打开的功能排在最前面。",
             "没打开过的功能按原来的顺序排在后面；搜索结果也按最近使用排序。"),

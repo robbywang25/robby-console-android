@@ -28,7 +28,7 @@ final class GlassPane extends FrameLayout {
         super(theme.context); this.source=source; motion=theme.effects; setWillNotDraw(false); setBackground(theme.dock()); setClipToOutline(true);
         if(theme.blur&&Build.VERSION.SDK_INT>=31){
             node=new RenderNode("glass-backdrop"); node.setClipToOutline(true);
-            float r=theme.dp(22); node.setRenderEffect(RenderEffect.createBlurEffect(r,r,Shader.TileMode.CLAMP));
+            float r=theme.blurRadius(); node.setRenderEffect(RenderEffect.createBlurEffect(r,r,Shader.TileMode.CLAMP));
         } else node=null;
     }
     /**
