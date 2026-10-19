@@ -212,12 +212,13 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             session.setGravity(Gravity.CENTER);session.setSingleLine(true);session.setEllipsize(android.text.TextUtils.TruncateAt.END);titles.addView(heading);titles.addView(session);
             header.addView(leading,new LinearLayout.LayoutParams(dp(104),dp(48)));header.addView(titles,new LinearLayout.LayoutParams(0,-2,1));header.addView(trailing,new LinearLayout.LayoutParams(dp(104),dp(48)));
         }else{
-            heading=theme.title(ConsoleTheme.tabLabel(group));titles.addView(session);titles.addView(heading);
+            // Tab roots carry no tab name: the dock already says where you are. The view stays for code that sets it.
+            heading=theme.title(ConsoleTheme.tabLabel(group));heading.setVisibility(View.GONE);titles.addView(session);titles.addView(heading);
             header.addView(titles,new LinearLayout.LayoutParams(0,-2,1));header.addView(trailing,new LinearLayout.LayoutParams(-2,dp(48)));
         }
-        // Signed-in 总览 is only the board and 常用: no date line or title above them. Signed out keeps the header,
-        // where sign-in progress is shown.
-        boolean bare=!nested&&group.equals("总览")&&loggedIn();if(bare)header.setVisibility(View.GONE);
+        // Signed-in tab roots have no header at all: 总览 starts with its board, 功能 with search, 我 with the account
+        // card. Signed out keeps the header's one line, where sign-in progress is shown.
+        boolean bare=!nested&&loggedIn();if(bare)header.setVisibility(View.GONE);
         // Tab roots run edge to edge: the page scrolls under the status bar and their large title scrolls away with it.
         // Detail pages keep a fixed header, so back and 记一笔 stay one tap away.
         final boolean edge=!nested;
