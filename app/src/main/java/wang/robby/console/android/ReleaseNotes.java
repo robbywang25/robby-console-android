@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.23.2", "2026-10-20", "灵动岛按机型对准，左右可配置",
+            "灵动岛按手机自己报告的摄像头开孔位置对齐，Pixel 等机型也能居中包住摄像头。",
+            "灵动岛左右两侧可分别显示时间、日期、星期、电量或 Tibo 倒计时，放不下时自动加宽。",
+            "两侧都不显示时，灵动岛收窄成更小的胶囊。"),
         new Entry("0.23.1", "2026-10-20", "灵动岛改成悬浮胶囊",
             "灵动岛按 iPhone Pro Max 的比例收窄成悬浮胶囊，不再贴着屏幕顶边。",
             "胶囊居中包住摄像头开孔，左边时间、右边电量的字号略小。"),

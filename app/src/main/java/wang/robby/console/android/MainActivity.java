@@ -272,10 +272,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             // their header clear of the camera cutout so the back control and title are never under it.
             String style=statusStyle();
             if(StatusBarStyle.hides(style)){
-                android.graphics.Rect hole=insets.getDisplayCutout()==null?null:insets.getDisplayCutout().getBoundingRectTop();
-                int[] cut=hole==null||hole.isEmpty()?null:new int[]{hole.left,hole.top,hole.right,hole.bottom};
+                android.view.DisplayCutout dc=insets.getDisplayCutout();android.graphics.Rect band=dc==null?null:dc.getBoundingRectTop();
+                int[] outline=null;
+                // The cutout's own outline is the real hole on devices that describe it (Pixels); OPPO only declares a band.
+                if(dc!=null&&Build.VERSION.SDK_INT>=31&&dc.getCutoutPath()!=null){android.graphics.RectF b=new android.graphics.RectF();dc.getCutoutPath().computeBounds(b,true);if(!b.isEmpty())outline=new int[]{Math.round(b.left),Math.round(b.top),Math.round(b.right),Math.round(b.bottom)};}
+                int[] cut=StatusBarStyle.hole(band==null||band.isEmpty()?null:new int[]{band.left,band.top,band.right,band.bottom},outline);
                 int[] shape=StatusBarStyle.island(root.getWidth()>0?root.getWidth():getResources().getDisplayMetrics().widthPixels,cut,dp(3));
-                boolean islandOn=StatusBarStyle.ISLAND.equals(style);island.setVisibility(islandOn?View.VISIBLE:View.GONE);if(islandOn)island.place(shape,cut);
+                boolean islandOn=StatusBarStyle.ISLAND.equals(style);island.setVisibility(islandOn?View.VISIBLE:View.GONE);
+                if(islandOn){island.place(shape,cut,StatusBarStyle.compactWidth(root.getWidth()>0?root.getWidth():getResources().getDisplayMetrics().widthPixels,cut,dp(3)));island.show(islandItem(true),islandItem(false));}
                 int top=StatusBarStyle.top(style,edge,insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top,insets.getInsets(WindowInsets.Type.displayCutout()).top,bars.top,shape[3],dp(6));
                 bars=android.graphics.Insets.of(bars.left,top,bars.right,bars.bottom);
             }else island.setVisibility(View.GONE);
@@ -722,6 +726,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         slider.addView(ends);if(!bar.isEnabled())slider.setAlpha(.4f);look.addView(slider);
         String style=statusStyle();
         featureRow("状态栏 · "+StatusBarStyle.label(style),StatusBarStyle.detail(style)+(StatusBarStyle.hides(style)?" · 顶端下滑临时显示":""),"eye",look,this::statusStyleMenu);
+        if(StatusBarStyle.ISLAND.equals(style)){
+            featureRow("灵动岛左侧 · "+StatusBarStyle.itemLabel(islandItem(true)),"摄像头左边显示的内容","info",look,()->islandItemMenu(true));
+            featureRow("灵动岛右侧 · "+StatusBarStyle.itemLabel(islandItem(false)),"摄像头右边显示的内容","info",look,()->islandItemMenu(false));
+        }
         final boolean[] dragging={false};
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             @Override public void onProgressChanged(SeekBar s,int level,boolean user){if(!user)return;s.setStateDescription(glassLabel(level));
@@ -736,6 +744,13 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         for(int i=0;i<names.length;i++)names[i]=StatusBarStyle.label(styles.get(i))+" · "+StatusBarStyle.detail(styles.get(i));
         show(new AlertDialog.Builder(this).setTitle("状态栏").setSingleChoiceItems(names,styles.indexOf(statusStyle()),(d,w)->{
             prefs().edit().putString(StatusBarStyle.KEY,styles.get(w)).remove(StatusBarStyle.LEGACY).apply();d.dismiss();applyStatusBar();build();}).setNegativeButton("取消",null));
+    }
+    private String islandItem(boolean left){return StatusBarStyle.item(prefs().getString(left?StatusBarStyle.LEFT_KEY:StatusBarStyle.RIGHT_KEY,null),left);}
+    /** One side of the island: 时间, 日期, 星期, 电量, Tibo 倒计时 or nothing; applies at once. */
+    private void islandItemMenu(boolean left){
+        List<String> items=StatusBarStyle.ITEMS;String[] names=new String[items.size()];for(int i=0;i<names.length;i++)names[i]=StatusBarStyle.itemLabel(items.get(i));
+        show(new AlertDialog.Builder(this).setTitle(left?"灵动岛左侧":"灵动岛右侧").setSingleChoiceItems(names,items.indexOf(islandItem(left)),(d,w)->{
+            prefs().edit().putString(left?StatusBarStyle.LEFT_KEY:StatusBarStyle.RIGHT_KEY,items.get(w)).apply();d.dismiss();build();}).setNegativeButton("取消",null));
     }
     /** Keeps a level, snapping to the default when within 3 of it, and repaints this page with it. */
     private void saveGlassLevel(SeekBar s,int level){

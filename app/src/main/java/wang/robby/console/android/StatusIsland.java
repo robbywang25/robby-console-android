@@ -18,12 +18,30 @@ import android.view.View;
 @SuppressLint("ViewConstructor") // Built in code; never inflated from XML.
 final class StatusIsland extends View {
     private final Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG), text = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final RectF shape = new RectF(); private int holeLeft, holeRight; private boolean hasHole;
-    private final java.text.SimpleDateFormat clock = new java.text.SimpleDateFormat("H:mm", java.util.Locale.ROOT);
-    private String time = "", power = "";
+    private final RectF base = new RectF(), shape = new RectF(); private int holeLeft, holeRight, compact; private boolean hasHole;
+    private String leftItem = "time", rightItem = "battery";
+    private String left = "", right = "";
     // Time and battery are read once a minute, on the minute, not on every frame.
     private final Runnable tick = () -> { refresh(); schedule(); };
-    private void refresh() { time = clock.format(new java.util.Date()); int level = battery(); power = level < 0 ? "" : level + "%"; invalidate(); }
+    /** Both sides' text, and the capsule widened symmetrically (like the iPhone's) when a side needs more room. */
+    private void refresh() {
+        long now = System.currentTimeMillis(); java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        int level = "battery".equals(leftItem) || "battery".equals(rightItem) ? battery() : -1;
+        long tibo = "tibo".equals(leftItem) || "tibo".equals(rightItem) ? GodWidget.current(getContext(), now).deadline : 0;
+        left = StatusBarStyle.islandText(leftItem, now, zone, level, tibo); right = StatusBarStyle.islandText(rightItem, now, zone, level, tibo);
+        shape.set(base);
+        if (!base.isEmpty() && left.isEmpty() && right.isEmpty() && compact > 0 && compact < base.width()) {
+            // Nothing to show: the narrower resting island.
+            float c = base.centerX(); shape.left = c - compact / 2f; shape.right = c + compact / 2f;
+        } else if (!base.isEmpty()) {
+            float r = base.height() / 2f, gap = base.height() * .3f, centre = base.centerX();
+            float need = Math.max(holeRight - centre, centre - holeLeft) + gap + Math.max(text.measureText(left), text.measureText(right)) + r * .9f;
+            if (need > base.width() / 2f) { float half = Math.min(need, Math.min(centre, getWidth() > 0 ? getWidth() - centre : need)); shape.left = centre - half; shape.right = centre + half; }
+        }
+        invalidate();
+    }
+    /** The items chosen for each side in 我 → 外观. */
+    void show(String leftItem, String rightItem) { this.leftItem = leftItem; this.rightItem = rightItem; refresh(); }
 
     StatusIsland(Context context) {
         super(context); fill.setColor(0xff000000); text.setColor(0xffffffff);
@@ -31,13 +49,13 @@ final class StatusIsland extends View {
         text.setTextSize(android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 12, context.getResources().getDisplayMetrics()));
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); setWillNotDraw(false);
     }
-    /** The capsule's rectangle and, when there is one, the cutout's horizontal span the text keeps clear of. */
-    void place(int[] island, int[] cutout) {
-        shape.set(island[0], island[1], island[2], island[3]);
+    /** The capsule's rectangle, the hole's span the text keeps clear of, and the width it rests at with no text. */
+    void place(int[] island, int[] cutout, int compactWidth) {
+        base.set(island[0], island[1], island[2], island[3]); compact = compactWidth;
         hasHole = cutout != null && cutout[2] > cutout[0] && cutout[3] > cutout[1];
         int hole = hasHole ? Math.min(cutout[2] - cutout[0], cutout[3] - cutout[1]) : 0, mid = hasHole ? (cutout[0] + cutout[2]) / 2 : (island[0] + island[2]) / 2;
         holeLeft = mid - hole / 2; holeRight = mid + hole / 2;
-        invalidate();
+        refresh();
     }
     private void schedule() { removeCallbacks(tick); long now = System.currentTimeMillis(); postDelayed(tick, 60_000 - now % 60_000 + 50); }
     @Override protected void onAttachedToWindow() { super.onAttachedToWindow(); refresh(); schedule(); }
@@ -56,7 +74,7 @@ final class StatusIsland extends View {
         float baseline = shape.centerY() - (text.descent() + text.ascent()) / 2f, inner = r * .9f;
         // Each label is centred in the space between the capsule's rounded end and the hole.
         float leftMid = (shape.left + inner + holeLeft) / 2f, rightMid = (holeRight + shape.right - inner) / 2f;
-        canvas.drawText(time, leftMid - text.measureText(time) / 2f, baseline, text);
-        if (!power.isEmpty()) canvas.drawText(power, rightMid - text.measureText(power) / 2f, baseline, text);
+        if (!left.isEmpty()) canvas.drawText(left, leftMid - text.measureText(left) / 2f, baseline, text);
+        if (!right.isEmpty()) canvas.drawText(right, rightMid - text.measureText(right) / 2f, baseline, text);
     }
 }
