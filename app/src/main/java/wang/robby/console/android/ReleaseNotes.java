@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.23.0", "2026-10-20", "状态栏三种隐藏方式",
+            "「我 → 外观 → 状态栏」可选不隐藏、只隐藏（页面不动）、隐藏并上移。",
+            "新增灵动岛：黑色胶囊包住摄像头开孔，左边显示时间，右边显示电量。",
+            "隐藏时从屏幕顶端下滑，可以临时看到系统状态栏。"),
         new Entry("0.22.2", "2026-10-20", "顶部更干净",
             "「功能」和「我」顶部不再显示页签名和标题行，内容从屏幕顶端开始。",
             "详情页标题下不再显示小字「God」，总览顶部也不再显示日期，页面直接从状态栏下方开始。",

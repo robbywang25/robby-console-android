@@ -249,6 +249,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         View fade=new View(this);fade.setBackground(theme.bottomFade());fade.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);stage.addView(fade,new FrameLayout.LayoutParams(-1,dp(40),Gravity.BOTTOM));
         final int dockHeight=dp(getResources().getConfiguration().fontScale>=1.3f?72:64);
         nav=new GlassPane(theme,stage);FrameLayout.LayoutParams dock=new FrameLayout.LayoutParams(-1,dockHeight,Gravity.BOTTOM);dock.leftMargin=dock.rightMargin=dp(16);root.addView(nav,dock);
+        final StatusIsland island=new StatusIsland(this);island.setVisibility(View.GONE);root.addView(island,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout tabs=new LinearLayout(this);tabs.setPadding(dp(6),dp(6),dp(6),dp(6));
         View lens=new View(this);lens.setBackground(theme.lens());lens.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         nav.lens(lens,TABS.size(),current,shownTab,dp(6));nav.addView(tabs,new FrameLayout.LayoutParams(-1,-1));shownTab=current;
@@ -269,7 +270,15 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         root.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout());
             // With the status bar hidden (我 → 外观) tab roots start just below the screen edge; detail pages still keep
             // their header clear of the camera cutout so the back control and title are never under it.
-            if(!insets.isVisible(WindowInsets.Type.statusBars())){int top=edge?dp(6):insets.getInsets(WindowInsets.Type.displayCutout()).top;bars=android.graphics.Insets.of(bars.left,top,bars.right,bars.bottom);}
+            String style=statusStyle();
+            if(StatusBarStyle.hides(style)){
+                android.graphics.Rect hole=insets.getDisplayCutout()==null?null:insets.getDisplayCutout().getBoundingRectTop();
+                int[] cut=hole==null||hole.isEmpty()?null:new int[]{hole.left,hole.top,hole.right,hole.bottom};
+                int[] shape=StatusBarStyle.island(root.getWidth()>0?root.getWidth():getResources().getDisplayMetrics().widthPixels,cut,dp(46),dp(5),dp(30),dp(6));
+                boolean islandOn=StatusBarStyle.ISLAND.equals(style);island.setVisibility(islandOn?View.VISIBLE:View.GONE);if(islandOn)island.place(shape,cut);
+                int top=StatusBarStyle.top(style,edge,insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top,insets.getInsets(WindowInsets.Type.displayCutout()).top,bars.top,shape[3],dp(6));
+                bars=android.graphics.Insets.of(bars.left,top,bars.right,bars.bottom);
+            }else island.setVisibility(View.GONE);
             body.setPadding(bars.left,edge?0:bars.top,bars.right,0);
             // Edge to edge the page starts below the status bar, and content scrolled up fades out across its height.
             if(edge){column.setPadding(0,bars.top,0,0);pager.setFadingEdgeLength(Math.max(dp(28),bars.top));}
@@ -285,11 +294,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else features();
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
     }
-    private static final String HIDE_STATUS_BAR="hideStatusBar";
+    private String statusStyle(){return StatusBarStyle.resolve(prefs().getString(StatusBarStyle.KEY,null),prefs().getBoolean(StatusBarStyle.LEGACY,false));}
     /** 我 → 外观 → 隐藏状态栏: hidden until swiped in from the top edge, shown again when the switch is off. */
     private void applyStatusBar(){
         WindowInsetsController c=getWindow().getInsetsController();if(c==null)return;
-        if(prefs().getBoolean(HIDE_STATUS_BAR,false)){c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);c.hide(WindowInsets.Type.statusBars());}
+        if(StatusBarStyle.hides(statusStyle())){c.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);c.hide(WindowInsets.Type.statusBars());}
         else c.show(WindowInsets.Type.statusBars());
     }
     // Dialogs and other windows can bring the status bar back; hide it again whenever the page regains focus.
@@ -711,9 +720,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         LinearLayout ends=new LinearLayout(this);ends.setPadding(dp(6),0,dp(6),0);ends.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         ends.addView(text("清透",12,MUTED,false));ends.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));ends.addView(text("默认",12,MUTED,false));ends.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));ends.addView(text("着色",12,MUTED,false));
         slider.addView(ends);if(!bar.isEnabled())slider.setAlpha(.4f);look.addView(slider);
-        LinearLayout statusRow=featureRow("隐藏状态栏","全屏显示，从屏幕顶端下滑可临时看到时间和图标","eye",look,null);
-        Switch hideStatus=new Switch(this);hideStatus.setChecked(prefs().getBoolean(HIDE_STATUS_BAR,false));hideStatus.setContentDescription("隐藏状态栏");hideStatus.setMinimumHeight(dp(48));
-        hideStatus.setOnCheckedChangeListener((b,on)->{prefs().edit().putBoolean(HIDE_STATUS_BAR,on).apply();applyStatusBar();});statusRow.addView(hideStatus);
+        String style=statusStyle();
+        featureRow("状态栏 · "+StatusBarStyle.label(style),StatusBarStyle.detail(style)+(StatusBarStyle.hides(style)?" · 顶端下滑临时显示":""),"eye",look,this::statusStyleMenu);
         final boolean[] dragging={false};
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             @Override public void onProgressChanged(SeekBar s,int level,boolean user){if(!user)return;s.setStateDescription(glassLabel(level));
@@ -721,6 +729,13 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             @Override public void onStartTrackingTouch(SeekBar s){dragging[0]=true;}
             @Override public void onStopTrackingTouch(SeekBar s){dragging[0]=false;saveGlassLevel(s,s.getProgress());}
         });
+    }
+    /** 不隐藏 / 只隐藏 / 隐藏并上移 / 灵动岛, each with what it does; the choice applies at once. */
+    private void statusStyleMenu(){
+        List<String> styles=StatusBarStyle.ALL;String[] names=new String[styles.size()];
+        for(int i=0;i<names.length;i++)names[i]=StatusBarStyle.label(styles.get(i))+" · "+StatusBarStyle.detail(styles.get(i));
+        show(new AlertDialog.Builder(this).setTitle("状态栏").setSingleChoiceItems(names,styles.indexOf(statusStyle()),(d,w)->{
+            prefs().edit().putString(StatusBarStyle.KEY,styles.get(w)).remove(StatusBarStyle.LEGACY).apply();d.dismiss();applyStatusBar();build();}).setNegativeButton("取消",null));
     }
     /** Keeps a level, snapping to the default when within 3 of it, and repaints this page with it. */
     private void saveGlassLevel(SeekBar s,int level){
