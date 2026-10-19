@@ -180,7 +180,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(request!=AUTH_TAB||coordinator==null)return;
         if(result==RESULT_OK&&data!=null&&data.getData()!=null){coordinator.callback(data.getData());return;}
         // 2 and 3 are Auth Tab's verification failed / timed out: the tab could not prove this app owns the callback.
-        if(result==2||result==3){browserLogin=true;session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");
+        if(result==2||result==3){browserLogin=true;session.setText(idleSession());
             show(new AlertDialog.Builder(this).setTitle("登录未完成").setMessage("应用内登录页暂时无法确认 God的身份。可以改用浏览器登录，完成后会自动回到应用。")
                 .setNegativeButton("取消",null).setPositiveButton("用浏览器登录",(d,w)->login()));}
         // RESULT_CANCELED: the person closed the page, or a browser without tabs took over and the App Link will answer.
@@ -205,7 +205,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
         leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
-        session=text(PreviewMode.isBuild()?"界面预览 · 合成数据":!nested&&group.equals("总览")?today():"God",12,MUTED,false);
+        // The small line under a title only carries status (sign-in progress, a session to re-verify, the preview
+        // label); it takes no space and says nothing when there is none — no app name, no date.
+        session=text(idleSession(),12,MUTED,false);session.setVisibility(View.GONE);
+        session.addTextChangedListener(new android.text.TextWatcher(){
+            @Override public void beforeTextChanged(CharSequence t,int a,int b,int c){}
+            @Override public void onTextChanged(CharSequence t,int a,int b,int c){}
+            @Override public void afterTextChanged(android.text.Editable t){session.setVisibility(t.length()==0?View.GONE:View.VISIBLE);}
+        });if(session.length()>0)session.setVisibility(View.VISIBLE);
         if(nested){
             // Detail pages: WeChat-style centred title between two round glass controls of equal width.
             heading=text("",17,INK,true);heading.setMaxLines(2);heading.setEllipsize(android.text.TextUtils.TruncateAt.END);heading.setGravity(Gravity.CENTER);heading.setAccessibilityHeading(true);
@@ -274,7 +281,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else features();
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
     }
-    private String today(){return java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("M月d日 EEEE",Locale.SIMPLIFIED_CHINESE));}
+    /** What the status line says when nothing is in progress: only the preview build's label. */
+    private static String idleSession(){return PreviewMode.isBuild()?"界面预览 · 合成数据":"";}
     /** Round glass header control (e.g. 记一笔); refreshing is pull-to-refresh on every page, never a header button. */
     private FrameLayout circle(String symbol,String label,Runnable action){FrameLayout c=theme.circle(symbol,label,action);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(dp(48),dp(48));p.leftMargin=dp(4);c.setLayoutParams(p);return c;}
     private void home() {
@@ -610,7 +618,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(cached!=null&&!reload){if(done!=null)done.run();return;}
         if(!resumed){if(done!=null)done.run();return;}
         int epoch=++generation;
-        worker.execute(()->{if(epoch!=generation){if(done!=null)runOnUiThread(done);return;}try{JSONObject data=read(key);runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);GodWidget.observe(this,key,data);result.removeAllViews();session.setText(PreviewMode.isBuild()?"界面预览 · 合成数据":"God");render(f,result,data);restoreViewport();}finally{if(done!=null)done.run();}});}
+        worker.execute(()->{if(epoch!=generation){if(done!=null)runOnUiThread(done);return;}try{JSONObject data=read(key);runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);GodWidget.observe(this,key,data);result.removeAllViews();session.setText(idleSession());render(f,result,data);restoreViewport();}finally{if(done!=null)done.run();}});}
         catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);TextView warning=text(explain(f.path,e),15,theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();}finally{if(done!=null)done.run();}});}});
     }
     private void render(FeatureCatalog.Feature f,LinearLayout result,JSONObject data) {

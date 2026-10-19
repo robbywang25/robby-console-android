@@ -15,8 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
-        new Entry("0.22.2", "2026-10-20", "顶部不再显示页签名",
-            "「功能」和「我」顶部不再显示页签名和标题行，内容从屏幕顶端开始。"),
+        new Entry("0.22.2", "2026-10-20", "顶部更干净",
+            "「功能」和「我」顶部不再显示页签名和标题行，内容从屏幕顶端开始。",
+            "详情页标题下不再显示小字「God」，未登录时总览顶部也不再显示日期。"),
         new Entry("0.22.1", "2026-10-19", "清透更透",
             "「我 → 外观」滑块拖到清透时，卡片和玻璃几乎全透明，底栏的模糊和高光也变淡。"),
         new Entry("0.22.0", "2026-10-19", "功能按最近使用排序",
