@@ -274,7 +274,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             if(StatusBarStyle.hides(style)){
                 android.graphics.Rect hole=insets.getDisplayCutout()==null?null:insets.getDisplayCutout().getBoundingRectTop();
                 int[] cut=hole==null||hole.isEmpty()?null:new int[]{hole.left,hole.top,hole.right,hole.bottom};
-                int[] shape=StatusBarStyle.island(root.getWidth()>0?root.getWidth():getResources().getDisplayMetrics().widthPixels,cut,dp(46),dp(5),dp(30),dp(6));
+                int[] shape=StatusBarStyle.island(root.getWidth()>0?root.getWidth():getResources().getDisplayMetrics().widthPixels,cut,dp(3));
                 boolean islandOn=StatusBarStyle.ISLAND.equals(style);island.setVisibility(islandOn?View.VISIBLE:View.GONE);if(islandOn)island.place(shape,cut);
                 int top=StatusBarStyle.top(style,edge,insets.getInsetsIgnoringVisibility(WindowInsets.Type.statusBars()).top,insets.getInsets(WindowInsets.Type.displayCutout()).top,bars.top,shape[3],dp(6));
                 bars=android.graphics.Insets.of(bars.left,top,bars.right,bars.bottom);

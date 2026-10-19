@@ -42,19 +42,25 @@ final class StatusBarStyle {
         }
     }
 
+    /** iPhone Pro Max Dynamic Island at rest: 126 × 37.33 pt on a 440 pt wide screen, its top 11 pt down. */
+    static final float ISLAND_WIDTH = 126f / 440f, ISLAND_HEIGHT = 37.33f / 440f, ISLAND_TOP = 11f / 440f;
+
     /**
-     * The island as {left, top, right, bottom}: a capsule centred on the top cutout, {@code pad} larger than the hole on
-     * every side and {@code side} wider on each side for the time and battery. Without a cutout it sits centred at
-     * {@code fallbackTop}.
+     * The island as {left, top, right, bottom}: a floating capsule in the iPhone Pro Max proportions, scaled to this
+     * screen's width and centred on the camera hole. The hole is the top cutout's narrower side, centred in its rect
+     * (Android often declares the rect from the screen edge down through the status bar), and always stays at least
+     * {@code pad} inside the capsule. Without a cutout it sits centred where the iPhone's does.
      */
-    static int[] island(int screenWidth, int[] cutout, int side, int pad, int minHeight, int fallbackTop) {
+    static int[] island(int screenWidth, int[] cutout, int pad) {
+        int width = Math.round(screenWidth * ISLAND_WIDTH), height = Math.round(screenWidth * ISLAND_HEIGHT);
         if (cutout == null || cutout[2] <= cutout[0] || cutout[3] <= cutout[1]) {
-            int width = 2 * side + minHeight, left = (screenWidth - width) / 2;
-            return new int[]{left, fallbackTop, left + width, fallbackTop + minHeight};
+            int left = (screenWidth - width) / 2, top = Math.round(screenWidth * ISLAND_TOP);
+            return new int[]{left, top, left + width, top + height};
         }
-        int height = Math.max(minHeight, cutout[3] - cutout[1] + 2 * pad), centreY = (cutout[1] + cutout[3]) / 2;
-        int top = Math.max(0, centreY - height / 2), width = cutout[2] - cutout[0] + 2 * pad + 2 * side, centreX = (cutout[0] + cutout[2]) / 2;
-        int left = Math.max(0, centreX - width / 2), right = Math.min(screenWidth, left + width);
-        return new int[]{left, top, right, top + height};
+        int hole = Math.min(cutout[2] - cutout[0], cutout[3] - cutout[1]);
+        height = Math.max(height, hole + 2 * pad); width = Math.max(width, height * 2);
+        int centreX = (cutout[0] + cutout[2]) / 2, centreY = (cutout[1] + cutout[3]) / 2;
+        int top = Math.max(0, centreY - height / 2), left = Math.max(0, Math.min(screenWidth - width, centreX - width / 2));
+        return new int[]{left, top, left + width, top + height};
     }
 }

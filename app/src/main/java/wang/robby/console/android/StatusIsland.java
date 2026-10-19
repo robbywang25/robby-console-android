@@ -28,13 +28,15 @@ final class StatusIsland extends View {
     StatusIsland(Context context) {
         super(context); fill.setColor(0xff000000); text.setColor(0xffffffff);
         text.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL)); text.setFontFeatureSettings("tnum");
-        text.setTextSize(android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 13, context.getResources().getDisplayMetrics()));
+        text.setTextSize(android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 12, context.getResources().getDisplayMetrics()));
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); setWillNotDraw(false);
     }
     /** The capsule's rectangle and, when there is one, the cutout's horizontal span the text keeps clear of. */
     void place(int[] island, int[] cutout) {
         shape.set(island[0], island[1], island[2], island[3]);
-        hasHole = cutout != null && cutout[2] > cutout[0]; holeLeft = hasHole ? cutout[0] : (island[0] + island[2]) / 2; holeRight = hasHole ? cutout[2] : holeLeft;
+        hasHole = cutout != null && cutout[2] > cutout[0] && cutout[3] > cutout[1];
+        int hole = hasHole ? Math.min(cutout[2] - cutout[0], cutout[3] - cutout[1]) : 0, mid = hasHole ? (cutout[0] + cutout[2]) / 2 : (island[0] + island[2]) / 2;
+        holeLeft = mid - hole / 2; holeRight = mid + hole / 2;
         invalidate();
     }
     private void schedule() { removeCallbacks(tick); long now = System.currentTimeMillis(); postDelayed(tick, 60_000 - now % 60_000 + 50); }

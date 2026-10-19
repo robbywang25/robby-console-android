@@ -15,6 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.23.1", "2026-10-20", "灵动岛改成悬浮胶囊",
+            "灵动岛按 iPhone Pro Max 的比例收窄成悬浮胶囊，不再贴着屏幕顶边。",
+            "胶囊居中包住摄像头开孔，左边时间、右边电量的字号略小。"),
         new Entry("0.23.0", "2026-10-20", "状态栏三种隐藏方式",
             "「我 → 外观 → 状态栏」可选不隐藏、只隐藏（页面不动）、隐藏并上移。",
             "新增灵动岛：黑色胶囊包住摄像头开孔，左边显示时间，右边显示电量。",

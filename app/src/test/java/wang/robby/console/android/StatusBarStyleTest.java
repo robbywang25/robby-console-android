@@ -19,15 +19,17 @@ public final class StatusBarStyleTest {
         assertEquals("hide + up: detail header clears the cutout", 100, StatusBarStyle.top(StatusBarStyle.HIDE_UP, false, status, cutout, 0, islandBottom, gap));
         assertEquals("island: below the island, never above the old bar", 113, StatusBarStyle.top(StatusBarStyle.ISLAND, true, status, cutout, 0, islandBottom, gap));
     }
-    @Test public void islandWrapsTheHoleWithRoomForTimeAndBattery() {
-        int[] hole = {700, 40, 740, 80};
-        int[] island = StatusBarStyle.island(1440, hole, 130, 14, 84, 18);
+    @Test public void islandFloatsInIphoneProportionsAroundTheHole() {
+        // OPPO Find X9 Ultra: 1440 px wide, cutout declared as (678,0)-(762,160), an 84 px hole.
+        int[] island = StatusBarStyle.island(1440, new int[]{678, 0, 762, 160}, 12);
+        assertEquals("126/440 of the width", 412, island[2] - island[0]);
+        assertEquals("37.33/440 of the width", 122, island[3] - island[1]);
         assertEquals("centred on the hole", 720, (island[0] + island[2]) / 2);
-        assertEquals("centred vertically", 60, (island[1] + island[3]) / 2);
-        assertTrue("covers the hole", island[0] < 700 && island[2] > 740 && island[1] < 40 && island[3] > 80);
-        assertEquals(40 + 2 * 14 + 2 * 130, island[2] - island[0]);
-        int[] none = StatusBarStyle.island(1440, null, 130, 14, 84, 18);
-        assertEquals("no cutout: centred pill at the fallback top", 18, none[1]);
+        assertEquals("centred on the hole vertically", 80, (island[1] + island[3]) / 2);
+        assertTrue("floats below the screen edge", island[1] > 0);
+        assertTrue("hole stays inside with padding", island[1] <= 80 - 42 - 12 && island[3] >= 80 + 42 + 12);
+        int[] none = StatusBarStyle.island(1440, null, 12);
+        assertEquals("no cutout: where the iPhone's sits", Math.round(1440 * 11f / 440f), none[1]);
         assertEquals(720, (none[0] + none[2]) / 2);
     }
 }
