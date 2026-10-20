@@ -37,6 +37,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private static final String HIDDEN_PAGE="hidden";
     /** Pseudo feature id for 我 → 个人中心 (the account card). */
     private static final String ACCOUNT_PAGE="account";
+    /** Pseudo feature ids for 我's second-level pages, after iOS Settings: switches and menus live one tap in. */
+    private static final String APPEARANCE_PAGE="appearance",PRIVACY_PAGE="privacy";
     /** 个人中心's last answers; process memory only and dropped in the background like every other page's data. */
     private AccountCenter.Status accountStatus; private AccountCenter.Devices accountDevices; private boolean devicesUnfolded;
     /** Back from the browser (adding a Passkey, binding Apple or WeChat): read the account again. */
@@ -208,8 +210,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // The stage holds the sky and the page. The floating dock blurs the stage, never itself.
         FrameLayout stage=new FrameLayout(this);stage.setBackground(theme.backdrop());root.addView(stage,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);stage.addView(body,new FrameLayout.LayoutParams(-1,-1));
-        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId),hiddenPage=HIDDEN_PAGE.equals(selectedId),accountPage=ACCOUNT_PAGE.equals(selectedId)&&logged;if(detail==null&&!about&&!boardEdit&&!hiddenPage&&!accountPage)selectedId=null;
-        boolean nested=device!=null||detail!=null||about||boardEdit||hiddenPage||accountPage;
+        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId),hiddenPage=HIDDEN_PAGE.equals(selectedId),accountPage=ACCOUNT_PAGE.equals(selectedId)&&logged,appearancePage=APPEARANCE_PAGE.equals(selectedId),privacyPage=PRIVACY_PAGE.equals(selectedId);
+        if(detail==null&&!about&&!boardEdit&&!hiddenPage&&!accountPage&&!appearancePage&&!privacyPage)selectedId=null;
+        boolean nested=device!=null||detail!=null||about||boardEdit||hiddenPage||accountPage||appearancePage||privacyPage;
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
         leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
@@ -302,6 +305,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         else if(boardEdit)boardEditor();
         else if(hiddenPage)hiddenPage();
         else if(accountPage)accountPage();
+        else if(appearancePage)appearancePage();
+        else if(privacyPage)privacyPage();
         else if(detail!=null)showFeature(detail,false);
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else features();
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
@@ -695,21 +700,41 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             return info.versionName==null?"":info.versionName;}
         catch(Exception ignored){return "";}
     }
+    /**
+     * 我, laid out like iOS Settings: the account card, then plain grouped rows without headers. Every switch, slider
+     * and menu sits one level in (外观, 隐私与数据, 个人中心); this page only shows where things are and their state.
+     */
     private void settings(){
         profile();
+        gap();LinearLayout general=groupCard();
+        featureRow("外观",appearanceSummary(),"drop",general,()->openPage(APPEARANCE_PAGE));
+        boolean watching=!PreviewMode.isBuild()&&TiboWatch.enabled(this);
+        featureRow("Tibo 重置提醒",watching?TiboWatch.status(this):"未开启","bell",general,()->{FeatureCatalog.Feature f=find("tibo");if(f!=null&&loggedIn())open(f);else if(f!=null)error("登录后开启","登录 God 后才能读取 Tibo 的重置预告。");});
+        featureRow("小组件","桌面、锁屏与快捷设置","grid",general,this::widgetSheet);
         Set<String> hidden=hiddenFeatures();
-        section("管理");LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置")&&!hidden.contains(f.id))featureRow(f,management);
+        gap();LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置")&&!hidden.contains(f.id))featureRow(f,management);
         int hiddenCount=0;for(FeatureCatalog.Feature f:FeatureCatalog.all())if(hidden.contains(f.id))hiddenCount++;
-        featureRow("已隐藏的功能",hiddenCount==0?"在「功能」里长按可以隐藏":hiddenCount+" 个功能","eye",management,this::openHiddenPage);
-        section("提醒");LinearLayout alerts=groupCard();boolean watching=!PreviewMode.isBuild()&&TiboWatch.enabled(this);
-        featureRow("Tibo 重置提醒",watching?TiboWatch.status(this):"未开启 · Tibo 发出重置预告时像闹钟一样响铃","bell",alerts,()->{FeatureCatalog.Feature f=find("tibo");if(f!=null&&loggedIn())open(f);else if(f!=null)error("登录后开启","登录 God 后才能读取 Tibo 的重置预告。");});
-        section("小组件");LinearLayout widgets=groupCard();featureRow("God 小组件","桌面、锁屏与快捷设置 · 只显示公开的 Tibo 预告","grid",widgets,this::widgetSheet);
-        appearance();
-        section("关于");LinearLayout about=groupCard();
-        featureRow("隐私与数据","无第三方统计 · 不保存网页 Cookie","shield",about,()->show(new AlertDialog.Builder(this).setTitle("隐私与数据").setMessage("应用仅连接 Robby 的 God 私有接口。Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。会话使用 Android Keystore 加密且不参加备份。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。退出会清除本机令牌。开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。\n\n可查看原生数据，并在确认后管理账目和人员。").setPositiveButton("知道了",null)));
+        featureRow("已隐藏的功能",hiddenCount==0?"无":hiddenCount+" 个","eye",management,this::openHiddenPage);
+        gap();LinearLayout about=groupCard();
+        featureRow("隐私与数据","","shield",about,()->openPage(PRIVACY_PAGE));
         String version=versionName();LinearLayout info=featureRow("关于 God",version.isEmpty()?"Android":"Android "+version,"info",about,this::openAbout);
         View red=theme.dot(theme.unread,8);LinearLayout.LayoutParams r=(LinearLayout.LayoutParams)red.getLayoutParams();r.rightMargin=dp(10);info.addView(red,info.getChildCount()-1,r);
         aboutDot=red;aboutRow=info;aboutDescription=String.valueOf(info.getContentDescription());showDots();
+        restoreViewport();
+    }
+    private void gap(){content.addView(new View(this),new LinearLayout.LayoutParams(-1,dp(10)));}
+    private void openPage(String id){saveViewport();++generation;selectedId=id;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
+    /** A second-level page of 我: centred title and the round back control. */
+    private void subPage(String title){heading.setText(title);leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));}
+    private String appearanceSummary(){String style=statusStyle();return (theme.contrast?"不透明表面":theme.glassOn?"Liquid Glass":"Liquid Glass 已关闭")+" · 状态栏"+StatusBarStyle.label(style);}
+    private void privacyPage(){
+        subPage("隐私与数据");
+        String[][] parts={
+            {"登录","Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份，退出会清除本机令牌。"},
+            {"数据","应用仅连接 Robby 的 God 私有接口，没有第三方统计，不保存网页 Cookie。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。可查看原生数据，并在确认后管理账目和人员。"},
+            {"头像与签名","个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。个性签名只保存在这台手机上。"},
+            {"重置提醒","开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。"}};
+        for(String[] part:parts){section(part[0]);LinearLayout c=card();TextView t=text(part[1],14,INK,false);t.setLineSpacing(dp(3),1);c.addView(t);}
         restoreViewport();
     }
     /**
@@ -718,8 +743,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
      * at once for screen-reader and keyboard steps) and every page drawn afterwards uses it. High-contrast text
      * always uses solid surfaces, so both controls are off there.
      */
-    private void appearance(){
-        section("外观");LinearLayout look=groupCard();boolean usable=!theme.contrast;
+    private void appearancePage(){
+        subPage("外观");
+        gap();LinearLayout look=groupCard();boolean usable=!theme.contrast;
         LinearLayout row=featureRow("Liquid Glass",!usable?"高对比度文字开启时使用不透明表面":theme.glassOn?"半透明玻璃与背景模糊":"已关闭 · 不透明表面，没有模糊","drop",look,null);
         Switch toggle=new Switch(this);toggle.setChecked(theme.glassOn);toggle.setEnabled(usable);toggle.setContentDescription("Liquid Glass");toggle.setMinimumHeight(dp(48));
         toggle.setOnCheckedChangeListener((b,on)->{prefs().edit().putBoolean(ConsoleTheme.GLASS_ON,on).apply();b.post(()->{theme=new ConsoleTheme(this);build();});});
@@ -733,7 +759,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         ends.addView(text("清透",12,MUTED,false));ends.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));ends.addView(text("默认",12,MUTED,false));ends.addView(new View(this),new LinearLayout.LayoutParams(0,1,1));ends.addView(text("着色",12,MUTED,false));
         slider.addView(ends);if(!bar.isEnabled())slider.setAlpha(.4f);look.addView(slider);
         String style=statusStyle();
-        featureRow("状态栏 · "+StatusBarStyle.label(style),StatusBarStyle.detail(style)+(StatusBarStyle.hides(style)?" · 顶端下滑临时显示":""),"eye",look,this::statusStyleMenu);
+        section("状态栏");look=groupCard();
+        featureRow("显示方式 · "+StatusBarStyle.label(style),StatusBarStyle.detail(style)+(StatusBarStyle.hides(style)?" · 顶端下滑临时显示":""),"eye",look,this::statusStyleMenu);
         if(StatusBarStyle.ISLAND.equals(style)){
             featureRow("灵动岛左侧 · "+StatusBarStyle.itemLabel(islandItem(true)),"摄像头左边显示的内容","info",look,()->islandItemMenu(true));
             featureRow("灵动岛右侧 · "+StatusBarStyle.itemLabel(islandItem(false)),"摄像头右边显示的内容","info",look,()->islandItemMenu(false));
@@ -745,6 +772,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             @Override public void onStartTrackingTouch(SeekBar s){dragging[0]=true;}
             @Override public void onStopTrackingTouch(SeekBar s){dragging[0]=false;saveGlassLevel(s,s.getProgress());}
         });
+        restoreViewport();
     }
     /** 不隐藏 / 只隐藏 / 隐藏并上移 / 灵动岛, each with what it does; the choice applies at once. */
     private void statusStyleMenu(){
@@ -786,7 +814,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         avatar.setFocusable(true);avatar.setClickable(true);avatar.setContentDescription(picture==null?"设置头像":"更换头像");avatar.setOnClickListener(v->avatarMenu());theme.press(avatar);
         c.addView(avatar,new LinearLayout.LayoutParams(dp(60),dp(60)));
         LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(16),0,dp(8),0);profileName=text(!logged?"尚未登录":accountStatus!=null&&accountStatus.displayName!=null?accountStatus.displayName:"已登录",20,INK,true);profileName.setSingleLine(true);profileName.setEllipsize(android.text.TextUtils.TruncateAt.END);labels.addView(profileName);
-        TextView detail=text(!logged?"使用 Passkey 或已有设备登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":"个人中心 · 登录安全与在线设备",13,MUTED,false);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
+        String signature=signature();
+        TextView detail=text(!logged?"使用 Passkey 或已有设备登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":signature.isEmpty()?"添加个性签名":signature,13,MUTED,false);
+        if(logged&&signature.isEmpty()&&!avatarWaiting())detail.setAlpha(.6f);detail.setMaxLines(2);detail.setEllipsize(android.text.TextUtils.TruncateAt.END);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
         c.addView(labels,new LinearLayout.LayoutParams(0,-2,1));ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);c.addView(chevron);
         // The name comes from the account; read it quietly once per foreground visit and fill it in place.
         if(logged&&accountStatus==null&&!accountNameRead){accountNameRead=true;loadAccountStatus(null);}
@@ -877,7 +907,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         avatar.setFocusable(true);avatar.setClickable(true);avatar.setContentDescription(picture==null?"设置头像":"更换头像");avatar.setOnClickListener(v->avatarMenu());theme.press(avatar);
         hero.addView(avatar,new LinearLayout.LayoutParams(dp(76),dp(76)));
         TextView name=text(accountStatus!=null&&accountStatus.displayName!=null?accountStatus.displayName:"God 账号",22,INK,true);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(12),0,dp(4));hero.addView(name);
-        TextView sub=text("会话保存在此设备的加密存储中",13,MUTED,false);sub.setGravity(Gravity.CENTER);hero.addView(sub);content.addView(hero);
+        String signature=signature();TextView sub=text(signature.isEmpty()?"添加个性签名":signature,14,MUTED,false);sub.setGravity(Gravity.CENTER);sub.setPadding(dp(16),0,dp(16),0);if(signature.isEmpty())sub.setAlpha(.6f);
+        sub.setFocusable(true);sub.setClickable(true);sub.setOnClickListener(v->editSignature());hero.addView(sub);content.addView(hero);
+        LinearLayout profile=groupCard();
+        featureRow("头像",Avatar.get(this)==null?"未设置":"已设置 · 同步到 God 服务器","user",profile,this::avatarMenu);
+        featureRow("个性签名",signature.isEmpty()?"未设置":signature,"edit",profile,this::editSignature);
         final LinearLayout account=new LinearLayout(this);account.setOrientation(LinearLayout.VERTICAL);content.addView(account);
         final LinearLayout devices=new LinearLayout(this);devices.setOrientation(LinearLayout.VERTICAL);content.addView(devices);
         Runnable fillAccount=()->{account.removeAllViews();accountParts(account,name);},fillDevices=()->{devices.removeAllViews();deviceParts(devices);};
@@ -888,6 +922,16 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新个人中心",()->{final int[] left={2};Runnable one=()->{if(--left[0]==0)page.finishRefresh();};
             loadAccountStatus(()->{fillAccount.run();one.run();});loadDevices(()->{fillDevices.run();one.run();});});
         restoreViewport();
+    }
+    private String signature(){return Signature.clean(prefs().getString(Signature.KEY,""));}
+    /** One line under the name on 我; kept on this phone. An empty answer removes it. */
+    private void editSignature(){
+        EditText field=new EditText(this);field.setText(signature());field.setSelection(field.getText().length());field.setHint("写一句话介绍自己");field.setSingleLine(true);
+        field.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(Signature.MAX)});
+        FrameLayout box=new FrameLayout(this);box.setPadding(dp(20),dp(8),dp(20),0);box.addView(field);
+        show(new AlertDialog.Builder(this).setTitle("个性签名").setMessage("显示在「我」的账号卡片上，最多 "+Signature.MAX+" 个字，只保存在这台手机。").setView(box).setNegativeButton("取消",null)
+            .setPositiveButton("保存",(d,w)->{String value=Signature.clean(field.getText().toString());
+                if(value.isEmpty())prefs().edit().remove(Signature.KEY).apply();else prefs().edit().putString(Signature.KEY,value).apply();build();}));
     }
     private void placeholder(LinearLayout parent,String message){LinearLayout c=theme.card(parent);TextView t=text(message,14,MUTED,false);t.setPadding(dp(2),dp(6),dp(2),dp(6));c.addView(t);}
     private void accountSection(LinearLayout parent,String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));parent.addView(t);}
