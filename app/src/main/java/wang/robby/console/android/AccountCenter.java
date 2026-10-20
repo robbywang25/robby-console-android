@@ -18,6 +18,8 @@ final class AccountCenter {
     static final String STATUS = "account/status", DEVICES = "account/devices";
     static final String EMAIL_SEND = "account/email/send", EMAIL_VERIFY = "account/email/verify";
     static final String UNBIND = "account/social/unbind", REVOKE_OTHERS = "account/devices/revoke-others";
+    /** The personal signature, saved with the avatar's scope (god.mobile.profile.write). */
+    static final String SIGNATURE = "account/profile/signature";
     /** The web user center; binding Apple or WeChat starts there, since it needs the provider's own sign-in page. */
     static final String WEB = "https://god.robby.wang/account/";
     static final String SETTINGS = "https://auth.god.robby.wang/settings/two-factor-authentication";
@@ -25,7 +27,7 @@ final class AccountCenter {
     static final int FOLD = 6;
 
     static boolean readRoute(String route) { return route.equals(STATUS) || route.equals(DEVICES); }
-    static boolean writeRoute(String route) { return route.equals(EMAIL_SEND) || route.equals(EMAIL_VERIFY) || route.equals(UNBIND) || route.equals(REVOKE_OTHERS); }
+    static boolean writeRoute(String route) { return route.equals(EMAIL_SEND) || route.equals(EMAIL_VERIFY) || route.equals(UNBIND) || route.equals(REVOKE_OTHERS) || route.equals(SIGNATURE); }
 
     static final class Passkey {
         final String id, name, detail;
@@ -36,7 +38,9 @@ final class AccountCenter {
         Social(String provider, String label, boolean available, boolean bound, String boundAt) { this.provider = provider; this.label = label; this.available = available; this.bound = bound; this.boundAt = boundAt; }
     }
     static final class Status {
-        String displayName; boolean canWrite;
+        String displayName; boolean canWrite, canSaveProfile;
+        /** The account's signature: null when the server has none on record (or did not answer), "" when it was cleared. */
+        String signature; boolean profileKnown;
         Boolean totp, passkeyBound; List<Passkey> passkeys; String settingsUrl = SETTINGS;
         List<Social> social; Boolean emailBound; String emailMasked, emailVerifiedAt; boolean emailCanSend; Boolean phoneAvailable, phoneBound;
         final List<String> unavailable = new ArrayList<>();
@@ -57,7 +61,9 @@ final class AccountCenter {
 
     static Status status(JSONObject v) {
         Status s = new Status();
-        s.displayName = str(v, "displayName", TEXT); s.canWrite = Boolean.TRUE.equals(flag(v, "canWrite"));
+        s.displayName = str(v, "displayName", TEXT); s.canWrite = Boolean.TRUE.equals(flag(v, "canWrite")); s.canSaveProfile = Boolean.TRUE.equals(flag(v, "canSaveProfile"));
+        JSONObject profile = v.optJSONObject("profile");
+        if (profile != null) { s.profileKnown = true; s.signature = profile.isNull("signature") ? null : Signature.clean(profile.optString("signature", "")); }
         JSONArray missing = v.optJSONArray("unavailable"); if (missing != null) for (int i = 0; i < missing.length(); i++) s.unavailable.add(missing.optString(i));
         JSONObject sec = v.optJSONObject("security");
         if (sec != null) {
@@ -131,6 +137,7 @@ final class AccountCenter {
         if (code == null) code = "";
         switch (code) {
             case "insufficient_scope": return "需要重新登录一次，授权 God 管理账号。";
+            case "invalid_signature": return "签名最多 30 个字，且只能是一行。";
             case "invalid_email": return "邮箱地址格式不正确。";
             case "invalid_code": return "验证码不正确，请检查后重试。";
             case "code_expired": return "验证码已过期，请重新发送。";

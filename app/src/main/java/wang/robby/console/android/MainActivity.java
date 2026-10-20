@@ -42,7 +42,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     /** 个人中心's last answers; process memory only and dropped in the background like every other page's data. */
     private AccountCenter.Status accountStatus; private AccountCenter.Devices accountDevices; private boolean devicesUnfolded;
     /** Back from the browser (adding a Passkey, binding Apple or WeChat): read the account again. */
-    private boolean accountBrowserPending,accountNameRead; private TextView profileName;
+    private boolean accountBrowserPending,accountNameRead; private TextView profileName,profileDetail;
     /** Release-note cards the reader expanded; process memory only, like the other reading context. */
     private final Set<String> expandedNotes=new HashSet<>();
     /** In-app update for the 关于 page. State is process memory only; network work runs off the UI thread. */
@@ -732,7 +732,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         String[][] parts={
             {"登录","Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份，退出会清除本机令牌。"},
             {"数据","应用仅连接 Robby 的 God 私有接口，没有第三方统计，不保存网页 Cookie。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。可查看原生数据，并在确认后管理账目和人员。"},
-            {"头像与签名","个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。个性签名只保存在这台手机上。"},
+            {"头像与签名","个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。个性签名保存在你的 God 账号里，本机留一份副本用于显示。"},
             {"重置提醒","开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。"}};
         for(String[] part:parts){section(part[0]);LinearLayout c=card();TextView t=text(part[1],14,INK,false);t.setLineSpacing(dp(3),1);c.addView(t);}
         restoreViewport();
@@ -815,7 +815,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         c.addView(avatar,new LinearLayout.LayoutParams(dp(60),dp(60)));
         LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(16),0,dp(8),0);profileName=text(!logged?"尚未登录":accountStatus!=null&&accountStatus.displayName!=null?accountStatus.displayName:"已登录",20,INK,true);profileName.setSingleLine(true);profileName.setEllipsize(android.text.TextUtils.TruncateAt.END);labels.addView(profileName);
         String signature=signature();
-        TextView detail=text(!logged?"使用 Passkey 或已有设备登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":signature.isEmpty()?"添加个性签名":signature,13,MUTED,false);
+        TextView detail=profileDetail=text(!logged?"使用 Passkey 或已有设备登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":signature.isEmpty()?"添加个性签名":signature,13,MUTED,false);
         if(logged&&signature.isEmpty()&&!avatarWaiting())detail.setAlpha(.6f);detail.setMaxLines(2);detail.setEllipsize(android.text.TextUtils.TruncateAt.END);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
         c.addView(labels,new LinearLayout.LayoutParams(0,-2,1));ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);c.addView(chevron);
         // The name comes from the account; read it quietly once per foreground visit and fill it in place.
@@ -879,7 +879,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         boardReads.execute(()->{AccountCenter.Status s=null;Exception failure=null;
             try{s=AccountCenter.status(read(AccountCenter.STATUS));}catch(Exception e){failure=e;}
             final AccountCenter.Status got=s;final Exception error=failure;
-            runOnUiThread(()->{if(isDestroyed())return;if(got!=null)accountStatus=got;
+            runOnUiThread(()->{if(isDestroyed())return;if(got!=null){accountStatus=got;adoptSignature(got);}
                 if(got!=null&&got.displayName!=null&&profileName!=null&&profileName.isAttachedToWindow())profileName.setText(got.displayName);
                 if(gen!=generation||done==null)return;accountError=error;done.run();});});
     }
@@ -923,15 +923,42 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             loadAccountStatus(()->{fillAccount.run();one.run();});loadDevices(()->{fillDevices.run();one.run();});});
         restoreViewport();
     }
+    /** The signature as last read from or saved to the account; this phone keeps a copy only to draw 我 at once. */
     private String signature(){return Signature.clean(prefs().getString(Signature.KEY,""));}
+    private void cacheSignature(String value){if(value==null||value.isEmpty())prefs().edit().remove(Signature.KEY).apply();else prefs().edit().putString(Signature.KEY,value).apply();}
+    /**
+     * The account's answer wins over the copy here. A signature set on this phone before it was synced (0.25.0 kept it
+     * only locally) is sent once when the account has none on record and the session may save it.
+     */
+    private void adoptSignature(AccountCenter.Status s){
+        if(s==null||!s.profileKnown)return;
+        String local=signature();
+        if(s.signature==null&&!local.isEmpty()&&s.canSaveProfile&&!PreviewMode.isBuild()&&!signatureUploading){signatureUploading=true;saveSignature(local,false);return;}
+        if(s.signature!=null&&!s.signature.equals(local)){cacheSignature(s.signature);if(ACCOUNT_PAGE.equals(selectedId)){build();return;}if(profileDetail!=null&&profileDetail.isAttachedToWindow()&&!avatarWaiting()){profileDetail.setText(s.signature.isEmpty()?"添加个性签名":s.signature);profileDetail.setAlpha(s.signature.isEmpty()?.6f:1f);}}
+    }
+    private boolean signatureUploading;
+    private void profileSignIn(){
+        show(new AlertDialog.Builder(this).setTitle("保存签名需要重新登录").setMessage("这次登录还不能修改个人资料。重新登录一次，授权 God 把头像和个性签名保存到你的账号。").setNegativeButton("以后再说",null)
+            .setPositiveButton("重新登录",(d,w)->{signOut();account();}));
+    }
     /** One line under the name on 我; kept on this phone. An empty answer removes it. */
     private void editSignature(){
         EditText field=new EditText(this);field.setText(signature());field.setSelection(field.getText().length());field.setHint("写一句话介绍自己");field.setSingleLine(true);
         field.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(Signature.MAX)});
         FrameLayout box=new FrameLayout(this);box.setPadding(dp(20),dp(8),dp(20),0);box.addView(field);
-        show(new AlertDialog.Builder(this).setTitle("个性签名").setMessage("显示在「我」的账号卡片上，最多 "+Signature.MAX+" 个字，只保存在这台手机。").setView(box).setNegativeButton("取消",null)
-            .setPositiveButton("保存",(d,w)->{String value=Signature.clean(field.getText().toString());
-                if(value.isEmpty())prefs().edit().remove(Signature.KEY).apply();else prefs().edit().putString(Signature.KEY,value).apply();build();}));
+        show(new AlertDialog.Builder(this).setTitle("个性签名").setMessage("显示在「我」的账号卡片上，最多 "+Signature.MAX+" 个字，保存在你的 God 账号里，换设备登录也在。").setView(box).setNegativeButton("取消",null)
+            .setPositiveButton("保存",(d,w)->saveSignature(Signature.clean(field.getText().toString()),true)));
+    }
+    /** Saves to the account, then updates the copy here; the preview only keeps it locally. */
+    private void saveSignature(String value,boolean user){
+        if(PreviewMode.isBuild()){cacheSignature(value);build();return;}
+        if(!auth.hasScope(AuthSession.PROFILE_WRITE)){if(user)profileSignIn();return;}
+        JSONObject body;try{body=new JSONObject().put("signature",value);}catch(JSONException e){return;}
+        updater.execute(()->{try{JSONObject r=api.post(AccountCenter.SIGNATURE,body);JSONObject p=r.optJSONObject("profile");String saved=p==null||p.isNull("signature")?value:Signature.clean(p.optString("signature",""));
+                runOnUiThread(()->{if(isDestroyed())return;cacheSignature(saved);if(accountStatus!=null){accountStatus.signature=saved;accountStatus.profileKnown=true;}if(user)toast(saved.isEmpty()?"已清除个性签名":"个性签名已保存");build();});}
+            catch(Exception e){runOnUiThread(()->{if(isDestroyed()||!user)return;
+                if(e instanceof MobileApi.ApiError&&AccountCenter.needsSignIn(((MobileApi.ApiError)e).status,((MobileApi.ApiError)e).code)){profileSignIn();return;}
+                error("签名未保存",accountMessage(e,"连接未完成，请检查网络后重试"));});}});
     }
     private void placeholder(LinearLayout parent,String message){LinearLayout c=theme.card(parent);TextView t=text(message,14,MUTED,false);t.setPadding(dp(2),dp(6),dp(2),dp(6));c.addView(t);}
     private void accountSection(LinearLayout parent,String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));parent.addView(t);}

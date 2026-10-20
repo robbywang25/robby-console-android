@@ -62,4 +62,17 @@ public final class AccountCenterTest {
         assertThrows(IllegalArgumentException.class, () -> MobileApi.checkedPath("account/other"));
         assertTrue(AccountCenter.writeRoute("account/social/unbind")); assertFalse(AccountCenter.writeRoute("account/status"));
     }
+
+    @Test public void signatureTellsNeverSetFromCleared() throws Exception {
+        AccountCenter.Status none = AccountCenter.status(new JSONObject(STATUS));
+        assertFalse("an older service without profiles says nothing", none.profileKnown);
+        AccountCenter.Status never = AccountCenter.status(new JSONObject(STATUS).put("canSaveProfile", true).put("profile", new JSONObject("{\"signature\":null,\"updatedAt\":null}")));
+        assertTrue(never.profileKnown); assertNull(never.signature); assertTrue(never.canSaveProfile);
+        AccountCenter.Status cleared = AccountCenter.status(new JSONObject(STATUS).put("profile", new JSONObject("{\"signature\":\"\",\"updatedAt\":\"2026-10-20T01:00:00Z\"}")));
+        assertEquals("", cleared.signature); assertFalse(cleared.canSaveProfile);
+        AccountCenter.Status set = AccountCenter.status(new JSONObject(STATUS).put("profile", new JSONObject("{\"signature\":\"保持好奇\\n每天进步\",\"updatedAt\":null}")));
+        assertEquals("保持好奇 每天进步", set.signature);
+        assertTrue(AccountCenter.writeRoute(AccountCenter.SIGNATURE)); assertEquals(AccountCenter.SIGNATURE, MobileApi.checkedPath(AccountCenter.SIGNATURE));
+        assertEquals("签名最多 30 个字，且只能是一行。", AccountCenter.explain(400, "invalid_signature"));
+    }
 }

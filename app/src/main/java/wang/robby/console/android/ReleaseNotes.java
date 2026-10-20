@@ -15,6 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.25.1", "2026-10-20", "个性签名跟着账号走",
+            "个性签名保存到你的 God 账号，换手机或重新安装后登录也能看到。",
+            "之前只存在这台手机上的签名，会在打开个人中心时自动上传。"),
         new Entry("0.25.0", "2026-10-20", "个人中心、在线设备与签名",
             "点「我」页顶部的账号卡片进入个人中心，内容和网页个人中心一致。",
             "可以查看两步验证和每个 Passkey，并跳到登录安全页添加新的 Passkey。",
