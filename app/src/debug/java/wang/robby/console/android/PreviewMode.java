@@ -100,6 +100,21 @@ final class PreviewMode {
  if(path.equals("overview"))return new JSONObject("{\"apiVersion\":\"2026-08-01\",\"summary\":{\"servicesOnline\":18,\"servicesKnown\":20,\"servicesTotal\":22,\"infrastructureInstances\":4,\"domainAssets\":12},\"status\":{\"schemaVersion\":2,\"summary\":{},\"sites\":[],\"upstreams\":[]},\"notices\":[{\"title\":\"演示域名即将到期\",\"severity\":\"warning\",\"detail\":\"合成提醒 · 请查看域名资产\"}]} ").put("generatedAt",time).put("status",status(time));
  if(path.equals("travel-ledger/current/projects"))return new JSONObject("{\"schemaVersion\":1,\"projects\":[{\"id\":\"00000000000000000000000000000001\",\"name\":\"界面演示账本\"}]}").put("generatedAt",time);
  if(path.startsWith("travel-ledger/current/snapshot"))return new JSONObject("{\"schemaVersion\":1,\"project\":{\"id\":\"00000000000000000000000000000001\",\"name\":\"界面演示账本\"},\"summary\":{},\"entries\":[],\"people\":[],\"page\":{\"hasMore\":false}}").put("generatedAt",time);
+ if(path.equals("account/status"))return new JSONObject("""
+  {"schemaVersion":1,"canWrite":true,"displayName":"演示用户","unavailable":[],
+   "security":{"totpBound":true,"passkeyBound":true,"twoFactorRequired":true,"settingsUrl":"https://auth.god.robby.wang/settings/two-factor-authentication","passkeys":[
+    {"id":"0123456789abcdef","description":"演示手机","createdAt":"2026-10-09T06:59:12Z","lastUsedAt":"2026-10-19T08:00:00Z","aaguid":null,"attachment":"platform","discoverable":true,"backupEligible":true,"backupState":true,"verified":true,"cloneWarning":false},
+    {"id":"fedcba9876543210","description":"演示安全密钥","createdAt":"2026-09-01T02:00:00Z","lastUsedAt":null,"aaguid":null,"attachment":"cross-platform","discoverable":true,"backupEligible":false,"backupState":false,"verified":true,"cloneWarning":false}]},
+   "social":{"apple":{"available":true,"bound":true,"boundAt":"2026-10-09T07:00:00Z"},"wechat":{"available":true,"bound":false,"boundAt":null}},
+   "email":{"bound":true,"masked":"d***@example.com","verifiedAt":"2026-10-10T03:00:00Z","canSend":true,"purpose":"contact","changesRecoveryEmail":false},
+   "phone":{"available":false,"bound":false}}
+  """).put("checkedAt",time);
+ if(path.equals("account/devices")){
+  java.time.Instant now=java.time.Instant.now();org.json.JSONArray list=new org.json.JSONArray();
+  String[][] rows={{"android","0","5","true"},{"ios","40","120","false"},{"android","300","2000","false"},{"android","4000","9000","false"},{"ios","9000","20000","false"},{"android","20000","40000","false"},{"android","40000","60000","false"},{"ios","60000","90000","false"}};
+  for(int i=0;i<rows.length;i++)list.put(new JSONObject().put("id",String.format("%016x",0xa0+i)).put("client",rows[i][0]).put("lastActiveAt",now.minusSeconds(Long.parseLong(rows[i][1])*60).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()).put("signedInAt",now.minusSeconds(Long.parseLong(rows[i][2])*60).truncatedTo(java.time.temporal.ChronoUnit.SECONDS).toString()).put("current",Boolean.parseBoolean(rows[i][3])));
+  return new JSONObject().put("schemaVersion",1).put("checkedAt",time).put("currentFound",true).put("devices",list);
+ }
  if(path.equals("tokens/quotas"))return tokens();
  if(path.equals("tokens/tibo"))return tibo();
  if(path.equals("market"))return new JSONObject("{\"apiVersion\":\"2026-07-01\",\"sourceStatus\":{},\"watchlist\":[{\"label\":\"合成行情 A\",\"price\":123.45,\"currency\":\"USD\",\"changePct\":1.23}],\"sectors\":[],\"benchmarks\":[],\"aiUpstream\":[],\"disclaimer\":{\"text\":\"完全合成的界面预览数据\"}}").put("generatedAt",time);

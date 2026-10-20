@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.25.0", "2026-10-20", "个人中心与在线设备",
+            "点「我」页顶部的账号卡片进入个人中心，内容和网页个人中心一致。",
+            "可以查看两步验证和每个 Passkey，并跳到登录安全页添加新的 Passkey。",
+            "可以绑定联系邮箱，解除 Apple 或微信登录；绑定第三方账号在网页完成。",
+            "「在线设备」列出所有已登录的 God，本机排在最前，可一键下线其他设备。",
+            "修改账号需要重新登录一次授权，已有登录不受影响。"),
         new Entry("0.23.2", "2026-10-20", "灵动岛按机型对准，左右可配置",
             "灵动岛按手机自己报告的摄像头开孔位置对齐，Pixel 等机型也能居中包住摄像头。",
             "灵动岛左右两侧可分别显示时间、日期、星期、电量或 Tibo 倒计时，放不下时自动加宽。",

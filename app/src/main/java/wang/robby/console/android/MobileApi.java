@@ -21,7 +21,7 @@ public final class MobileApi {
             throw new IllegalArgumentException("接口地址无效");
         String route = path.split("\\?",2)[0];
         boolean known = FeatureCatalog.all().stream().anyMatch(f -> f.path.equals(route));
-        if (!known && !route.equals("travel-ledger/current/snapshot") && !route.equals("tokens/tibo/alerts") && !ledgerRoute(route))
+        if (!known && !route.equals("travel-ledger/current/snapshot") && !route.equals("tokens/tibo/alerts") && !ledgerRoute(route) && !AccountCenter.readRoute(route) && !AccountCenter.writeRoute(route))
             throw new IllegalArgumentException("接口未登记");
         return path;
     }
@@ -79,7 +79,7 @@ public final class MobileApi {
     }
     public JSONObject post(String path,JSONObject body) throws Exception {
         checkedPath(path);
-        if(!path.matches("travel-ledger/(entry-writes|people-writes)/(prepare|commit|resolve)"))throw new IllegalArgumentException("写入接口未登记");
+        if(!path.matches("travel-ledger/(entry-writes|people-writes)/(prepare|commit|resolve)")&&!AccountCenter.writeRoute(path))throw new IllegalArgumentException("写入接口未登记");
         return request("POST",path,body,auth.accessToken());
     }
     private JSONObject request(String method,String path,JSONObject body,String accessToken) throws Exception {
@@ -105,7 +105,8 @@ public final class MobileApi {
                     byte[] buf=new byte[8192];int n;while((n=in.read(buf))!=-1){if(out.size()+n>max)throw new IOException("响应超出安全大小");out.write(buf,0,n);}result=new JSONObject(out.toString(StandardCharsets.UTF_8.name()));
                 }
             }
-            if(status!=200){String code=result==null?"http_error":result.optString("code","http_error");if(!code.matches("[a-z0-9_]{1,80}"))code="http_error";
+            // Ledger routes name the refusal in "code", the account routes in "error".
+            if(status!=200){String code=result==null?"http_error":result.optString("code",result.optString("error","http_error"));if(!code.matches("[a-z0-9_]{1,80}"))code="http_error";
                 throw new ApiError(status,code,switch(status){case 401->"会话已失效，请重新登录";case 403->"当前账号没有此功能的权限";case 404->"此移动接口尚未启用";case 409->"数据已变化，请刷新后重试";case 429->"请求较多，请稍后刷新";default->status>=500?"服务暂不可用，请稍后重试":"服务器未返回预期结果";});}
             if(result==null)throw new IOException("接口返回格式不匹配");reusable=true;return result;
         } finally { if(!reusable)c.disconnect(); }

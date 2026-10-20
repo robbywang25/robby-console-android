@@ -115,7 +115,7 @@ public final class ConsoleTheme {
     }
     private static int hue(String symbol){return switch(symbol){
         case "chart","trend"->0xff3b82f6;case "ledger","plus","edit"->0xfff59e0b;case "globe","server"->0xff14b8a6;case "pulse"->0xff22c55e;
-        case "clipboard","document","history","gauge","calendar"->0xff8b5cf6;case "bell"->0xffef4444;case "chat"->0xff07c160;case "image"->0xffec4899;case "shield","key","user","people","download"->0xff0052d9;
+        case "clipboard","document","history","gauge","calendar"->0xff8b5cf6;case "bell"->0xffef4444;case "chat"->0xff07c160;case "image"->0xffec4899;case "shield","key","user","people","download","phone"->0xff0052d9;case "mail"->0xff0ea5e9;
         case "trash"->0xffef4444;case "drop"->0xff0ea5e9;default->0xff64748b;};}
     public ImageView icon(String name,int color,int size){if("grid".equals(name))return tabIcon(name,true,size);ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,ink));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     public ImageView tabIcon(String name,boolean selected,int size){
@@ -246,6 +246,8 @@ public final class ConsoleTheme {
                 case "clear":line(c,7,7,17,17);line(c,17,7,7,17);break;
                 case "refresh":c.drawArc(4,4,20,20,40,285,false,p);line(c,15,3,20,4,20,9);break;
                 case "key":c.drawCircle(8,9,4,p);line(c,11,12,20,21);line(c,16,17,19,14);break;
+                case "mail":box(c,3,5,18,14);line(c,3.5f,6,12,13,20.5f,6);break;
+                case "phone":box(c,6.5f,2.5f,11,19);line(c,10.5f,18.5f,13.5f,18.5f);break;
                 case "plus":line(c,12,5,12,19);line(c,5,12,19,12);break;
                 case "edit":line(c,4,20,4,16,15,5,19,9,8,20,4,20);line(c,13,7,17,11);break;
                 case "trash":line(c,4,7,20,7);line(c,9,7,9,4,15,4,15,7);line(c,6,7,7,20,17,20,18,7);line(c,10,11,10,16);line(c,14,11,14,16);break;

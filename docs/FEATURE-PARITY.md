@@ -22,6 +22,7 @@
 | 运行状态 | `overview` → `status` | 结论与检测时间、公开/私有/上游计数、按网页规则命名的站点状态、DNS、HTTP、响应头耗时、上游组件；停留时 60 秒自动刷新 | 打开站点和官方状态页链接（移动端合同不返回 URL）、更细筛选 |
 | 站点维护状态 | `site-maintenance/overview` | 标记一致性、站点状态、影响、更新 | 公开维护页链接；无生产切换 |
 | 源码与工程 | `engineering` | 仓库索引、日志与服务端截断提示 | 时间/仓库筛选、提交跳转 |
+| 个人中心 | `account/status`、`account/devices`（`god.mobile.read`）；写入 `account/email/send`、`email/verify`、`social/unbind`、`devices/revoke-others`（`god.mobile.account.write`，0.25.0 起申请） | 名字、两步验证与 Passkey 列表、Apple/微信绑定（可解除）、联系邮箱绑定、手机号（不支持）、在线 God 登录（本机在前）与一键下线其他设备 | 添加 Passkey、绑定 Apple/微信在网页完成；手机号绑定未开放 |
 | 云剪贴板 | `clipboard` | 元数据：可见性、创建时间、到期时间 | 显式 reveal、复制、创建、改可见性、可恢复删除；不请求/显示内容 |
 | 旅行记账 | `travel-ledger/current/projects`；选中后 `travel-ledger/current/snapshot?project=…&limit=40` | 项目列表；snapshot 的支出/退款/净额、多币种汇总、同行人分摊、当前页账目与分页状态 | Activity 负责项目选择和分页；账目和人员写入由 LedgerActions 提供（见下）；退款操作、导出尚未实现 |
 | 图片工坊 | `image-workshop/overview` | 库存、派生图尺寸/大小、更新时间、处理服务状态 | 图片预览、本地处理、分享、三文件上传 |

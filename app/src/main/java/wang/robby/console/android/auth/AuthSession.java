@@ -36,13 +36,17 @@ public final class AuthSession {
             + "god.mobile.wechat.read god.mobile.prompts.read "
             + "god.mobile.travel.entries.write god.mobile.travel.people.write god.mobile.tokens.read";
     public static final String PROFILE_WRITE = "god.mobile.profile.write";
+    /** The set 0.17.0–0.24.x signed in with: the previous one plus saving the avatar. */
+    static final String PROFILE_SCOPES = PREVIOUS_SCOPES + " " + PROFILE_WRITE;
+    /** 个人中心 writes: binding the contact email, removing a sign-in binding, signing out the other devices. */
+    public static final String ACCOUNT_WRITE = "god.mobile.account.write";
     /** Every new sign-in asks for exactly this set. */
-    public static final String SCOPES = PREVIOUS_SCOPES + " " + PROFILE_WRITE;
+    public static final String SCOPES = PROFILE_SCOPES + " " + ACCOUNT_WRITE;
     /**
-     * A stored or refreshed session may hold the current set or the previous, strictly smaller one, so adding the
-     * avatar scope does not sign anyone out; only uploading the avatar asks for a new sign-in. Anything else is invalid.
+     * A stored or refreshed session may hold the current set or one of the earlier, strictly smaller ones, so adding a
+     * write scope never signs anyone out; only the action that needs it asks for a new sign-in. Anything else is invalid.
      */
-    static boolean acceptedScope(String scope) { return SCOPES.equals(scope) || PREVIOUS_SCOPES.equals(scope); }
+    static boolean acceptedScope(String scope) { return SCOPES.equals(scope) || PROFILE_SCOPES.equals(scope) || PREVIOUS_SCOPES.equals(scope); }
     private static final Object STATE_LOCK = new Object();
     private static final Object REFRESH_LOCK = new Object();
     private static long generation;

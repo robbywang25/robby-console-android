@@ -35,6 +35,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private static final String BOARD="board";
     /** Pseudo feature id for 我 → 已隐藏的功能. */
     private static final String HIDDEN_PAGE="hidden";
+    /** Pseudo feature id for 我 → 个人中心 (the account card). */
+    private static final String ACCOUNT_PAGE="account";
+    /** 个人中心's last answers; process memory only and dropped in the background like every other page's data. */
+    private AccountCenter.Status accountStatus; private AccountCenter.Devices accountDevices; private boolean devicesUnfolded;
+    /** Back from the browser (adding a Passkey, binding Apple or WeChat): read the account again. */
+    private boolean accountBrowserPending,accountNameRead; private TextView profileName;
     /** Release-note cards the reader expanded; process memory only, like the other reading context. */
     private final Set<String> expandedNotes=new HashSet<>();
     /** In-app update for the 关于 page. State is process memory only; network work runs off the UI thread. */
@@ -115,6 +121,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}
         // Back from a notification or battery settings page: show what still keeps the reminder from ringing.
         TokensPages.refreshReminder();
+        if(accountBrowserPending){accountBrowserPending=false;if(ACCOUNT_PAGE.equals(selectedId)&&loggedIn()){accountStatus=null;accountDevices=null;build();}}
         // ColorOS may stop the reminder or refuse to restart it after an update; opening the app brings it back.
         if(!PreviewMode.isBuild()&&TiboWatch.enabled(this))TiboWatch.start(this,TiboWatch.checkDue(this));
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
@@ -201,8 +208,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // The stage holds the sky and the page. The floating dock blurs the stage, never itself.
         FrameLayout stage=new FrameLayout(this);stage.setBackground(theme.backdrop());root.addView(stage,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);stage.addView(body,new FrameLayout.LayoutParams(-1,-1));
-        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId),hiddenPage=HIDDEN_PAGE.equals(selectedId);if(detail==null&&!about&&!boardEdit&&!hiddenPage)selectedId=null;
-        boolean nested=device!=null||detail!=null||about||boardEdit||hiddenPage;
+        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId),hiddenPage=HIDDEN_PAGE.equals(selectedId),accountPage=ACCOUNT_PAGE.equals(selectedId)&&logged;if(detail==null&&!about&&!boardEdit&&!hiddenPage&&!accountPage)selectedId=null;
+        boolean nested=device!=null||detail!=null||about||boardEdit||hiddenPage||accountPage;
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
         leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
@@ -294,6 +301,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         else if(about)about();
         else if(boardEdit)boardEditor();
         else if(hiddenPage)hiddenPage();
+        else if(accountPage)accountPage();
         else if(detail!=null)showFeature(detail,false);
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else features();
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
@@ -768,7 +776,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     /** Account card at the top of 我, in WeChat's profile position; opens the same sign-in / sign-out choices as before. */
     private void profile(){
         boolean logged=loggedIn();LinearLayout c=card();c.setOrientation(LinearLayout.HORIZONTAL);c.setGravity(Gravity.CENTER_VERTICAL);c.setPadding(dp(16),dp(18),dp(14),dp(18));
-        c.setBackground(theme.ripple(theme.card(),24));c.setFocusable(true);c.setClickable(true);c.setContentDescription(logged?"账号与退出登录":"登录 God");c.setOnClickListener(v->account());theme.press(c);
+        c.setBackground(theme.ripple(theme.card(),24));c.setFocusable(true);c.setClickable(true);c.setContentDescription(logged?"个人中心":"登录 God");c.setOnClickListener(v->{if(loggedIn())openAccount();else account();});theme.press(c);
         // The avatar is its own tap target (更换头像); the rest of the card keeps opening the account choices.
         android.graphics.Bitmap picture=Avatar.get(this);FrameLayout avatar=new FrameLayout(this);
         if(picture==null){avatar.setBackground(theme.glass(-1));avatar.addView(theme.icon("user",INK,28),new FrameLayout.LayoutParams(dp(28),dp(28),Gravity.CENTER));}
@@ -777,9 +785,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         avatar.addView(edit,new FrameLayout.LayoutParams(dp(22),dp(22),Gravity.BOTTOM|Gravity.END));
         avatar.setFocusable(true);avatar.setClickable(true);avatar.setContentDescription(picture==null?"设置头像":"更换头像");avatar.setOnClickListener(v->avatarMenu());theme.press(avatar);
         c.addView(avatar,new LinearLayout.LayoutParams(dp(60),dp(60)));
-        LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(16),0,dp(8),0);labels.addView(text(logged?"已登录":"尚未登录",20,INK,true));
-        TextView detail=text(!logged?"使用 Passkey 或已有设备登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":"Passkey · 设备加密存储",13,MUTED,false);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
+        LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(16),0,dp(8),0);profileName=text(!logged?"尚未登录":accountStatus!=null&&accountStatus.displayName!=null?accountStatus.displayName:"已登录",20,INK,true);profileName.setSingleLine(true);profileName.setEllipsize(android.text.TextUtils.TruncateAt.END);labels.addView(profileName);
+        TextView detail=text(!logged?"使用 Passkey 或已有设备登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":"个人中心 · 登录安全与在线设备",13,MUTED,false);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
         c.addView(labels,new LinearLayout.LayoutParams(0,-2,1));ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);c.addView(chevron);
+        // The name comes from the account; read it quietly once per foreground visit and fill it in place.
+        if(logged&&accountStatus==null&&!accountNameRead){accountNameRead=true;loadAccountStatus(null);}
     }
     private static final int PICK_AVATAR=42;
     /** 我 tab glyph: the avatar when one is set (ringed when selected), otherwise the person symbol. */
@@ -832,7 +842,147 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         show(new AlertDialog.Builder(this).setTitle("同步头像需要重新登录").setMessage("头像已保存在这台手机上。God 需要你重新登录一次，授权把头像保存到服务器；登录后会自动上传。").setNegativeButton("以后再说",null)
             .setPositiveButton("重新登录",(d,w)->{signOut();account();}));
     }
-    private void signOut(){++generation;snapshots.clear();navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}
+    private void openAccount(){saveViewport();++generation;selectedId=ACCOUNT_PAGE;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
+    /** Reads account/status off the UI thread; fills the 我 card's name and, when given, the page's account part. */
+    private void loadAccountStatus(Runnable done){
+        final int gen=generation;
+        boardReads.execute(()->{AccountCenter.Status s=null;Exception failure=null;
+            try{s=AccountCenter.status(read(AccountCenter.STATUS));}catch(Exception e){failure=e;}
+            final AccountCenter.Status got=s;final Exception error=failure;
+            runOnUiThread(()->{if(isDestroyed())return;if(got!=null)accountStatus=got;
+                if(got!=null&&got.displayName!=null&&profileName!=null&&profileName.isAttachedToWindow())profileName.setText(got.displayName);
+                if(gen!=generation||done==null)return;accountError=error;done.run();});});
+    }
+    private Exception accountError,devicesError;
+    private void loadDevices(Runnable done){
+        final int gen=generation;
+        boardReads.execute(()->{AccountCenter.Devices d=null;Exception failure=null;
+            try{d=AccountCenter.devices(read(AccountCenter.DEVICES));}catch(Exception e){failure=e;}
+            final AccountCenter.Devices got=d;final Exception error=failure;
+            runOnUiThread(()->{if(isDestroyed()||gen!=generation)return;if(got!=null)accountDevices=got;devicesError=error;done.run();});});
+    }
+    /**
+     * 我 → 个人中心, the same account as god.robby.wang/account/: who is signed in, 登录与安全 (two-step verification
+     * and every Passkey, with 添加 Passkey on the identity provider's own page), 第三方账号 (Apple and 微信; removing a
+     * binding here, adding one on the web), 联系方式 (contact email; phone not offered), 在线设备 (each God app
+     * signed in, 本机 first, and 下线其他设备), then 退出登录. Each part loads on its own and pull-to-refresh reads both.
+     */
+    private void accountPage(){
+        heading.setText("个人中心");
+        leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));
+        LinearLayout hero=new LinearLayout(this);hero.setOrientation(LinearLayout.VERTICAL);hero.setGravity(Gravity.CENTER_HORIZONTAL);hero.setPadding(0,dp(8),0,dp(18));
+        android.graphics.Bitmap picture=Avatar.get(this);FrameLayout avatar=new FrameLayout(this);
+        if(picture==null){avatar.setBackground(theme.glass(-1));avatar.addView(theme.icon("user",INK,36),new FrameLayout.LayoutParams(dp(36),dp(36),Gravity.CENTER));}
+        else avatar.addView(Avatar.view(this,picture),new FrameLayout.LayoutParams(-1,-1));
+        avatar.setFocusable(true);avatar.setClickable(true);avatar.setContentDescription(picture==null?"设置头像":"更换头像");avatar.setOnClickListener(v->avatarMenu());theme.press(avatar);
+        hero.addView(avatar,new LinearLayout.LayoutParams(dp(76),dp(76)));
+        TextView name=text(accountStatus!=null&&accountStatus.displayName!=null?accountStatus.displayName:"God 账号",22,INK,true);name.setGravity(Gravity.CENTER);name.setPadding(0,dp(12),0,dp(4));hero.addView(name);
+        TextView sub=text("会话保存在此设备的加密存储中",13,MUTED,false);sub.setGravity(Gravity.CENTER);hero.addView(sub);content.addView(hero);
+        final LinearLayout account=new LinearLayout(this);account.setOrientation(LinearLayout.VERTICAL);content.addView(account);
+        final LinearLayout devices=new LinearLayout(this);devices.setOrientation(LinearLayout.VERTICAL);content.addView(devices);
+        Runnable fillAccount=()->{account.removeAllViews();accountParts(account,name);},fillDevices=()->{devices.removeAllViews();deviceParts(devices);};
+        if(accountStatus==null){accountError=null;placeholder(account,"正在读取账号…");loadAccountStatus(fillAccount);}else fillAccount.run();
+        if(accountDevices==null){devicesError=null;placeholder(devices,"正在读取在线设备…");loadDevices(fillDevices);}else fillDevices.run();
+        View gap=new View(this);content.addView(gap,new LinearLayout.LayoutParams(-1,dp(12)));LinearLayout leave=groupCard();LinearLayout out=featureRow("退出登录","清除本机令牌，需要重新用 Passkey 登录","clear",leave,()->show(new AlertDialog.Builder(this).setTitle("退出登录？").setMessage("会清除这台手机上的 God 登录。其他设备不受影响。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->signOut())));
+        ((TextView)((LinearLayout)out.getChildAt(1)).getChildAt(0)).setTextColor(theme.danger);
+        final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新个人中心",()->{final int[] left={2};Runnable one=()->{if(--left[0]==0)page.finishRefresh();};
+            loadAccountStatus(()->{fillAccount.run();one.run();});loadDevices(()->{fillDevices.run();one.run();});});
+        restoreViewport();
+    }
+    private void placeholder(LinearLayout parent,String message){LinearLayout c=theme.card(parent);TextView t=text(message,14,MUTED,false);t.setPadding(dp(2),dp(6),dp(2),dp(6));c.addView(t);}
+    private void accountSection(LinearLayout parent,String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));parent.addView(t);}
+    private void accountParts(LinearLayout parent,TextView name){
+        AccountCenter.Status s=accountStatus;
+        if(s==null){placeholder(parent,accountMessage(accountError,"账号暂时读不到，下拉可重试。"));return;}
+        if(s.displayName!=null)name.setText(s.displayName);
+        boolean identity=!s.unavailable.contains("identity");
+        accountSection(parent,"登录与安全");LinearLayout security=groupCard(parent);
+        if(!identity||s.totp==null)featureRow("登录安全","暂时读不到，下拉可重试","shield",security,null);
+        else{
+            featureRow("两步验证",s.totp?"已绑定验证器 App":"未绑定验证器 App","shield",security,()->openAccountWeb(s.settingsUrl));
+            int count=s.passkeys==null?(Boolean.TRUE.equals(s.passkeyBound)?-1:0):s.passkeys.size();
+            featureRow("Passkey",count<0?"已添加":count==0?"尚未添加":count+" 个 · 可用于登录 God","key",security,null);
+            if(s.passkeys!=null)for(AccountCenter.Passkey k:s.passkeys)featureRow(k.name,k.detail,"key",security,null);
+            featureRow("添加 Passkey","在登录安全页创建，完成后返回这里自动刷新","plus",security,()->openAccountWeb(s.settingsUrl));
+        }
+        accountSection(parent,"第三方账号");LinearLayout social=groupCard(parent);
+        if(!identity||s.social==null||s.social.isEmpty())featureRow("第三方账号","暂时读不到，下拉可重试","people",social,null);
+        else for(AccountCenter.Social x:s.social){
+            String detail=x.bound?"已绑定"+(x.boundAt==null?"":" · "+AccountCenter.day(x.boundAt))+" · 点按解除":x.available?"未绑定 · 在网页个人中心绑定":"暂未开放";
+            featureRow(x.label,detail,"apple".equals(x.provider)?"user":"chat",social,x.bound?()->unbind(x):x.available?()->openAccountWeb(AccountCenter.WEB):null);
+        }
+        accountSection(parent,"联系方式");LinearLayout contact=groupCard(parent);
+        if(s.unavailable.contains("email")||s.emailBound==null)featureRow("邮箱","暂时读不到，下拉可重试","mail",contact,null);
+        else featureRow("邮箱",s.emailBound?s.emailMasked+" · 已验证 · 点按更换":"未绑定 · 点按绑定联系邮箱","mail",contact,s.emailCanSend||!s.emailBound?this::bindEmail:null);
+        featureRow("手机号",Boolean.TRUE.equals(s.phoneBound)?"已绑定":"暂不支持绑定","phone",contact,null);
+        if(!s.canWrite)parent.addView(theme.info(List.of("这次登录还不能修改账号：绑定邮箱、解除第三方账号和下线其他设备需要重新登录一次授权。")));
+    }
+    private void deviceParts(LinearLayout parent){
+        AccountCenter.Devices d=accountDevices;
+        accountSection(parent,"在线设备");LinearLayout list=groupCard(parent);
+        if(d==null){featureRow("在线设备",accountMessage(devicesError,"暂时读不到，下拉可重试"),"phone",list,null);return;}
+        java.time.Instant now=java.time.Instant.now();int shown=0,folded=0;
+        for(AccountCenter.Device x:d.list){
+            if(!x.current&&shown>=AccountCenter.FOLD&&!devicesUnfolded){folded++;continue;}
+            LinearLayout row=featureRow(AccountCenter.deviceTitle(x),AccountCenter.deviceDetail(x,now),"phone",list,null);shown++;
+            if(x.current){row.setContentDescription(row.getContentDescription()+"，本机");TextView mark=text("本机",12,ACCENT,true);mark.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);mark.setPadding(dp(10),dp(4),dp(10),dp(4));mark.setBackground(round((ACCENT&0x00ffffff)|0x22000000,99));row.addView(mark);}
+        }
+        if(d.list.isEmpty())featureRow("没有已登录的 App","","phone",list,null);
+        if(folded>0){final int n=folded;featureRow("还有 "+n+" 个较早的登录","点按展开","history",list,()->{devicesUnfolded=true;parent.removeAllViews();deviceParts(parent);});}
+        int others=AccountCenter.others(d);
+        if(others>0){LinearLayout row=featureRow("下线其他设备",others+" 个其他登录 · 保留本机","clear",list,()->revokeOthers(others));((TextView)((LinearLayout)row.getChildAt(1)).getChildAt(0)).setTextColor(theme.danger);}
+        if(!d.currentFound&&!d.list.isEmpty())parent.addView(theme.info(List.of("暂时没认出本机的登录（刚刷新过会话时可能如此），下拉刷新后会标出本机。")));
+    }
+    private String accountMessage(Exception e,String fallback){
+        if(e instanceof MobileApi.ApiError){MobileApi.ApiError a=(MobileApi.ApiError)e;String m=AccountCenter.explain(a.status,a.code);return m!=null?m:safeError(e);}
+        return e==null?fallback:safeError(e);
+    }
+    /** Adding a Passkey or binding Apple / 微信 happens on the web; the page opens over the app and 个人中心 refreshes on return. */
+    private void openAccountWeb(String url){
+        if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}
+        Intent tab=new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE);
+        Bundle extras=new Bundle();extras.putBinder("android.support.customtabs.extra.SESSION",null);tab.putExtras(extras);
+        try{accountBrowserPending=true;startActivity(tab);}catch(ActivityNotFoundException e){accountBrowserPending=false;error("无法打开","手机需要可打开网页的浏览器。");}
+    }
+    private void accountSignIn(){
+        show(new AlertDialog.Builder(this).setTitle("需要重新登录").setMessage("这次登录还不能修改账号。重新登录一次，授权 God 绑定邮箱、解除第三方账号和下线其他设备。").setNegativeButton("以后再说",null)
+            .setPositiveButton("重新登录",(d,w)->{signOut();account();}));
+    }
+    /** One 个人中心 write: refused at once without god.mobile.account.write, never retried, reported in plain words. */
+    private void accountWrite(String route,JSONObject body,java.util.function.Consumer<JSONObject> done){
+        if(PreviewMode.isBuild()){error("界面预览","界面预览不执行写入。");return;}
+        if(!auth.hasScope(AuthSession.ACCOUNT_WRITE)){accountSignIn();return;}
+        updater.execute(()->{try{JSONObject r=api.post(route,body);runOnUiThread(()->{if(!isDestroyed())done.accept(r);});}
+            catch(Exception e){runOnUiThread(()->{if(isDestroyed())return;
+                if(e instanceof MobileApi.ApiError&&AccountCenter.needsSignIn(((MobileApi.ApiError)e).status,((MobileApi.ApiError)e).code)){accountSignIn();return;}
+                error("未完成",accountMessage(e,"连接未完成，请检查网络后重试"));});}});
+    }
+    private void reloadAccount(){accountStatus=null;accountDevices=null;if(ACCOUNT_PAGE.equals(selectedId))build();}
+    private void unbind(AccountCenter.Social x){
+        show(new AlertDialog.Builder(this).setTitle("解除"+x.label+"绑定？").setMessage("解除后不能再用"+x.label+"登录 God。可以随时在网页个人中心重新绑定。").setNegativeButton("取消",null)
+            .setPositiveButton("解除绑定",(d,w)->{try{accountWrite(AccountCenter.UNBIND,new JSONObject().put("provider",x.provider).put("confirm","unbind:"+x.provider),r->{toast("已解除"+x.label+"绑定");reloadAccount();});}catch(org.json.JSONException ignored){}}));
+    }
+    private void revokeOthers(int count){
+        show(new AlertDialog.Builder(this).setTitle("下线其他 "+count+" 个登录？").setMessage("除这台手机外，其他设备上的 God 会在 10 分钟内退出登录，需要重新用 Passkey 登录。").setNegativeButton("取消",null)
+            .setPositiveButton("下线",(d,w)->{try{accountWrite(AccountCenter.REVOKE_OTHERS,new JSONObject().put("confirm","revoke:others"),r->{toast("已下线 "+r.optInt("signedOut",0)+" 个登录");devicesUnfolded=false;reloadAccount();});}catch(org.json.JSONException ignored){}}));
+    }
+    /** Contact email: an address, a six-digit code sent to it, then the verified, masked address. Recovery email is separate. */
+    private void bindEmail(){
+        if(!PreviewMode.isBuild()&&!auth.hasScope(AuthSession.ACCOUNT_WRITE)){accountSignIn();return;}
+        EditText field=new EditText(this);field.setHint("name@example.com");field.setSingleLine(true);field.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS);
+        FrameLayout box=new FrameLayout(this);box.setPadding(dp(20),dp(8),dp(20),0);box.addView(field);
+        show(new AlertDialog.Builder(this).setTitle("绑定联系邮箱").setMessage("用于接收通知，不会改变登录方式。").setView(box).setNegativeButton("取消",null)
+            .setPositiveButton("发送验证码",(d,w)->{String email=field.getText().toString().trim();if(!AccountCenter.emailLooksValid(email)){error("邮箱格式不正确","请检查后重新输入。");return;}
+                try{accountWrite(AccountCenter.EMAIL_SEND,new JSONObject().put("email",email),r->{String id=r.optString("challengeId","");if(!id.matches("[A-Za-z0-9_-]{32}")){error("未完成","服务器未返回预期结果");return;}enterEmailCode(id,r.optString("masked",""));});}catch(org.json.JSONException ignored){}}));
+    }
+    private void enterEmailCode(String challenge,String masked){
+        EditText field=new EditText(this);field.setHint("6 位验证码");field.setSingleLine(true);field.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);field.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(6)});
+        FrameLayout box=new FrameLayout(this);box.setPadding(dp(20),dp(8),dp(20),0);box.addView(field);
+        show(new AlertDialog.Builder(this).setTitle("输入验证码").setMessage("验证码已发送到 "+(masked.matches("[^\\s@*]\\*\\*\\*@[A-Za-z0-9.-]{3,253}")?masked:"你的邮箱")+"，10 分钟内有效。").setView(box).setNegativeButton("取消",null)
+            .setPositiveButton("验证",(d,w)->{String code=field.getText().toString().trim();if(!code.matches("\\d{6}")){error("验证码不正确","请输入 6 位数字。");return;}
+                try{accountWrite(AccountCenter.EMAIL_VERIFY,new JSONObject().put("challengeId",challenge).put("code",code),r->{toast("邮箱已绑定");reloadAccount();});}catch(org.json.JSONException ignored){}}));
+    }
+    private void signOut(){++generation;snapshots.clear();accountStatus=null;accountDevices=null;devicesUnfolded=false;navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}
     /** System photo picker where available (no storage permission); otherwise any app that offers an image. */
     private void pickAvatar(){
         // Launch directly: package visibility hides the picker from resolveActivity() on Android 11+.
@@ -1037,7 +1187,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}
-    @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();board=null;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God",24,INK,true));}}
+    @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();board=null;accountStatus=null;accountDevices=null;accountNameRead=false;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God",24,INK,true));}}
     @Override protected void onDestroy(){++generation;nativeLogin.dispose();if(ledger!=null)ledger.dispose();worker.shutdownNow();updateCancel.set(true);updater.shutdownNow();if(UpdateReceiver.listener==updateListener)UpdateReceiver.listener=null;super.onDestroy();}
     private FeatureCatalog.Feature find(String id){return FeatureCatalog.all().stream().filter(f->f.id.equals(id)).findFirst().orElse(null);}
     private void section(String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));content.addView(t);}
