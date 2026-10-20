@@ -86,7 +86,8 @@ final class NoticeCenter {
     }
     /** A sample of what a notification looks like; it changes no state. */
     static void test(Context c) {
-        post(c, new Notices.Notice("test:" + System.currentTimeMillis(), Notices.DAILY, "试发 · Claude 今天已用掉 32%每周", "超过你设的每日 30% 提醒线，现在剩 41%。这是一条演示通知。", "tokens"));
+        // One fixed key, so tapping 发送测试通知 again replaces the sample instead of stacking another.
+        post(c, new Notices.Notice("test:sample", Notices.DAILY, "试发 · Claude 今天已用掉 32%每周", "超过你设的每日 30% 提醒线，现在剩 41%。这是一条演示通知。", "tokens"));
     }
     /** 上次检查 HH:mm · 正常, or why the last read failed. */
     static String status(Context c) {
