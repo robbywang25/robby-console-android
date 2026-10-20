@@ -199,6 +199,7 @@ final class TiboWatch {
         if (Build.VERSION.SDK_INT >= 33 && c.checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED || !nm.areNotificationsEnabled())
             out.add(new String[]{"通知未开启，无法响铃", "notifications"});
         else { NotificationChannel ch = nm.getNotificationChannel(CH_ALARM); if (ch != null && ch.getImportance() < NotificationManager.IMPORTANCE_HIGH) out.add(new String[]{"「Tibo 重置提醒」通知类别被调低，不会响铃", "channel"}); }
+        if (NoticeCenter.enhanced(c)) { NotificationChannel alert = nm.getNotificationChannel(NoticeCenter.CH_ALERT); if (alert != null && alert.getImportance() < NotificationManager.IMPORTANCE_HIGH) out.add(new String[]{"「God 增强提醒」通知类别被调低，不会弹出横幅", "notifications"}); }
         if (Build.VERSION.SDK_INT >= 34 && !nm.canUseFullScreenIntent()) out.add(new String[]{"未允许全屏提醒，锁屏时只显示横幅", "fullscreen"});
         if (!c.getSystemService(PowerManager.class).isIgnoringBatteryOptimizations(c.getPackageName())) out.add(new String[]{"仍受电池优化限制，后台检查可能被推迟", "battery"});
         if (Build.VERSION.SDK_INT >= 31 && !c.getSystemService(AlarmManager.class).canScheduleExactAlarms()) out.add(new String[]{"未允许精确闹钟，检查可能被系统推迟", "exact"});

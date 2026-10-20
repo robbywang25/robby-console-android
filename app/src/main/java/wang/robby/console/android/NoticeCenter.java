@@ -7,6 +7,8 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.media.AudioAttributes;
+import android.media.RingtoneManager;
 import android.util.Log;
 import org.json.JSONObject;
 import java.time.ZoneId;
@@ -20,7 +22,7 @@ import java.util.*;
  */
 final class NoticeCenter {
     private NoticeCenter() {}
-    static final String CH_QUOTA = "god-quota-v1", CH_SITES = "god-sites-v1";
+    static final String CH_QUOTA = "god-quota-v1", CH_SITES = "god-sites-v1", CH_ALERT = "god-alert-v1";
     static SharedPreferences prefs(Context c) { return c.getApplicationContext().getSharedPreferences("god-notices", Context.MODE_PRIVATE); }
 
     static Notices.Settings settings(Context c) {
@@ -70,19 +72,83 @@ final class NoticeCenter {
         quota.setDescription("当天消耗、额度将用完、额度重置、账号与重置卡"); quota.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
         NotificationChannel sites = new NotificationChannel(CH_SITES, "站点状态", NotificationManager.IMPORTANCE_HIGH);
         sites.setDescription("监测中的站点离线与恢复"); sites.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
-        c.getSystemService(NotificationManager.class).createNotificationChannels(List.of(quota, sites));
+        // A channel's importance cannot be raised after it exists, so 增强提醒 has a channel of its own.
+        NotificationChannel alert = new NotificationChannel(CH_ALERT, "God 增强提醒", NotificationManager.IMPORTANCE_HIGH);
+        alert.setDescription("开启增强提醒后，额度和站点提醒以横幅、声音和震动送达；持续提醒会一直响到你点「知道了」");
+        alert.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+        alert.enableVibration(true); alert.setVibrationPattern(new long[]{0, 400, 250, 400}); alert.enableLights(true); alert.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+        c.getSystemService(NotificationManager.class).createNotificationChannels(List.of(quota, sites, alert));
     }
-    static void post(Context context, Notices.Notice n) {
+    static boolean enhanced(Context c) { return prefs(c).getBoolean("enhanced", false); }
+    static boolean persistent(Context c) { return enhanced(c) && prefs(c).getBoolean("persistent", false); }
+    /** 增强提醒 off also ends 持续提醒 and silences anything still ringing. */
+    static void setMode(Context c, String which, boolean value) {
+        prefs(c).edit().putBoolean(which, value).apply();
+        if (!persistent(c)) ackAll(c);
+    }
+    static void post(Context context, Notices.Notice n) { post(context, n, 1); }
+    /**
+     * Posts {@code n}. With 增强提醒 on it uses the high-priority channel (banner, sound, vibration); with 持续提醒 also on it
+     * cannot be swiped away, its sound repeats until 知道了 (or opening it), and it rings again after ten minutes, at most
+     * {@link #ROUNDS} rounds, staying silent in the shade after the last.
+     */
+    static void post(Context context, Notices.Notice n, int round) {
         Context c = context.getApplicationContext(); channels(c);
-        boolean site = n.kind.equals(Notices.SITES); String channel = site ? CH_SITES : CH_QUOTA;
-        Intent open = new Intent(c, MainActivity.class).putExtra(TiboWatch.EXTRA_OPEN, n.open).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        boolean site = n.kind.equals(Notices.SITES), loud = enhanced(c), keep = persistent(c);
+        String channel = loud ? CH_ALERT : site ? CH_SITES : CH_QUOTA;
+        Intent open = new Intent(c, MainActivity.class).putExtra(TiboWatch.EXTRA_OPEN, n.open).putExtra(EXTRA_KEY, n.key).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent tap = PendingIntent.getActivity(c, n.key.hashCode(), open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Notification hidden = new Notification.Builder(c, channel).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle("God").setContentText(site ? "站点状态有变化" : "额度提醒").build();
-        Notification note = new Notification.Builder(c, channel).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle(n.title).setContentText(n.text)
-            .setStyle(new Notification.BigTextStyle().bigText(n.text)).setContentIntent(tap).setAutoCancel(true).setShowWhen(true).setWhen(System.currentTimeMillis())
+        Notification.Builder b = new Notification.Builder(c, channel).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle((round > 1 ? "再次提醒 · " : "") + n.title).setContentText(n.text)
+            .setStyle(new Notification.BigTextStyle().bigText(n.text)).setContentIntent(tap).setAutoCancel(!keep).setShowWhen(true).setWhen(System.currentTimeMillis())
             .setCategory(site ? Notification.CATEGORY_ERROR : Notification.CATEGORY_REMINDER).setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(hidden)
-            .setColor(site ? 0xffef4444 : 0xff0052d9).setGroup(channel).build();
-        c.getSystemService(NotificationManager.class).notify(n.kind, n.key.hashCode(), note);
+            .setColor(site ? 0xffef4444 : 0xff0052d9).setGroup(channel);
+        if (keep) {
+            PendingIntent ack = PendingIntent.getBroadcast(c, ("ack:" + n.key).hashCode(), new Intent(c, TiboWatchReceiver.class).setAction(ACTION_ACK).putExtra(EXTRA_KEY, n.key), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            b.setOngoing(true).setDeleteIntent(ack).setOnlyAlertOnce(round > ROUNDS).addAction(new Notification.Action.Builder(null, "知道了", ack).build());
+        }
+        Notification note = b.build(); if (keep && round <= ROUNDS) note.flags |= Notification.FLAG_INSISTENT;
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (round > 1 && round <= ROUNDS) nm.cancel(n.kind, n.key.hashCode());
+        nm.notify(n.kind, n.key.hashCode(), note);
+        if (keep) remember(c, n, round);
+    }
+    static final String ACTION_ACK = "wang.robby.console.android.NOTICE_ACK", ACTION_RERING = "wang.robby.console.android.NOTICE_RERING", EXTRA_KEY = "wang.robby.console.android.NOTICE_KEY";
+    static final int ROUNDS = 3; static final long RERING = 10 * 60_000L;
+    private static JSONObject pending(Context c) { try { return new JSONObject(prefs(c).getString("pending", "{}")); } catch (org.json.JSONException e) { return new JSONObject(); } }
+    private static void remember(Context c, Notices.Notice n, int round) {
+        JSONObject all = pending(c);
+        try { all.put(n.key, new JSONObject().put("kind", n.kind).put("title", n.title).put("text", n.text).put("open", n.open).put("round", round)); } catch (org.json.JSONException e) { return; }
+        prefs(c).edit().putString("pending", all.toString()).apply(); scheduleRering(c, all);
+    }
+    private static void scheduleRering(Context c, JSONObject all) {
+        android.app.AlarmManager alarms = c.getSystemService(android.app.AlarmManager.class);
+        PendingIntent p = PendingIntent.getBroadcast(c, ACTION_RERING.hashCode(), new Intent(c, TiboWatchReceiver.class).setAction(ACTION_RERING), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        boolean due = false; for (Iterator<String> it = all.keys(); it.hasNext(); ) { JSONObject e = all.optJSONObject(it.next()); if (e != null && e.optInt("round") < ROUNDS) due = true; }
+        if (!due) { alarms.cancel(p); return; }
+        long at = System.currentTimeMillis() + RERING;
+        if (android.os.Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) alarms.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, p);
+        else alarms.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, p);
+    }
+    /** Ten minutes on: every reminder not yet acknowledged rings its next round. */
+    static void rering(Context c) {
+        if (!persistent(c)) { ackAll(c); return; }
+        JSONObject all = pending(c);
+        for (Iterator<String> it = all.keys(); it.hasNext(); ) {
+            String key = it.next(); JSONObject e = all.optJSONObject(key); if (e == null || e.optInt("round") >= ROUNDS) continue;
+            post(c, new Notices.Notice(key, e.optString("kind"), e.optString("title"), e.optString("text"), e.optString("open")), e.optInt("round") + 1);
+        }
+    }
+    /** 知道了, swiping it away, or opening God from it: that reminder stops. */
+    static void ack(Context c, String key) {
+        JSONObject all = pending(c); JSONObject e = key == null ? null : all.optJSONObject(key); if (e == null) return;
+        all.remove(key); prefs(c).edit().putString("pending", all.toString()).apply();
+        c.getSystemService(NotificationManager.class).cancel(e.optString("kind"), key.hashCode()); scheduleRering(c, all);
+    }
+    static void ackAll(Context c) {
+        JSONObject all = pending(c); NotificationManager nm = c.getSystemService(NotificationManager.class);
+        for (Iterator<String> it = all.keys(); it.hasNext(); ) { String key = it.next(); JSONObject e = all.optJSONObject(key); if (e != null) nm.cancel(e.optString("kind"), key.hashCode()); }
+        prefs(c).edit().remove("pending").apply(); scheduleRering(c, new JSONObject());
     }
     /** A sample of what a notification looks like; it changes no state. */
     static void test(Context c) {

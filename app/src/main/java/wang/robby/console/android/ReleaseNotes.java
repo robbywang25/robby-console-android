@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.27.0", "2026-10-20", "增强提醒与额度自动刷新",
+            "「我 → 通知」新增增强提醒：额度和站点提醒以横幅、声音和震动送达。",
+            "打开持续提醒后，通知会一直响到你点「知道了」，10 分钟后再响，最多 3 轮。",
+            "从通知打开 God 也算「知道了」；关闭增强提醒会停止正在响的提醒。",
+            "停留在总览时，Token 额度卡片按服务器建议的间隔自动刷新，不用再下拉。"),
         new Entry("0.26.0", "2026-10-20", "额度和站点主动提醒",
             "「我 → 通知」新增 Token 额度提醒：当天消耗超过提醒线时通知你，提醒线可调。",
             "额度快用完、每周额度重置、账号需要重新授权、重置卡快过期，也可以分别开启提醒。",

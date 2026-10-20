@@ -11,6 +11,8 @@ public final class TiboWatchReceiver extends BroadcastReceiver {
         switch (action) {
             case TiboWatch.ACTION_ACK: TiboWatch.ack(context); break;
             case TiboWatch.ACTION_RERING: TiboWatch.rering(context); break;
+            case NoticeCenter.ACTION_ACK: NoticeCenter.ack(context, intent.getStringExtra(NoticeCenter.EXTRA_KEY)); break;
+            case NoticeCenter.ACTION_RERING: NoticeCenter.rering(context); break;
             case TiboWatch.ACTION_CHECK: {
                 if (!TiboWatch.active(context)) return;
                 // The exact alarm lets the service start from the background; if it is still refused, read here.

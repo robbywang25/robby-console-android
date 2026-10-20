@@ -55,6 +55,23 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     /** 运行状态 refreshes itself every 60 s while it is the visible page, like status.robby.wang; never in the background. */
     private final Handler ticker=new Handler(Looper.getMainLooper());
     private final Runnable statusTick=()->{if(this.resumed&&"status".equals(this.selectedId)&&loggedIn()){FeatureCatalog.Feature f=find("status");if(f!=null)showFeature(f,true);}};
+    /**
+     * 总览's Token 额度 cards re-read themselves while 总览 is on screen, at the pace the server asks for
+     * (refreshAfterSeconds, kept within 30 s – 5 min, 60 s when absent); only those cards are refilled, in place.
+     */
+    private final Runnable tokenTick=this::refreshBoardTokens;
+    private Map<String,List<LinearLayout>> boardShells=new HashMap<>();
+    static final String TOKENS="tokens/quotas";
+    private boolean onBoard(){return resumed&&board!=null&&selectedId==null&&"总览".equals(group)&&loggedIn()&&boardShells.containsKey(TOKENS);}
+    private void scheduleTokenTick(JSONObject data){ticker.removeCallbacks(tokenTick);if(onBoard())ticker.postDelayed(tokenTick,TokensModel.refreshMs(data));}
+    private void refreshBoardTokens(){
+        if(!onBoard())return;final LinearLayout box=board;final List<LinearLayout> targets=boardShells.get(TOKENS);final int epoch=generation;
+        boardReads.execute(()->{try{long started=SystemClock.elapsedRealtime();JSONObject data=read(TOKENS);android.util.Log.i("GodBoard","auto refresh "+TOKENS+" ms="+(SystemClock.elapsedRealtime()-started)+" next="+TokensModel.refreshMs(data)/1000+"s");
+                runOnUiThread(()->{if(epoch!=generation||board!=box||!resumed||isDestroyed())return;saveViewport();snapshots.put(TOKENS,data);GodWidget.observe(this,TOKENS,data);fillBoard(targets,data);restoreViewport();scheduleTokenTick(data);});}
+            catch(Exception e){android.util.Log.w("GodBoard","auto refresh failed "+(e instanceof MobileApi.ApiError?"http="+((MobileApi.ApiError)e).status:e.getClass().getSimpleName()));
+                // Keep what is shown and try again at the usual pace.
+                runOnUiThread(()->{if(epoch==generation&&board==box)scheduleTokenTick(snapshots.get(TOKENS));});}});
+    }
     private String group="总览",selectedId=null,project=null;
     private volatile int generation=0; private boolean resumed=false;
     private final Map<String,JSONObject> snapshots=new HashMap<>();
@@ -98,6 +115,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @Override protected void onNewIntent(Intent intent) {super.onNewIntent(intent);setIntent(intent);if(!launchedFromHistory(intent))handle(intent);else intent.setData(null);openRequested(intent);}
     /** The reminder, the alarm page and launcher shortcuts open one page of the fixed catalog; nothing else can be requested. */
     private void openRequested(Intent intent){
+        // Opening God from a 持续提醒 counts as 知道了 for that reminder.
+        String notice=intent==null?null:intent.getStringExtra(NoticeCenter.EXTRA_KEY);if(notice!=null){intent.removeExtra(NoticeCenter.EXTRA_KEY);if(!PreviewMode.isBuild())NoticeCenter.ack(this,notice);}
         String id=intent==null?null:intent.getStringExtra(TiboWatch.EXTRA_OPEN);if(id==null)return;intent.removeExtra(TiboWatch.EXTRA_OPEN);
         FeatureCatalog.Feature f=find(id);if(f==null||"overview".equals(id)||launchedFromHistory(intent)||!loggedIn())return;
         String tab=FeatureCatalog.SECTIONS.contains(f.group)?"功能":"设置";if(!group.equals(tab)){saveViewport();group=tab;}open(f);
@@ -119,6 +138,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         intent.setData(null); coordinator.callback(uri);
     }
     @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}
+        // Back on 总览 after a pause (shade, dialog, another app on top): the Token cards resume refreshing themselves.
+        if(board!=null)scheduleTokenTick(snapshots.get(TOKENS));
         // Back from the "install unknown apps" settings page: continue the update the person already started.
         if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}
         // Back from a notification or battery settings page: show what still keeps the reminder from ringing.
@@ -131,7 +152,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
-    @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
+    @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     private static final int AUTH_TAB=41;
     /** After Chrome could not verify the app for the callback domain, later sign-ins use the plain browser + App Link. */
@@ -196,7 +217,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     @Override public void onAuthError(String message){if(resumed&&!isDestroyed()){build();error("登录未完成",message);}}
     private void build() {
-        ticker.removeCallbacks(statusTick);saveViewport();viewportReady=false;++generation;board=null;
+        ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);boardShells=new HashMap<>();saveViewport();viewportReady=false;++generation;board=null;
         boolean logged=loggedIn();
         if(!logged){navigation.clear();project=null;ledgerCursor=null;ledgerPages.clear();}
         DeviceAuthorization device=coordinator.deviceAuthorization();
@@ -358,7 +379,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         List<String> ids=boardCards();
         if(ids.isEmpty()){LinearLayout c=theme.card(box);c.setBackground(theme.ripple(theme.card(),24));c.setFocusable(true);c.setClickable(true);c.setOnClickListener(v->openBoardEditor());
             c.addView(text("看板是空的",15,INK,true));TextView t=text("点这里添加想在这里看到的功能卡片。",13,MUTED,false);t.setPadding(0,dp(4),0,0);c.addView(t);if(done!=null)done.run();return;}
-        final Map<String,List<LinearLayout>> shells=new HashMap<>();LinearLayout row=null;
+        final Map<String,List<LinearLayout>> shells=new HashMap<>();boardShells=shells;ticker.removeCallbacks(tokenTick);LinearLayout row=null;
         for(String id:ids){Dashboard.Card card=Dashboard.find(id);if(card==null)continue;LinearLayout shell;
             if(card.wide){row=null;LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(10);shell=FeatureRenderer.widgetShell(this,box,card,lp);}
             else{if(row==null||row.getChildCount()>=2){row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(10);box.addView(row,rp);}
@@ -370,10 +391,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         final Runnable finished=()->{if(--reading[0]==0&&done!=null)done.run();};
         for(String path:Dashboard.paths(ids)){final List<LinearLayout> targets=shells.get(path);JSONObject cached=snapshots.get(path);
             if(cached!=null)fillBoard(targets,cached);else for(LinearLayout shell:targets)FeatureRenderer.widgetLoading(this,shell);
-            if(cached!=null&&!refresh)continue;
+            if(cached!=null&&!refresh){if(TOKENS.equals(path))scheduleTokenTick(cached);continue;}
             reading[0]++;
             boardReads.execute(()->{if(epoch!=generation){runOnUiThread(finished);return;}long started=SystemClock.elapsedRealtime();
-                try{JSONObject data=read(path);android.util.Log.i("GodBoard",path+" ms="+(SystemClock.elapsedRealtime()-started));runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);GodWidget.observe(this,path,data);fillBoard(targets,data);restoreViewport();}finally{finished.run();}});}
+                try{JSONObject data=read(path);android.util.Log.i("GodBoard",path+" ms="+(SystemClock.elapsedRealtime()-started));runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);GodWidget.observe(this,path,data);fillBoard(targets,data);restoreViewport();if(TOKENS.equals(path))scheduleTokenTick(data);}finally{finished.run();}});}
                 catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;
                     // A refresh may have invalidated the stored session: show sign-in instead of a board that can only fail.
                     if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
@@ -743,13 +764,16 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(s.has(Notices.LOW))featureRow("剩余提醒线 · "+s.low+"%","任一额度剩余低于这个比例时提醒，每个周期一次","edit",quota,()->thresholdMenu("low","剩余提醒线",Notices.LOW_CHOICES,s.low,"剩余低于 %d%% 时提醒"));
         noticeSwitch(quota,Notices.RESET,"refresh",s);noticeSwitch(quota,Notices.ACCOUNT,"user",s);noticeSwitch(quota,Notices.CARD,"calendar",s);
         section("站点");LinearLayout sites=groupCard();noticeSwitch(sites,Notices.SITES,"pulse",s);
+        section("提醒方式");LinearLayout mode=groupCard();boolean loud=NoticeCenter.enhanced(this);
+        modeSwitch(mode,"enhanced","增强提醒",loud?"横幅弹出，带声音和震动":"关闭时为普通通知，只在通知栏出现","bell",loud);
+        if(loud)modeSwitch(mode,"persistent","持续提醒",NoticeCenter.persistent(this)?"一直响到你点「知道了」，10 分钟后再响，最多 3 轮":"打开后通知无法划掉，直到你点「知道了」","history",NoticeCenter.persistent(this));
         if(!s.on.isEmpty()||watching){
             section("后台检查");LinearLayout check=groupCard();
             featureRow("检查状态",preview?"界面预览不在后台检查":NoticeCenter.status(this),"history",check,null);
             if(!preview)for(String[] problem:TiboWatch.problems(this))featureRow(problem[0],"点按去设置","info",check,()->tiboFix(problem[1]));
             featureRow("发送测试通知","看看提醒在通知栏和锁屏上的样子","bell",check,()->{if(preview){error("界面预览","界面预览不发送通知。");return;}if(!notificationsAllowed()){noticePending=null;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},NOTICE_PERMISSION);return;}NoticeCenter.test(this);});
         }
-        content.addView(theme.info(List.of("God 没有云端推送，提醒来自手机每 5 分钟一次的后台检查；手机关机或断网期间的变化会在恢复后补算。","锁屏上只显示「God · 额度提醒」，解锁后才显示账号和数字。","当天消耗由手机按每次检查的下降累计，从当地零点算起。")));
+        content.addView(theme.info(List.of("God 没有云端推送，提醒来自手机每 5 分钟一次的后台检查；手机关机或断网期间的变化会在恢复后补算。","增强和持续提醒遵守系统的勿扰模式；Tibo 重置提醒仍按闹钟方式单独响铃。","锁屏上只显示「God · 额度提醒」，解锁后才显示账号和数字。","当天消耗由手机按每次检查的下降累计，从当地零点算起。")));
         restoreViewport();
     }
     private static final int NOTICE_PERMISSION=44;private String noticePending;
@@ -761,6 +785,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             if(on&&!PreviewMode.isBuild()&&!notificationsAllowed()){b.setChecked(false);noticePending=kind;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},NOTICE_PERMISSION);return;}
             enableNotice(kind,on);});
         row.addView(toggle);
+    }
+    private void modeSwitch(LinearLayout parent,String which,String title,String detail,String symbol,boolean value){
+        LinearLayout row=featureRow(title,detail,symbol,parent,null);
+        Switch toggle=new Switch(this);toggle.setChecked(value);toggle.setContentDescription(title);toggle.setMinimumHeight(dp(48));
+        toggle.setOnCheckedChangeListener((b,on)->{NoticeCenter.setMode(this,which,on);build();});row.addView(toggle);
     }
     private void enableNotice(String kind,boolean on){
         boolean first=on&&!NoticeCenter.any(this)&&!TiboWatch.enabled(this);

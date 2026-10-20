@@ -157,4 +157,12 @@ public final class TokensModelTest {
         claude.getJSONArray("windows").getJSONObject(1).put("resetsAt", java.time.Instant.ofEpochMilli(now - 1).toString());
         assertNull("a passed reset says nothing", TokensModel.boardExtras(claude, true, now, zone));
     }
+    @org.junit.Test public void boardRefreshFollowsTheServerWithinBounds() throws Exception {
+        org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 30)));
+        org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 5)));
+        org.junit.Assert.assertEquals(300_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 3600)));
+        org.junit.Assert.assertEquals(60_000L, TokensModel.refreshMs(new org.json.JSONObject()));
+        org.junit.Assert.assertEquals(60_000L, TokensModel.refreshMs(null));
+        org.junit.Assert.assertEquals(60_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 0)));
+    }
 }
