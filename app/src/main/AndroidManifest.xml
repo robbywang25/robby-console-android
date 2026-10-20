@@ -27,7 +27,7 @@
   <receiver android:name=".UpdateReceiver" android:exported="false" />
   <activity android:name=".TiboAlarmActivity" android:exported="false" android:showWhenLocked="true" android:turnScreenOn="true" android:launchMode="singleTask" android:taskAffinity="wang.robby.console.android.tibo" android:excludeFromRecents="true" />
   <service android:name=".TiboWatchService" android:exported="false" android:foregroundServiceType="specialUse">
-   <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Owner-enabled monitor of public reset announcements that rings like an alarm; the device has no Google push." />
+   <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="Owner-enabled five-minute check of public reset announcements and the owner's own quota and site status, posting local notifications; the device has no Google push." />
   </service>
   <!-- God 小组件 (home screen and lock screen) and the 快捷设置 tile: the app mark and public Tibo news; a tap opens God. -->
   <receiver android:name=".GodWidget" android:exported="true" android:label="God">

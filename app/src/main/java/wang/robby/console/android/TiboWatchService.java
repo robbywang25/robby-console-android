@@ -13,7 +13,7 @@ import android.util.Log;
  */
 public final class TiboWatchService extends Service {
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
-        if (!TiboWatch.enabled(this)) { stopSelf(); return START_NOT_STICKY; }
+        if (!TiboWatch.active(this)) { stopSelf(); return START_NOT_STICKY; }
         try {
             if (Build.VERSION.SDK_INT >= 34) startForeground(TiboWatch.ID_WATCH, TiboWatch.watchNotification(this), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
             else startForeground(TiboWatch.ID_WATCH, TiboWatch.watchNotification(this));

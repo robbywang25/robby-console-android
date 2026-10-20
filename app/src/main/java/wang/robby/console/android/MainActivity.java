@@ -38,7 +38,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     /** Pseudo feature id for 我 → 个人中心 (the account card). */
     private static final String ACCOUNT_PAGE="account";
     /** Pseudo feature ids for 我's second-level pages, after iOS Settings: switches and menus live one tap in. */
-    private static final String APPEARANCE_PAGE="appearance",PRIVACY_PAGE="privacy";
+    private static final String APPEARANCE_PAGE="appearance",PRIVACY_PAGE="privacy",NOTICES_PAGE="notices";
     /** 个人中心's last answers; process memory only and dropped in the background like every other page's data. */
     private AccountCenter.Status accountStatus; private AccountCenter.Devices accountDevices; private boolean devicesUnfolded;
     /** Back from the browser (adding a Passkey, binding Apple or WeChat): read the account again. */
@@ -125,7 +125,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         TokensPages.refreshReminder();
         if(accountBrowserPending){accountBrowserPending=false;if(ACCOUNT_PAGE.equals(selectedId)&&loggedIn()){accountStatus=null;accountDevices=null;build();}}
         // ColorOS may stop the reminder or refuse to restart it after an update; opening the app brings it back.
-        if(!PreviewMode.isBuild()&&TiboWatch.enabled(this))TiboWatch.start(this,TiboWatch.checkDue(this));
+        if(!PreviewMode.isBuild()&&TiboWatch.active(this))TiboWatch.start(this,TiboWatch.checkDue(this));
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
         // A change waiting for a session that may now write (after signing in again) goes at once.
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
@@ -210,9 +210,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // The stage holds the sky and the page. The floating dock blurs the stage, never itself.
         FrameLayout stage=new FrameLayout(this);stage.setBackground(theme.backdrop());root.addView(stage,new FrameLayout.LayoutParams(-1,-1));
         LinearLayout body=new LinearLayout(this);body.setOrientation(LinearLayout.VERTICAL);stage.addView(body,new FrameLayout.LayoutParams(-1,-1));
-        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId),hiddenPage=HIDDEN_PAGE.equals(selectedId),accountPage=ACCOUNT_PAGE.equals(selectedId)&&logged,appearancePage=APPEARANCE_PAGE.equals(selectedId),privacyPage=PRIVACY_PAGE.equals(selectedId);
-        if(detail==null&&!about&&!boardEdit&&!hiddenPage&&!accountPage&&!appearancePage&&!privacyPage)selectedId=null;
-        boolean nested=device!=null||detail!=null||about||boardEdit||hiddenPage||accountPage||appearancePage||privacyPage;
+        FeatureCatalog.Feature detail=selectedId==null?null:find(selectedId);boolean about=ABOUT.equals(selectedId),boardEdit=BOARD.equals(selectedId),hiddenPage=HIDDEN_PAGE.equals(selectedId),accountPage=ACCOUNT_PAGE.equals(selectedId)&&logged,appearancePage=APPEARANCE_PAGE.equals(selectedId),privacyPage=PRIVACY_PAGE.equals(selectedId),noticesPage=NOTICES_PAGE.equals(selectedId);
+        if(detail==null&&!about&&!boardEdit&&!hiddenPage&&!accountPage&&!appearancePage&&!privacyPage&&!noticesPage)selectedId=null;
+        boolean nested=device!=null||detail!=null||about||boardEdit||hiddenPage||accountPage||appearancePage||privacyPage||noticesPage;
         LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(16),dp(8),dp(16),dp(nested?8:6));header.setMinimumHeight(dp(64));
         leading=new FrameLayout(this);trailing=new LinearLayout(this);trailing.setGravity(Gravity.CENTER_VERTICAL|Gravity.END);
         LinearLayout titles=new LinearLayout(this);titles.setOrientation(LinearLayout.VERTICAL);
@@ -307,6 +307,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         else if(accountPage)accountPage();
         else if(appearancePage)appearancePage();
         else if(privacyPage)privacyPage();
+        else if(noticesPage)noticesPage();
         else if(detail!=null)showFeature(detail,false);
         else if(group.equals("总览"))home(); else if(group.equals("设置"))settings(); else features();
         if(enterFrom!=0){theme.enter(scroll,enterFrom==1?28:enterFrom==-1?-28:0,enterFrom==2?12:0);enterFrom=0;}
@@ -708,8 +709,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         profile();
         gap();LinearLayout general=groupCard();
         featureRow("外观",appearanceSummary(),"drop",general,()->openPage(APPEARANCE_PAGE));
-        boolean watching=!PreviewMode.isBuild()&&TiboWatch.enabled(this);
-        featureRow("Tibo 重置提醒",watching?TiboWatch.status(this):"未开启","bell",general,()->{FeatureCatalog.Feature f=find("tibo");if(f!=null&&loggedIn())open(f);else if(f!=null)error("登录后开启","登录 God 后才能读取 Tibo 的重置预告。");});
+        boolean watching=!PreviewMode.isBuild()&&TiboWatch.enabled(this);int notices=NoticeCenter.count(this)+(watching?1:0);
+        featureRow("通知",notices==0?"未开启":notices+" 项已开启","bell",general,()->openPage(NOTICES_PAGE));
         featureRow("小组件","桌面、锁屏与快捷设置","grid",general,this::widgetSheet);
         Set<String> hidden=hiddenFeatures();
         gap();LinearLayout management=groupCard();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals("设置")&&!hidden.contains(f.id))featureRow(f,management);
@@ -727,13 +728,58 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     /** A second-level page of 我: centred title and the round back control. */
     private void subPage(String title){heading.setText(title);leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));}
     private String appearanceSummary(){String style=statusStyle();return (theme.contrast?"不透明表面":theme.glassOn?"Liquid Glass":"Liquid Glass 已关闭")+" · 状态栏"+StatusBarStyle.label(style);}
+    /**
+     * 我 → 通知: Tibo 重置提醒 (its own page), the Token 额度 notifications with their two thresholds, 站点 status, then
+     * what the background read last did and anything that keeps notifications from arriving. Switches apply at once.
+     */
+    private void noticesPage(){
+        subPage("通知");boolean preview=PreviewMode.isBuild();Notices.Settings s=NoticeCenter.settings(this);
+        section("Tibo");LinearLayout tibo=groupCard();boolean watching=!preview&&TiboWatch.enabled(this);
+        featureRow("Tibo 重置提醒",watching?"已开启 · 像闹钟一样响铃":"未开启 · 重置预告时像闹钟一样响铃","bell",tibo,()->{FeatureCatalog.Feature f=find("tibo");if(f!=null&&loggedIn())open(f);else if(f!=null)error("登录后开启","登录 God 后才能读取 Tibo 的重置预告。");});
+        section("Token 额度");LinearLayout quota=groupCard();
+        noticeSwitch(quota,Notices.DAILY,"gauge",s);
+        if(s.has(Notices.DAILY))featureRow("每日提醒线 · "+s.daily+"%","一个账号当天用掉主要额度（通常是每周）的比例","edit",quota,()->thresholdMenu("daily","每日提醒线",Notices.DAILY_CHOICES,s.daily,"当天用掉 %d%% 时提醒"));
+        noticeSwitch(quota,Notices.LOW,"gauge",s);
+        if(s.has(Notices.LOW))featureRow("剩余提醒线 · "+s.low+"%","任一额度剩余低于这个比例时提醒，每个周期一次","edit",quota,()->thresholdMenu("low","剩余提醒线",Notices.LOW_CHOICES,s.low,"剩余低于 %d%% 时提醒"));
+        noticeSwitch(quota,Notices.RESET,"refresh",s);noticeSwitch(quota,Notices.ACCOUNT,"user",s);noticeSwitch(quota,Notices.CARD,"calendar",s);
+        section("站点");LinearLayout sites=groupCard();noticeSwitch(sites,Notices.SITES,"pulse",s);
+        if(!s.on.isEmpty()||watching){
+            section("后台检查");LinearLayout check=groupCard();
+            featureRow("检查状态",preview?"界面预览不在后台检查":NoticeCenter.status(this),"history",check,null);
+            if(!preview)for(String[] problem:TiboWatch.problems(this))featureRow(problem[0],"点按去设置","info",check,()->tiboFix(problem[1]));
+            featureRow("发送测试通知","看看提醒在通知栏和锁屏上的样子","bell",check,()->{if(preview){error("界面预览","界面预览不发送通知。");return;}if(!notificationsAllowed()){noticePending=null;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},NOTICE_PERMISSION);return;}NoticeCenter.test(this);});
+        }
+        content.addView(theme.info(List.of("God 没有云端推送，提醒来自手机每 5 分钟一次的后台检查；手机关机或断网期间的变化会在恢复后补算。","锁屏上只显示「God · 额度提醒」，解锁后才显示账号和数字。","当天消耗由手机按每次检查的下降累计，从当地零点算起。")));
+        restoreViewport();
+    }
+    private static final int NOTICE_PERMISSION=44;private String noticePending;
+    private void noticeSwitch(LinearLayout parent,String kind,String symbol,Notices.Settings s){
+        LinearLayout row=featureRow(Notices.label(kind),Notices.detail(kind,s),symbol,parent,null);
+        Switch toggle=new Switch(this);toggle.setChecked(s.has(kind));toggle.setContentDescription(Notices.label(kind));toggle.setMinimumHeight(dp(48));
+        toggle.setOnCheckedChangeListener((b,on)->{
+            if(on&&!PreviewMode.isBuild()&&!loggedIn()){b.setChecked(false);error("登录后开启","登录 God 后才能读取额度和站点状态。");return;}
+            if(on&&!PreviewMode.isBuild()&&!notificationsAllowed()){b.setChecked(false);noticePending=kind;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},NOTICE_PERMISSION);return;}
+            enableNotice(kind,on);});
+        row.addView(toggle);
+    }
+    private void enableNotice(String kind,boolean on){
+        boolean first=on&&!NoticeCenter.any(this)&&!TiboWatch.enabled(this);
+        NoticeCenter.set(this,kind,on,!PreviewMode.isBuild());
+        if(first&&!PreviewMode.isBuild()&&!getSystemService(PowerManager.class).isIgnoringBatteryOptimizations(getPackageName()))tiboFix("battery");
+        build();
+    }
+    private void thresholdMenu(String which,String title,int[] choices,int current,String pattern){
+        String[] names=new String[choices.length];int checked=-1;for(int i=0;i<choices.length;i++){names[i]=String.format(Locale.ROOT,pattern,choices[i]);if(choices[i]==current)checked=i;}
+        show(new AlertDialog.Builder(this).setTitle(title).setSingleChoiceItems(names,checked,(d,w)->{NoticeCenter.threshold(this,which,choices[w]);d.dismiss();build();}).setNegativeButton("取消",null));
+    }
     private void privacyPage(){
         subPage("隐私与数据");
         String[][] parts={
             {"登录","Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份，退出会清除本机令牌。"},
             {"数据","应用仅连接 Robby 的 God 私有接口，没有第三方统计，不保存网页 Cookie。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。可查看原生数据，并在确认后管理账目和人员。"},
             {"头像与签名","个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。个性签名保存在你的 God 账号里，本机留一份副本用于显示。"},
-            {"重置提醒","开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。"}};
+            {"重置提醒","开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。"},
+            {"通知","开启「我 → 通知」里的提醒后，应用每 5 分钟在后台读取 Token 额度（开启站点提醒时还有运行状态）。为了判断变化，本机会保存每个额度最近的剩余比例、当天累计消耗、账号状态，以及站点域名和是否在线；不保存邮箱、套餐或其他页面内容，14 天没出现的记录会自动删除，全部关闭后不再读取。"}};
         for(String[] part:parts){section(part[0]);LinearLayout c=card();TextView t=text(part[1],14,INK,false);t.setLineSpacing(dp(3),1);c.addView(t);}
         restoreViewport();
     }
@@ -1290,7 +1336,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @Override public void tiboTest(){if(!notificationsAllowed()){tiboTestPending=true;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},TIBO_PERMISSION);return;}TiboWatch.test(this);}
     private boolean notificationsAllowed(){return Build.VERSION.SDK_INT<33||checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED;}
     @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
-        super.onRequestPermissionsResult(request,permissions,results);if(request!=TIBO_PERMISSION)return;
+        super.onRequestPermissionsResult(request,permissions,results);
+        if(request==NOTICE_PERMISSION){boolean granted=results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if(!granted){error("没有通知权限","God 需要通知权限才能提醒你。可以在系统设置里为 God 开启通知后再试。");return;}
+            if(noticePending==null)NoticeCenter.test(this);else enableNotice(noticePending,true);noticePending=null;return;}
+        if(request!=TIBO_PERMISSION)return;
         if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED){if(tiboTestPending)TiboWatch.test(this);else tiboSwitch(true);}
         else error("没有通知权限","重置提醒需要通知权限才能响铃。可以在系统设置里为 God 开启通知后再试。");
         TokensPages.refreshReminder();

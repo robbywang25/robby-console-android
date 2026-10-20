@@ -26,6 +26,7 @@ import wang.robby.console.android.auth.AuthSession;
  * five minutes (the server's own monitor interval). A new reset or card-grant announcement rings like an alarm: alarm
  * sound repeating, full screen on the lock screen, until 知道了 — re-ringing every ten minutes for at most three rounds.
  * Stored on the phone: the switch, check times and the ids of public posts already announced; never account data.
+ * The same service and alarm also run 我 → 通知's checks ({@link NoticeCenter}); it runs while either is on.
  */
 final class TiboWatch {
     private TiboWatch() {}
@@ -38,6 +39,8 @@ final class TiboWatch {
 
     static SharedPreferences prefs(Context c) { return c.getApplicationContext().getSharedPreferences("tibo-watch", Context.MODE_PRIVATE); }
     static boolean enabled(Context c) { return prefs(c).getBoolean("enabled", false); }
+    /** The background read runs while Tibo 重置提醒 or any of 我 → 通知 is on. */
+    static boolean active(Context c) { return enabled(c) || NoticeCenter.any(c); }
 
     static void enable(Context c) {
         prefs(c).edit().putBoolean("enabled", true).putLong("enabledAt", System.currentTimeMillis()).putBoolean("primed", false).remove("seen").remove("lastCheckAt").remove("lastError").apply();
@@ -45,13 +48,19 @@ final class TiboWatch {
     }
     static void disable(Context c) {
         prefs(c).edit().putBoolean("enabled", false).remove("pending").remove("round").apply();
-        AlarmManager alarms = c.getSystemService(AlarmManager.class); alarms.cancel(pending(c, ACTION_CHECK)); alarms.cancel(pending(c, ACTION_RERING));
+        c.getSystemService(AlarmManager.class).cancel(pending(c, ACTION_RERING));
+        NotificationManager nm = c.getSystemService(NotificationManager.class); nm.cancel(ID_ALARM); nm.cancel(ID_NOTICE);
+        if (active(c)) refreshWatch(c); else stop(c);
+    }
+    /** Nothing left to watch: no alarm, no service, no status notification. */
+    static void stop(Context c) {
+        c.getSystemService(AlarmManager.class).cancel(pending(c, ACTION_CHECK));
         c.stopService(new Intent(c, TiboWatchService.class));
-        NotificationManager nm = c.getSystemService(NotificationManager.class); nm.cancel(ID_ALARM); nm.cancel(ID_WATCH); nm.cancel(ID_NOTICE);
+        c.getSystemService(NotificationManager.class).cancel(ID_WATCH);
     }
     /** Starts (or keeps) the monitoring service; {@code check} asks it to read now. Refused starts fall back to the alarm. */
     static void start(Context c, boolean check) {
-        if (!enabled(c)) return;
+        if (!active(c)) return;
         try { c.startForegroundService(new Intent(c, TiboWatchService.class).putExtra("check", check)); }
         catch (RuntimeException refused) { Log.w("GodTibo", "service_start_refused"); schedule(c, System.currentTimeMillis() + (check ? 1_000L : INTERVAL)); }
     }
@@ -87,12 +96,15 @@ final class TiboWatch {
     // Runs on its own thread; commit() so what was announced is on disk before the process may be stopped.
     @android.annotation.SuppressLint("ApplySharedPref")
     private static void check(Context c) {
-        SharedPreferences p = prefs(c); if (!p.getBoolean("enabled", false)) return;
+        SharedPreferences p = prefs(c); if (!active(c)) return;
         long now = System.currentTimeMillis();
         try {
             AuthSession auth = new AuthSession(c);
             if (!auth.hasSession()) { record(p, now, "登录后才能检查"); return; }
-            JSONObject view = new MobileApi(auth).get("tokens/tibo/alerts"); List<TiboAlert> alerts = TiboAlert.parse(view);
+            MobileApi api = new MobileApi(auth);
+            try { NoticeCenter.check(c, api, now); } catch (RuntimeException e) { Log.w("GodNotices", "check crashed " + e.getClass().getSimpleName()); }
+            if (!p.getBoolean("enabled", false)) return;
+            JSONObject view = api.get("tokens/tibo/alerts"); List<TiboAlert> alerts = TiboAlert.parse(view);
             GodWidget.observe(c, "tokens/tibo/alerts", view);
             Set<String> seen = new HashSet<>(p.getStringSet("seen", Collections.emptySet()));
             List<TiboAlert> due = TiboAlert.due(alerts, seen, p.getBoolean("primed", false), p.getLong("enabledAt", now), now);
@@ -105,7 +117,7 @@ final class TiboWatch {
             Log.w("GodTibo", "check failed " + (e instanceof MobileApi.ApiError ? "http=" + ((MobileApi.ApiError) e).status : e.getClass().getSimpleName()));
             record(p, now, reason);
         } finally {
-            if (p.getBoolean("enabled", false)) { schedule(c, System.currentTimeMillis() + INTERVAL); refreshWatch(c); }
+            if (active(c)) { schedule(c, System.currentTimeMillis() + INTERVAL); refreshWatch(c); }
         }
     }
     @android.annotation.SuppressLint("ApplySharedPref")
@@ -164,12 +176,13 @@ final class TiboWatch {
     static Notification watchNotification(Context context) {
         Context c = context.getApplicationContext(); channels(c);
         Intent open = new Intent(c, MainActivity.class).putExtra(EXTRA_OPEN, "tibo").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        return new Notification.Builder(c, CH_WATCH).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle("Tibo 重置提醒已开启").setContentText(status(c))
+        boolean tibo = enabled(c);
+        return new Notification.Builder(c, CH_WATCH).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle(tibo ? (NoticeCenter.any(c) ? "God 提醒已开启 · 含 Tibo 重置" : "Tibo 重置提醒已开启") : "God 提醒已开启").setContentText(tibo ? status(c) : NoticeCenter.status(c))
             .setContentIntent(PendingIntent.getActivity(c, 3, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
             .setOngoing(true).setShowWhen(false).setCategory(Notification.CATEGORY_SERVICE).setVisibility(Notification.VISIBILITY_PUBLIC).build();
     }
-    private static void refreshWatch(Context c) {
-        if (!enabled(c)) return;
+    static void refreshWatch(Context c) {
+        if (!active(c)) return;
         NotificationManager nm = c.getSystemService(NotificationManager.class);
         for (android.service.notification.StatusBarNotification s : nm.getActiveNotifications()) if (s.getId() == ID_WATCH) { nm.notify(ID_WATCH, watchNotification(c)); return; }
     }

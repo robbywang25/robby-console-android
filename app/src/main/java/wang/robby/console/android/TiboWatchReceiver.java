@@ -12,7 +12,7 @@ public final class TiboWatchReceiver extends BroadcastReceiver {
             case TiboWatch.ACTION_ACK: TiboWatch.ack(context); break;
             case TiboWatch.ACTION_RERING: TiboWatch.rering(context); break;
             case TiboWatch.ACTION_CHECK: {
-                if (!TiboWatch.enabled(context)) return;
+                if (!TiboWatch.active(context)) return;
                 // The exact alarm lets the service start from the background; if it is still refused, read here.
                 try { context.startForegroundService(new Intent(context, TiboWatchService.class).putExtra("check", true)); }
                 catch (RuntimeException refused) { PendingResult result = goAsync(); TiboWatch.checkAsync(context, result::finish); }

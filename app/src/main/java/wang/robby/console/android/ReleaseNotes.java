@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.26.0", "2026-10-20", "额度和站点主动提醒",
+            "「我 → 通知」新增 Token 额度提醒：当天消耗超过提醒线时通知你，提醒线可调。",
+            "额度快用完、每周额度重置、账号需要重新授权、重置卡快过期，也可以分别开启提醒。",
+            "监测中的站点连续两次无响应时提醒，恢复后再告诉你。",
+            "锁屏上只显示「God · 额度提醒」，解锁后才看到账号和数字。",
+            "Tibo 重置提醒也移到了「我 → 通知」里。"),
         new Entry("0.25.1", "2026-10-20", "个性签名跟着账号走",
             "个性签名保存到你的 God 账号，换手机或重新安装后登录也能看到。",
             "之前只存在这台手机上的签名，会在打开个人中心时自动上传。"),
