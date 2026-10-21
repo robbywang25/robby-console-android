@@ -75,4 +75,17 @@ public final class AccountCenterTest {
         assertTrue(AccountCenter.writeRoute(AccountCenter.SIGNATURE)); assertEquals(AccountCenter.SIGNATURE, MobileApi.checkedPath(AccountCenter.SIGNATURE));
         assertEquals("签名最多 30 个字，且只能是一行。", AccountCenter.explain(400, "invalid_signature"));
     }
+    @Test public void severalBoundAccountsPerProviderAreListed() throws Exception {
+        JSONObject v = new JSONObject(STATUS);
+        v.getJSONObject("social").put("apple", new JSONObject("{\"available\":true,\"bound\":true,\"boundAt\":\"2026-10-09T07:00:00Z\",\"links\":[{\"id\":1,\"boundAt\":\"2026-10-09T07:00:00Z\"},{\"id\":4,\"boundAt\":\"2026-10-20T07:00:00Z\"}],\"limit\":5}"))
+            .put("google", new JSONObject("{\"available\":true,\"bound\":false,\"boundAt\":null,\"links\":[],\"limit\":5}"));
+        AccountCenter.Status s = AccountCenter.status(v);
+        assertEquals(3, s.social.size()); assertEquals("Google", s.social.get(1).label);
+        AccountCenter.Social apple = s.social.get(0);
+        assertEquals(2, apple.links.size()); assertEquals(Long.valueOf(4), apple.links.get(1).id); assertEquals(5, apple.limit);
+        assertTrue(s.social.get(1).links.isEmpty());
+        // An older server lists one binding without an id: shown, but not removable one at a time.
+        AccountCenter.Status old = AccountCenter.status(new JSONObject(STATUS));
+        assertEquals(1, old.social.get(0).links.size()); assertNull(old.social.get(0).links.get(0).id); assertEquals(1, old.social.get(0).limit);
+    }
 }

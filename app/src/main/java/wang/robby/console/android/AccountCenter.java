@@ -33,7 +33,13 @@ final class AccountCenter {
         final String id, name, detail;
         Passkey(String id, String name, String detail) { this.id = id; this.name = name; this.detail = detail; }
     }
+    /** One bound account: its id (null from an older server, which cannot unbind one at a time) and when it was bound. */
+    static final class Link {
+        final Long id; final String boundAt;
+        Link(Long id, String boundAt) { this.id = id; this.boundAt = boundAt; }
+    }
     static final class Social {
+        List<Link> links = new ArrayList<>(); int limit = 1;
         final String provider, label; final boolean available, bound; final String boundAt;
         Social(String provider, String label, boolean available, boolean bound, String boundAt) { this.provider = provider; this.label = label; this.available = available; this.bound = bound; this.boundAt = boundAt; }
     }
@@ -75,10 +81,19 @@ final class AccountCenter {
         JSONObject social = v.optJSONObject("social");
         if (social != null) {
             s.social = new ArrayList<>();
-            for (String[] p : new String[][]{{"apple", "Apple"}, {"wechat", "微信"}}) {
+            for (String[] p : new String[][]{{"apple", "Apple"}, {"google", "Google"}, {"wechat", "微信"}}) {
                 JSONObject m = social.optJSONObject(p[0]); if (m == null) continue;
                 Boolean bound = flag(m, "bound"), available = flag(m, "available");
-                s.social.add(new Social(p[0], p[1], Boolean.TRUE.equals(available), Boolean.TRUE.equals(bound), str(m, "boundAt", STAMP)));
+                Social x = new Social(p[0], p[1], Boolean.TRUE.equals(available), Boolean.TRUE.equals(bound), str(m, "boundAt", STAMP));
+                JSONArray links = m.optJSONArray("links");
+                if (links != null) for (int i = 0; i < links.length() && i < 10; i++) {
+                    JSONObject l = links.optJSONObject(i); if (l == null) continue;
+                    Object id = l.opt("id"); Long value = id instanceof Number && ((Number) id).longValue() > 0 && ((Number) id).doubleValue() == ((Number) id).longValue() ? ((Number) id).longValue() : null;
+                    x.links.add(new Link(value, str(l, "boundAt", STAMP)));
+                }
+                else if (x.bound) x.links.add(new Link(null, x.boundAt));
+                Object limit = m.opt("limit"); if (limit instanceof Number && ((Number) limit).intValue() >= 0 && ((Number) limit).intValue() <= 10) x.limit = ((Number) limit).intValue();
+                s.social.add(x);
             }
         }
         JSONObject email = v.optJSONObject("email");

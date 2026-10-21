@@ -466,3 +466,17 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
 验证：`check.sh` 通过（157 项，新增 `MarketChangeTest`）。预览数据补了上涨、下跌、持平、缺值、有无今年以来几种情况。
 
 未验证：截图。截图时你正在用手机，没有接管屏幕。服务端的 `ytdPct` 需要部署 `activate-mobile-market-ytd.py` 之后才会出现。
+
+## v0.29.0：Google 登录（只读）与多账号绑定（2026-10-21）
+
+- **Google 登录**（`AuthSession` 的 federated 会话）：
+  - 登录选项、总览登录卡多了「使用 Google 登录（只读）」，会在 Auth Tab 里打开登录服务的 `/session/app/start`；Google 登录不会走系统的 Passkey 弹窗。
+  - 回调地址仍是 `god.robby.wang/mobile/android/callback`，校验 `iss=https://god.robby.wang/session`，用 PKCE 换取令牌。
+  - 会话存成 `kind=federated`。范围只有读取类权限（`FEDERATED_SCOPES`），刷新和吊销都由登录服务处理。
+  - 用这种方式登录时，「我」卡片显示「Google 登录 · 只读」。记账会直接提示改用 Passkey；修改账号、头像、签名会走原来的重新登录提示。
+- **多账号绑定**：个人中心的 Apple、Google、微信每个账号单独一行，点按后确认解除（`confirm=unbind:<provider>:<id>`）。没到 5 个上限时显示「绑定 / 再绑定一个」，在网页个人中心完成。旧服务器没有绑定编号时只显示、不能逐个解除。
+- **边界变化（需要知道）**：App 多了一种不经过 Authelia 的登录方式，令牌由登录服务签发；网关只在读取类接口上接受这种令牌。
+
+验证：`check.sh` 通过（159 项，新增只读权限集合、绑定列表解析的用例）。
+
+未验证：服务端还没部署，Google OAuth 客户端也还没建，所以真实的 Google 登录和解绑都要等部署后再测。

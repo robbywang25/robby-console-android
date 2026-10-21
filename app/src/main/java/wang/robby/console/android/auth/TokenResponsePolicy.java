@@ -15,8 +15,9 @@ final class TokenResponsePolicy {
         require(returned instanceof String && !((String) returned).isEmpty(), reason);
         return (String) returned;
     }
-    static void claims(Object issuer, Object client, Object audience) throws Invalid {
-        require(AuthSession.ISSUER.equals(issuer), "issuer_mismatch");
+    static void claims(Object issuer, Object client, Object audience) throws Invalid { claims(AuthSession.ISSUER, issuer, client, audience); }
+    static void claims(String expectedIssuer, Object issuer, Object client, Object audience) throws Invalid {
+        require(expectedIssuer.equals(issuer), "issuer_mismatch");
         require(AuthSession.CLIENT_ID.equals(client), "client_mismatch");
         boolean valid = AuthSession.AUDIENCE.equals(audience);
         if (audience instanceof List<?>) {

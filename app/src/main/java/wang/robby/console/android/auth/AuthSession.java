@@ -47,6 +47,18 @@ public final class AuthSession {
      * write scope never signs anyone out; only the action that needs it asks for a new sign-in. Anything else is invalid.
      */
     static boolean acceptedScope(String scope) { return SCOPES.equals(scope) || PROFILE_SCOPES.equals(scope) || PREVIOUS_SCOPES.equals(scope); }
+    /**
+     * Sign-in with a Google or Apple account bound in the user center: the God login service (not Authelia) issues the
+     * tokens, read-only. Such a session is stored with kind "federated" and refreshed and revoked at that service; any
+     * write asks for a Passkey sign-in.
+     */
+    public static final String FEDERATED_ISSUER = "https://god.robby.wang/session";
+    static final String FEDERATED_BASE = "https://god.robby.wang/session/app/";
+    public static final String FEDERATED_START = FEDERATED_BASE + "start", FEDERATED_TOKEN = FEDERATED_BASE + "token", FEDERATED_REVOKE = FEDERATED_BASE + "revoke";
+    public static final String FEDERATED_SCOPES = "god.mobile.read god.mobile.clipboard.read god.mobile.travel.read god.mobile.travel.current.read "
+            + "god.mobile.analytics.read god.mobile.sites.health.read god.mobile.domains.read god.mobile.okx.read god.mobile.wechat.read "
+            + "god.mobile.prompts.read god.mobile.tokens.read";
+    static boolean federated(JSONObject session) { return session != null && "federated".equals(session.optString("kind", null)); }
     private static final Object STATE_LOCK = new Object();
     private static final Object REFRESH_LOCK = new Object();
     private static long generation;
@@ -178,16 +190,37 @@ public final class AuthSession {
         } catch (Exception ignored) { throw failure("无法开始登录，请检查网络后重试。"); }
     }
 
+    /** The start of a read-only sign-in with a bound {@code provider} account ("google" or "apple"). */
+    String federatedUrl(long expected, String provider) throws Exception {
+        try {
+            OAuthGuards.require("google".equals(provider) || "apple".equals(provider));
+            synchronized (STATE_LOCK) { OAuthGuards.require(expected == generation); }
+            String verifier = OAuthGuards.randomSecret(), state = OAuthGuards.randomSecret();
+            JSONObject pending = new JSONObject().put("verifier", verifier).put("state", state).put("kind", "federated")
+                    .put("created_at", System.currentTimeMillis());
+            synchronized (STATE_LOCK) {
+                OAuthGuards.require(expected == generation);
+                JSONObject saved = readOrReset();
+                saved.put("pending", pending);
+                store.write(saved);
+            }
+            return FEDERATED_START + "?" + form(parameters("provider", provider, "state", state, "code_challenge", OAuthGuards.challenge(verifier),
+                    "code_challenge_method", "S256", "client_id", CLIENT_ID));
+        } catch (Exception ignored) { throw failure("无法开始登录，请检查网络后重试。"); }
+    }
+
     public void handleCallback(Uri uri) throws Exception {
         Token result = null;
         Discovery discovery = null;
+        boolean federated = false;
         try {
             final long expected;
             final String code, verifier;
             synchronized (STATE_LOCK) {
                 JSONObject saved = readOrReset(), pending = saved.optJSONObject("pending");
                 OAuthGuards.require(pending != null);
-                code = OAuthGuards.callback(uri == null ? null : uri.toString(), REDIRECT_URI, ISSUER,
+                federated = federated(pending);
+                code = OAuthGuards.callback(uri == null ? null : uri.toString(), REDIRECT_URI, federated ? FEDERATED_ISSUER : ISSUER,
                         string(pending, "state"), pending.getLong("created_at"), System.currentTimeMillis());
                 verifier = string(pending, "verifier");
                 OAuthGuards.require(verifier.matches("[A-Za-z0-9_-]{43}"));
@@ -196,8 +229,9 @@ public final class AuthSession {
                 store.write(saved);
                 expected = ++generation;
             }
-            discovery = discovery();
-            result = token(request(discovery.token, OAuthRequests.code(code, verifier), false));
+            if (federated) result = token(request(URI.create(FEDERATED_TOKEN), parameters("grant_type", "authorization_code", "code", code,
+                    "code_verifier", verifier, "client_id", CLIENT_ID, "redirect_uri", REDIRECT_URI), false), null, true);
+            else { discovery = discovery(); result = token(request(discovery.token, OAuthRequests.code(code, verifier), false)); }
             synchronized (STATE_LOCK) {
                 OAuthGuards.require(generation == expected);
                 store.write(new JSONObject().put("session", result.json));
@@ -209,7 +243,7 @@ public final class AuthSession {
         } catch (Exception ignored) {
             throw failure("登录未完成或已过期，请重新登录。");
         } finally {
-            if (result != null) revoke(discovery, result.refresh, result.access);
+            if (result != null) { if (federated) revokeFederated(result.refresh); else revoke(discovery, result.refresh, result.access); }
         }
     }
 
@@ -234,8 +268,9 @@ public final class AuthSession {
                         return string(current, "access_token");
                     expected = generation;
                 }
-                discovery = discovery();
-                updated = token(request(discovery.token, OAuthRequests.refresh(string(current, "refresh_token")), false), current);
+                if (federated(current)) updated = token(request(URI.create(FEDERATED_TOKEN), parameters("grant_type", "refresh_token",
+                        "refresh_token", string(current, "refresh_token"), "client_id", CLIENT_ID), false), current, true);
+                else { discovery = discovery(); updated = token(request(discovery.token, OAuthRequests.refresh(string(current, "refresh_token")), false), current); }
                 String access = updated.access;
                 synchronized (STATE_LOCK) {
                     OAuthGuards.require(expected == generation);
@@ -264,7 +299,7 @@ public final class AuthSession {
                 Log.w("GodAuth", "refresh_failure=" + kind);
                 throw failure("无法读取有效登录，请重新登录或稍后重试。");
             } finally {
-                if (updated != null) revoke(discovery, updated.refresh, updated.access);
+                if (updated != null) { if (discovery == null) revokeFederated(updated.refresh); else revoke(discovery, updated.refresh, updated.access); }
             }
         }
     }
@@ -277,6 +312,13 @@ public final class AuthSession {
                 if (session == null) return false; validateStored(session);
                 return java.util.Arrays.asList(string(session, "scope").split(" ")).contains(scope);
             } catch (Exception ignored) { return false; }
+        }
+    }
+
+    /** Signed in read-only with a bound Google or Apple account. */
+    public boolean isFederated() {
+        synchronized (STATE_LOCK) {
+            try { return federated(readPreserving().optJSONObject("session")); } catch (Exception ignored) { return false; }
         }
     }
 
@@ -299,16 +341,17 @@ public final class AuthSession {
 
     /** Synchronous local invalidation; returned job only performs best-effort remote revocation. */
     Runnable clearLocal() {
-        String refresh = null, access = null;
+        String refresh = null, access = null; boolean federated = false;
         synchronized (STATE_LOCK) {
             generation++;
             try {
                 JSONObject session = store.read().optJSONObject("session");
-                if (session != null) { refresh = string(session, "refresh_token"); access = string(session, "access_token"); }
+                if (session != null) { refresh = string(session, "refresh_token"); access = string(session, "access_token"); federated = federated(session); }
             } catch (Exception ignored) { /* Removal still proceeds if keystore is unavailable. */ }
             store.clear();
         }
         final String refreshToRevoke = refresh, accessToRevoke = access;
+        if (federated) return () -> revokeFederated(refreshToRevoke);
         return () -> {
             if (refreshToRevoke != null || accessToRevoke != null) {
                 try { revoke(discovery(), refreshToRevoke, accessToRevoke); } catch (Exception ignored) { }
@@ -334,12 +377,13 @@ public final class AuthSession {
     private static void validateStored(JSONObject token) throws Exception {
         OAuthGuards.require(OAuthGuards.safeToken(string(token, "access_token"), 32768)
                 && OAuthGuards.safeToken(string(token, "refresh_token"), 32768)
-                && acceptedScope(string(token, "scope")) && token.getLong("expires_at") > 0);
+                && (federated(token) ? FEDERATED_SCOPES.equals(string(token, "scope")) : acceptedScope(string(token, "scope"))) && token.getLong("expires_at") > 0);
     }
     private static Token token(JSONObject body) throws Exception {
         return token(body, null);
     }
-    private static Token token(JSONObject body, JSONObject previous) throws Exception {
+    private static Token token(JSONObject body, JSONObject previous) throws Exception { return token(body, previous, false); }
+    private static Token token(JSONObject body, JSONObject previous, boolean federated) throws Exception {
         try {
             String access = TokenResponsePolicy.field(body.has("access_token"), body.opt("access_token"), null, "access_token");
             TokenResponsePolicy.require(OAuthGuards.safeToken(access, 32768), "access_token");
@@ -350,15 +394,16 @@ public final class AuthSession {
             String scope = TokenResponsePolicy.field(body.has("scope"), body.opt("scope"),
                     previous == null ? null : string(previous, "scope"), "scope");
             // A new sign-in must hold the full current set; a refresh must keep exactly what the session already had.
-            String expected = previous == null ? SCOPES : string(previous, "scope");
-            TokenResponsePolicy.require(acceptedScope(expected) && OAuthGuards.exactScopes(scope, expected), "scope");
+            String expected = federated ? FEDERATED_SCOPES : previous == null ? SCOPES : string(previous, "scope");
+            TokenResponsePolicy.require((federated || acceptedScope(expected)) && OAuthGuards.exactScopes(scope, expected), "scope");
             Object expiry = body.opt("expires_in");
             TokenResponsePolicy.require(expiry instanceof Integer || expiry instanceof Long, "expires_in");
             long seconds = ((Number) expiry).longValue();
             TokenResponsePolicy.require(seconds >= 60 && seconds <= 86400, "expires_in");
-            validateTokenClaims(access);
+            validateTokenClaims(access, federated ? FEDERATED_ISSUER : ISSUER);
             JSONObject saved = new JSONObject().put("access_token", access).put("refresh_token", refresh)
                     .put("scope", expected).put("expires_at", System.currentTimeMillis() + seconds * 1000L);
+            if (federated) saved.put("kind", "federated");
             return new Token(saved, access, refresh);
         } catch (TokenResponsePolicy.Invalid failure) {
             Log.w("GodAuth", TokenResponsePolicy.diagnostic(failure.reason));
@@ -368,7 +413,7 @@ public final class AuthSession {
             throw failure("登录响应校验失败，请重新登录或稍后重试。");
         }
     }
-    private static void validateTokenClaims(String access) throws TokenResponsePolicy.Invalid {
+    private static void validateTokenClaims(String access, String issuer) throws TokenResponsePolicy.Invalid {
         final JSONObject claims;
         try {
             String[] parts = access.split("\\.", -1);
@@ -391,7 +436,7 @@ public final class AuthSession {
             for (int i = 0; i < array.length(); i++) values.add(array.opt(i));
             audience = values;
         }
-        TokenResponsePolicy.claims(claims.opt("iss"), claims.opt("client_id"), audience);
+        TokenResponsePolicy.claims(issuer, claims.opt("iss"), claims.opt("client_id"), audience);
     }
     private Discovery discovery() throws Exception {
         Discovery cached = cachedDiscovery;
@@ -439,8 +484,16 @@ public final class AuthSession {
     private static JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse) throws Exception {
         return request(endpoint, form, emptyResponse, false);
     }
+    /** Best effort, like Authelia's revocation: the login service drops the refresh token's row. */
+    private static void revokeFederated(String refresh) {
+        if (refresh == null) return;
+        try { request(URI.create(FEDERATED_REVOKE), parameters("token", refresh, "client_id", CLIENT_ID), true); } catch (Exception ignored) { }
+    }
     private static JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse, boolean deviceErrors) throws Exception {
-        OAuthGuards.endpoint(endpoint.toString(), ISSUER);
+        String target = endpoint.toString();
+        // Authelia's endpoints, or exactly the login service's token and revocation endpoints.
+        if (target.equals(FEDERATED_TOKEN) || target.equals(FEDERATED_REVOKE)) OAuthGuards.endpoint(target, "https://god.robby.wang");
+        else OAuthGuards.endpoint(target, ISSUER);
         HttpsURLConnection connection = (HttpsURLConnection) endpoint.toURL().openConnection();
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(15000); connection.setReadTimeout(20000);

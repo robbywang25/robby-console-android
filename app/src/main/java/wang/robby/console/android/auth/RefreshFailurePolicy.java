@@ -18,7 +18,7 @@ final class RefreshFailurePolicy {
     }
     static String phase(String endpoint) {
         if ((AuthSession.ISSUER + "/.well-known/openid-configuration").equals(endpoint)) return "discovery";
-        if ((AuthSession.ISSUER + "/api/oidc/token").equals(endpoint)) return "token";
+        if ((AuthSession.ISSUER + "/api/oidc/token").equals(endpoint) || AuthSession.FEDERATED_TOKEN.equals(endpoint)) return "token";
         if ((AuthSession.ISSUER + "/api/oidc/device-authorization").equals(endpoint)) return "device-authorization";
         if ((AuthSession.ISSUER + "/api/oidc/revocation").equals(endpoint)) return "revocation";
         return "unknown";

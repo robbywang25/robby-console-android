@@ -30,4 +30,13 @@ public final class AuthScopesTest {
         assertFalse("the account scope alone on the oldest set is not a set any version asked for",
             AuthSession.acceptedScope(AuthSession.PREVIOUS_SCOPES + " " + AuthSession.ACCOUNT_WRITE));
     }
+    @Test public void googleSignInIsReadOnlyAndNeverAnAutheliaSet() {
+        Set<String> federated = set(AuthSession.FEDERATED_SCOPES);
+        assertTrue(federated.contains("god.mobile.read") && federated.contains("god.mobile.tokens.read"));
+        for (String scope : federated) assertTrue(scope, scope.endsWith(".read"));
+        assertFalse(federated.contains(AuthSession.ACCOUNT_WRITE)); assertFalse(federated.contains(AuthSession.PROFILE_WRITE));
+        assertFalse("a federated set is not accepted as an Authelia session", AuthSession.acceptedScope(AuthSession.FEDERATED_SCOPES));
+        assertTrue(set(AuthSession.SCOPES).containsAll(federated));
+        assertTrue(AuthSession.FEDERATED_START.startsWith("https://god.robby.wang/session/app/"));
+    }
 }

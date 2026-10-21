@@ -22,6 +22,7 @@ public final class AuthCoordinator {
     interface Backend {
         long beginAuthorization();
         String authorizationUrl(long reservation) throws Exception;
+        default String federatedUrl(long reservation, String provider) throws Exception { throw new Exception(); }
         void callback(String uri) throws Exception;
         Runnable clearLocal();
         default void cancelAuthorization() { beginAuthorization(); }
@@ -54,6 +55,7 @@ public final class AuthCoordinator {
             Backend backend = new Backend() {
                 @Override public long beginAuthorization() { return session.beginAuthorization(); }
                 @Override public String authorizationUrl(long reservation) throws Exception { return session.authorizationUrl(reservation); }
+                @Override public String federatedUrl(long reservation, String provider) throws Exception { return session.federatedUrl(reservation, provider); }
                 @Override public void callback(String uri) throws Exception { session.handleCallback(Uri.parse(uri)); }
                 @Override public Runnable clearLocal() { return session.clearLocal(); }
                 @Override public void cancelAuthorization() { session.cancelAuthorization(); }
@@ -157,7 +159,9 @@ public final class AuthCoordinator {
         deviceGrant = null; deliveredDevice = null; deviceActive = false;
     }
 
-    public void login() {
+    public void login() { login(null); }
+    /** {@code provider} null: Passkey through Authelia; "google" or "apple": read-only sign-in with a bound account. */
+    public void login(String provider) {
         final long expected, reservation;
         synchronized (lock) {
             if (busy) return;
@@ -170,7 +174,7 @@ public final class AuthCoordinator {
         executor.execute(() -> {
             if (!current(expected)) return;
             try {
-                String url = backend.authorizationUrl(reservation);
+                String url = provider == null ? backend.authorizationUrl(reservation) : backend.federatedUrl(reservation, provider);
                 finish(expected, url, null);
             } catch (Exception ignored) { finish(expected, null, "无法开始登录，请检查网络后重试。"); }
         });

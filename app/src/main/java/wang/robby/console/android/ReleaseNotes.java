@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.29.0", "2026-10-21", "Google 登录与红涨绿跌",
+            "可以用已绑定的 Google 账号登录 God，只能查看；记账和修改账号仍需 Passkey。",
+            "个人中心的第三方账号改成列表：Apple、Google、微信每种最多绑定 5 个，可以逐个解除。",
+            "解除某个账号后，用它登录的 App 会在 10 分钟内退出。",
+            "总览的关注行情卡片按红涨绿跌显示涨跌幅，并带上 ▲ ▼ 箭头。",
+            "市场看板的关注行情、板块和市场基准都显示今年以来的涨跌，同样红涨绿跌。"),
         new Entry("0.28.0", "2026-10-21", "DeepSeek 模型与扫码授权",
             "「功能 → 工具」新增 DeepSeek 模型，实时列出官方接口返回的全部模型。",
             "点开模型可看上下文、最大输出、输入类型、思考强度和官方返回的每个字段。",

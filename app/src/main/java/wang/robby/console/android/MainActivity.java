@@ -99,7 +99,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         PreviewMode.configure(this,getIntent());
         super.onCreate(state);
         theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;
-        try { coordinator=AuthCoordinator.get(this);auth=coordinator.session(); api=new MobileApi(auth);ledger=new LedgerActions(this,new LedgerActions.Transport(){public JSONObject get(String path)throws Exception{return read(path);}public JSONObject post(String path,JSONObject body)throws Exception{if(PreviewMode.isBuild())throw new IllegalStateException("界面预览不执行写入");return api.post(path,body);}},()->{ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature f=find("travel-ledger");if(f!=null)showFeature(f,true);}); }
+        try { coordinator=AuthCoordinator.get(this);auth=coordinator.session(); api=new MobileApi(auth);ledger=new LedgerActions(this,new LedgerActions.Transport(){public JSONObject get(String path)throws Exception{return read(path);}public JSONObject post(String path,JSONObject body)throws Exception{if(PreviewMode.isBuild())throw new IllegalStateException("界面预览不执行写入");if(auth.isFederated())throw new IllegalStateException("用 Google 登录时只能查看，记账请改用 Passkey 登录");return api.post(path,body);}},()->{ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature f=find("travel-ledger");if(f!=null)showFeature(f,true);}); }
         catch(Exception e) { new AlertDialog.Builder(this).setMessage("无法打开设备安全存储，请检查屏幕锁定设置").setCancelable(false).setPositiveButton("关闭",(d,w)->finish()).show(); return; }
         if(state!=null) { group=state.getString("group","总览");if(FeatureCatalog.SECTIONS.contains(group))group="功能"; selectedId=state.getString("feature"); project=state.getString("project");navigation.rememberOffset(routeKey(),state.getInt("scroll",0)); }
         build();
@@ -179,8 +179,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @Override public void onAuthorizationReady(String url){
         if(!resumed||isDestroyed())return;
         boolean web=webOnce;webOnce=false;
-        if(!web&&!browserLogin&&NativeLogin.supported(this)){session.setText("正在用通行密钥登录…");nativeLogin.start(url);return;}
-        session.setText(browserLogin?"请在浏览器完成 Passkey 登录":"请在登录页完成 Passkey 验证");
+        // The native Passkey sheet is Authelia's; a bound Google or Apple account always signs in on its own page.
+        boolean federated=url.startsWith(AuthSession.FEDERATED_START);
+        if(!federated&&!web&&!browserLogin&&NativeLogin.supported(this)){session.setText("正在用通行密钥登录…");nativeLogin.start(url);return;}
+        session.setText(federated?"请在登录页选择 Google 账号":browserLogin?"请在浏览器完成 Passkey 登录":"请在登录页完成 Passkey 验证");
         try{
             if(browserLogin){startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE));return;}
             // Auth Tab (Chrome 137+): the sign-in page, and its Passkey sheet, open over the app; when it reaches the
@@ -354,6 +356,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             TextView hint=text("在应用内用 Passkey 验证，安全查看你的数据与资产。",15,MUTED,false);hint.setGravity(Gravity.CENTER);hint.setPadding(0,0,0,dp(22));welcome.addView(hint);
             Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);welcome.addView(passkey,new LinearLayout.LayoutParams(-1,-2));
             Button device=button("通过已有设备授权",this::deviceLogin);LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);welcome.addView(device,d);
+            Button google=button("使用 Google 登录（只读）",this::googleLogin);LinearLayout.LayoutParams g=new LinearLayout.LayoutParams(-1,-2);g.topMargin=dp(10);welcome.addView(google,g);
         }else{
             // 总览 is only 看板 and 常用: the board is the person's own combination of feature cards.
             // Pull down on 总览 to refresh the board; the mark keeps turning until every card's read has finished.
@@ -890,7 +893,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         c.addView(avatar,new LinearLayout.LayoutParams(dp(60),dp(60)));
         LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(16),0,dp(8),0);profileName=text(!logged?"尚未登录":accountStatus!=null&&accountStatus.displayName!=null?accountStatus.displayName:"已登录",20,INK,true);profileName.setSingleLine(true);profileName.setEllipsize(android.text.TextUtils.TruncateAt.END);labels.addView(profileName);
         String signature=signature();
-        TextView detail=profileDetail=text(!logged?"使用 Passkey 或已有设备登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":signature.isEmpty()?"添加个性签名":signature,13,MUTED,false);
+        TextView detail=profileDetail=text(!logged?"使用 Passkey、已有设备或 Google 登录":federatedSession()?"Google 登录 · 只读，修改需用 Passkey 登录":avatarWaiting()?"头像只在本机 · 重新登录后同步":signature.isEmpty()?"添加个性签名":signature,13,MUTED,false);
         if(logged&&signature.isEmpty()&&!avatarWaiting())detail.setAlpha(.6f);detail.setMaxLines(2);detail.setEllipsize(android.text.TextUtils.TruncateAt.END);detail.setPadding(0,dp(4),0,0);labels.addView(detail);
         c.addView(labels,new LinearLayout.LayoutParams(0,-2,1));ImageView chevron=theme.icon("chevron",MUTED,14);chevron.setAlpha(.35f);c.addView(chevron);
         // The name comes from the account; read it quietly once per foreground visit and fill it in place.
@@ -999,6 +1002,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         restoreViewport();
     }
     /** The signature as last read from or saved to the account; this phone keeps a copy only to draw 我 at once. */
+    private boolean federatedSession(){return !PreviewMode.isBuild()&&auth!=null&&auth.isFederated();}
     private String signature(){return Signature.clean(prefs().getString(Signature.KEY,""));}
     private void cacheSignature(String value){if(value==null||value.isEmpty())prefs().edit().remove(Signature.KEY).apply();else prefs().edit().putString(Signature.KEY,value).apply();}
     /**
@@ -1009,7 +1013,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(s==null||!s.profileKnown)return;
         String local=signature();
         if(s.signature==null&&!local.isEmpty()&&s.canSaveProfile&&!PreviewMode.isBuild()&&!signatureUploading){signatureUploading=true;saveSignature(local,false);return;}
-        if(s.signature!=null&&!s.signature.equals(local)){cacheSignature(s.signature);if(ACCOUNT_PAGE.equals(selectedId)){build();return;}if(profileDetail!=null&&profileDetail.isAttachedToWindow()&&!avatarWaiting()){profileDetail.setText(s.signature.isEmpty()?"添加个性签名":s.signature);profileDetail.setAlpha(s.signature.isEmpty()?.6f:1f);}}
+        if(s.signature!=null&&!s.signature.equals(local)){cacheSignature(s.signature);if(ACCOUNT_PAGE.equals(selectedId)){build();return;}if(profileDetail!=null&&profileDetail.isAttachedToWindow()&&!avatarWaiting()&&!federatedSession()){profileDetail.setText(s.signature.isEmpty()?"添加个性签名":s.signature);profileDetail.setAlpha(s.signature.isEmpty()?.6f:1f);}}
     }
     private boolean signatureUploading;
     private void profileSignIn(){
@@ -1054,8 +1058,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         accountSection(parent,"第三方账号");LinearLayout social=groupCard(parent);
         if(!identity||s.social==null||s.social.isEmpty())featureRow("第三方账号","暂时读不到，下拉可重试","people",social,null);
         else for(AccountCenter.Social x:s.social){
-            String detail=x.bound?"已绑定"+(x.boundAt==null?"":" · "+AccountCenter.day(x.boundAt))+" · 点按解除":x.available?"未绑定 · 在网页个人中心绑定":"暂未开放";
-            featureRow(x.label,detail,"apple".equals(x.provider)?"user":"chat",social,x.bound?()->unbind(x):x.available?()->openAccountWeb(AccountCenter.WEB):null);
+            // Each provider: its bound accounts one per row (点按解除), then 绑定 / 再绑定一个 on the web until the limit.
+            String symbol="apple".equals(x.provider)?"user":"google".equals(x.provider)?"globe":"chat";
+            if(!x.available&&x.links.isEmpty()){featureRow(x.label,"暂未开放",symbol,social,null);continue;}
+            for(int i=0;i<x.links.size();i++){AccountCenter.Link l=x.links.get(i);final int n=i+1;
+                featureRow(x.label+" 账号 "+n,"已绑定"+(l.boundAt==null?"":" · "+AccountCenter.day(l.boundAt))+(l.id==null?"":" · 点按解除"),symbol,social,l.id==null?null:()->unbind(x,l,n));}
+            if(x.available&&x.links.size()<x.limit)featureRow(x.links.isEmpty()?"绑定 "+x.label+" 账号":"再绑定一个 "+x.label+" 账号",(x.links.isEmpty()?"":"最多 "+x.limit+" 个 · ")+"在网页个人中心完成",symbol,social,()->openAccountWeb(AccountCenter.WEB));
         }
         accountSection(parent,"联系方式");LinearLayout contact=groupCard(parent);
         if(s.unavailable.contains("email")||s.emailBound==null)featureRow("邮箱","暂时读不到，下拉可重试","mail",contact,null);
@@ -1104,9 +1112,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
                 error("未完成",accountMessage(e,"连接未完成，请检查网络后重试"));});}});
     }
     private void reloadAccount(){accountStatus=null;accountDevices=null;if(ACCOUNT_PAGE.equals(selectedId))build();}
-    private void unbind(AccountCenter.Social x){
-        show(new AlertDialog.Builder(this).setTitle("解除"+x.label+"绑定？").setMessage("解除后不能再用"+x.label+"登录 God。可以随时在网页个人中心重新绑定。").setNegativeButton("取消",null)
-            .setPositiveButton("解除绑定",(d,w)->{try{accountWrite(AccountCenter.UNBIND,new JSONObject().put("provider",x.provider).put("confirm","unbind:"+x.provider),r->{toast("已解除"+x.label+"绑定");reloadAccount();});}catch(org.json.JSONException ignored){}}));
+    private void unbind(AccountCenter.Social x,AccountCenter.Link link,int n){
+        show(new AlertDialog.Builder(this).setTitle("解除"+x.label+"账号 "+n+"？").setMessage("解除后不能再用这个"+x.label+"账号登录 God，用它登录的 App 也会在 10 分钟内退出。可以随时在网页个人中心重新绑定。").setNegativeButton("取消",null)
+            .setPositiveButton("解除绑定",(d,w)->{try{accountWrite(AccountCenter.UNBIND,new JSONObject().put("provider",x.provider).put("id",link.id).put("confirm","unbind:"+x.provider+":"+link.id),r->{toast("已解除"+x.label+"账号 "+n);reloadAccount();});}catch(org.json.JSONException ignored){}}));
     }
     private void revokeOthers(int count){
         show(new AlertDialog.Builder(this).setTitle("下线其他 "+count+" 个登录？").setMessage("除这台手机外，其他设备上的 God 会在 10 分钟内退出登录，需要重新用 Passkey 登录。").setNegativeButton("取消",null)
@@ -1331,7 +1339,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     private void deviceLogin(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy())return;coordinator.loginWithDevice();}
     private void login(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy()||nativeLogin.running())return;session.setText("正在准备安全登录…");coordinator.login();}
-    private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){show(new AlertDialog.Builder(this).setTitle("登录 God").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录"},(d,w)->{if(w==0)deviceLogin();else login();}).setNegativeButton("取消",null));return;}show(new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->signOut()));}
+    /** Read-only sign-in with a Google account bound in the user center; writes still need a Passkey sign-in. */
+    private void googleLogin(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy()||nativeLogin.running())return;session.setText(GOOGLE_PREPARING);coordinator.login("google");}
+    private static final String GOOGLE_PREPARING="正在准备 Google 登录…";
+    private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){show(new AlertDialog.Builder(this).setTitle("登录 God").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录","使用 Google 登录（只读）"},(d,w)->{if(w==0)deviceLogin();else if(w==1)login();else googleLogin();}).setNegativeButton("取消",null));return;}show(new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->signOut()));}
     private void goBack(){if(coordinator==null){finish();return;}if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){saveViewport();++generation;if(project!=null){project=null;ledgerCursor=null;ledgerPages.clear();showFeature(find(selectedId),true);}else{selectedId=null;enterFrom=-1;build();}}else if(!group.equals("总览")){switchTab("总览");}else moveTaskToBack(true);}
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
