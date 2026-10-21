@@ -19,7 +19,7 @@ public final class TiboWatchReceiver extends BroadcastReceiver {
                 try { context.startForegroundService(new Intent(context, TiboWatchService.class).putExtra("check", true)); }
                 catch (RuntimeException refused) { PendingResult result = goAsync(); TiboWatch.checkAsync(context, result::finish); }
                 break; }
-            case Intent.ACTION_BOOT_COMPLETED: case Intent.ACTION_MY_PACKAGE_REPLACED: TiboWatch.start(context, true); break;
+            case Intent.ACTION_BOOT_COMPLETED: case Intent.ACTION_MY_PACKAGE_REPLACED: NoticeCenter.resume(context); TiboWatch.start(context, true); break;
             default: break;
         }
     }

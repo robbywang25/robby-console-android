@@ -155,6 +155,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     private static final int AUTH_TAB=41;
+    /** The sign-in the Auth Tab was opened for, so its browser fallback repeats the same one (Google or Passkey). */
+    private boolean lastFederated;
     /** After Chrome could not verify the app for the callback domain, later sign-ins use the plain browser + App Link. */
     private boolean browserLogin;
     /** One sign-in on the web page, chosen after a native attempt failed. */
@@ -180,7 +182,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!resumed||isDestroyed())return;
         boolean web=webOnce;webOnce=false;
         // The native Passkey sheet is Authelia's; a bound Google or Apple account always signs in on its own page.
-        boolean federated=url.startsWith(AuthSession.FEDERATED_START);
+        boolean federated=url.startsWith(AuthSession.FEDERATED_START);lastFederated=federated;
         if(!federated&&!web&&!browserLogin&&NativeLogin.supported(this)){session.setText("正在用通行密钥登录…");nativeLogin.start(url);return;}
         session.setText(federated?"请在登录页选择 Google 账号":browserLogin?"请在浏览器完成 Passkey 登录":"请在登录页完成 Passkey 验证");
         try{
@@ -214,7 +216,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // 2 and 3 are Auth Tab's verification failed / timed out: the tab could not prove this app owns the callback.
         if(result==2||result==3){browserLogin=true;session.setText(idleSession());
             show(new AlertDialog.Builder(this).setTitle("登录未完成").setMessage("应用内登录页暂时无法确认 God的身份。可以改用浏览器登录，完成后会自动回到应用。")
-                .setNegativeButton("取消",null).setPositiveButton("用浏览器登录",(d,w)->login()));}
+                .setNegativeButton("取消",null).setPositiveButton("用浏览器登录",(d,w)->{if(lastFederated)googleLogin();else login();}));}
         // RESULT_CANCELED: the person closed the page, or a browser without tabs took over and the App Link will answer.
     }
     @Override public void onAuthError(String message){if(resumed&&!isDestroyed()){build();error("登录未完成",message);}}
@@ -1085,7 +1087,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(folded>0){final int n=folded;featureRow("还有 "+n+" 个较早的登录","点按展开","history",list,()->{devicesUnfolded=true;parent.removeAllViews();deviceParts(parent);});}
         int others=AccountCenter.others(d);
         if(others>0){LinearLayout row=featureRow("下线其他设备",others+" 个其他登录 · 保留本机","clear",list,()->revokeOthers(others));((TextView)((LinearLayout)row.getChildAt(1)).getChildAt(0)).setTextColor(theme.danger);}
-        if(!d.currentFound&&!d.list.isEmpty())parent.addView(theme.info(List.of("暂时没认出本机的登录（刚刷新过会话时可能如此），下拉刷新后会标出本机。")));
+        if(federatedSession())parent.addView(theme.info(List.of("用 Google 登录时，这台手机不在列表里：列表只包含用 Passkey 登录的 God。")));
+        else if(!d.currentFound&&!d.list.isEmpty())parent.addView(theme.info(List.of("暂时没认出本机的登录（刚刷新过会话时可能如此），下拉刷新后会标出本机。")));
     }
     private String accountMessage(Exception e,String fallback){
         if(e instanceof MobileApi.ApiError){MobileApi.ApiError a=(MobileApi.ApiError)e;String m=AccountCenter.explain(a.status,a.code);return m!=null?m:safeError(e);}

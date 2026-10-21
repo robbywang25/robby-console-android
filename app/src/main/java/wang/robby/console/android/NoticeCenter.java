@@ -130,6 +130,8 @@ final class NoticeCenter {
         if (android.os.Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) alarms.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, p);
         else alarms.setAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, at, p);
     }
+    /** After a reboot or an update the system has dropped the re-ring alarm; bring it back for anything still unacknowledged. */
+    static void resume(Context c) { if (persistent(c)) scheduleRering(c, pending(c)); else ackAll(c); }
     /** Ten minutes on: every reminder not yet acknowledged rings its next round. */
     static void rering(Context c) {
         if (!persistent(c)) { ackAll(c); return; }
