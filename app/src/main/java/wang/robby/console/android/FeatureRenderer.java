@@ -203,7 +203,7 @@ public final class FeatureRenderer {
                 for (int i = 0; i < Math.min(4, list.length()); i++) { JSONObject n = list.optJSONObject(i); if (n == null) continue;
                     LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(i == 0 ? 8 : 5), 0, 0);
                     TextView name = u.text(s(n, "label"), 14, false); name.setTextColor(u.theme.ink); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-                    r.addView(u.text(unit(n, "changePct", "%"), 12, false)); TextView price = u.text(number(n, "price") + (n.has("currency") ? " " + s(n, "currency") : ""), 14, true); price.setPadding(u.dp(10), 0, 0, 0); r.addView(price);
+                    String change = MarketChange.text(n, "changePct"); TextView move = u.text(change == null ? "" : change, 12, true); move.setTextColor(MarketChange.color(MarketChange.direction(n, "changePct"), u.theme)); r.addView(move); r.setContentDescription(s(n, "label") + (change == null ? "" : "，" + MarketChange.speakable(change))); TextView price = u.text(number(n, "price") + (n.has("currency") ? " " + s(n, "currency") : ""), 14, true); price.setPadding(u.dp(10), 0, 0, 0); r.addView(price);
                     shell.addView(r); }
                 break; }
             default: widgetMessage(context, shell, "暂不支持这张卡片");
@@ -501,8 +501,11 @@ public final class FeatureRenderer {
         u.sources(obj(p, "sourceStatus"), "watchlist", "关注行情", "history", "趋势", "sectors", "板块", "benchmarks", "基准", "aiUpstream", "AI 产业链");
         String[][] groups = {{"watchlist", "关注行情"}, {"sectors", "板块"}, {"benchmarks", "市场基准"}};
         for (String[] key : groups) { if (arr(p, key[0]).length() == 0) continue; LinearLayout g = u.list(key[1]);
-            for (JSONObject n : rows(p, key[0])) u.item(g, s(n, "label"), number(n, "price") + (n.has("currency") ? " " + s(n, "currency") : ""),
-                join("涨跌 " + unit(n, "changePct", "%"), n.has("updatedAt") ? "行情 " + date(n, "updatedAt") : "")); }
+            // 涨跌 and 今年以来 in red (up) or green (down), each with its arrow; the quote time stays plain.
+            for (JSONObject n : rows(p, key[0])) { android.text.SpannableStringBuilder meta = new android.text.SpannableStringBuilder();
+                MarketChange.append(meta, "涨跌", n, "changePct", u.theme); MarketChange.append(meta, "今年以来", n, "ytdPct", u.theme);
+                if (n.has("updatedAt")) { if (meta.length() > 0) meta.append(" · "); meta.append("行情 ").append(date(n, "updatedAt")); }
+                u.item(g, s(n, "label"), number(n, "price") + (n.has("currency") ? " " + s(n, "currency") : ""), meta); } }
         for (JSONObject group : rows(p, "aiUpstream")) { LinearLayout c = u.card(s(group, "name")); for (JSONObject n : rows(group, "companies"))
             u.row(c, s(n, "name"), Boolean.TRUE.equals(n.opt("quoteAvailable")) ? number(n, "price") + " " + s(n, "currency") : "暂无报价"); }
         u.explain(s(obj(p, "disclaimer"), "text"));
@@ -914,22 +917,22 @@ public final class FeatureRenderer {
          * Compact list row: title, trailing value, one summary line. Label/value pairs, when given, expand in place.
          * A status word in the trailing value gets its colour dot; the word itself always stays visible.
          */
-        void item(LinearLayout group,String title,String trailing,String meta,String... details){
+        void item(LinearLayout group,String title,String trailing,CharSequence meta,String... details){
             if(group.getChildCount()>0){View d=new View(context);d.setBackgroundColor(border);LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(.5f));lp.setMargins(dp(14),0,dp(12),0);group.addView(d,lp);}
             LinearLayout box=new LinearLayout(context);box.setOrientation(LinearLayout.VERTICAL);
             LinearLayout head=new LinearLayout(context);head.setGravity(Gravity.CENTER_VERTICAL);head.setPadding(dp(14),dp(9),dp(10),dp(9));head.setMinimumHeight(dp(48));
             int tone=theme.status(trailing);
             LinearLayout texts=new LinearLayout(context);texts.setOrientation(LinearLayout.VERTICAL);TextView t=text(title,15,false);t.setTextColor(theme.ink);texts.addView(t);
-            if(meta!=null&&!meta.isEmpty()){TextView m=text(meta,12,false);m.setPadding(0,dp(2),0,0);texts.addView(m);}
+            if(meta!=null&&meta.length()>0){TextView m=text("",12,false);m.setText(meta);m.setPadding(0,dp(2),0,0);texts.addView(m);}
             head.addView(texts,new LinearLayout.LayoutParams(0,-2,1));
             if(trailing!=null&&!trailing.isEmpty()){LinearLayout right=new LinearLayout(context);right.setGravity(Gravity.CENTER_VERTICAL);right.setPadding(dp(10),0,0,0);
                 if(tone!=0){View dot=theme.dot(tone,6);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(5);right.addView(dot);}
                 TextView v=text(trailing,14,true);v.setGravity(Gravity.END);right.addView(v);head.addView(right);}
             box.addView(head);
-            String description=title+(trailing==null||trailing.isEmpty()?"":"，"+trailing)+(meta==null||meta.isEmpty()?"":"，"+meta);head.setContentDescription(description);
+            String description=title+(trailing==null||trailing.isEmpty()?"":"，"+trailing)+(meta==null||meta.length()==0?"":"，"+MarketChange.speakable(meta.toString()));head.setContentDescription(description);
             if(details.length>=2){
                 LinearLayout body=details();body.setPadding(dp(14),0,dp(16),dp(8));for(int i=0;i+1<details.length;i+=2)detail(body,details[i],details[i+1],StatusPage.NONE);
-                String key=title+"|"+meta;boolean open=OPEN.contains(key);body.setVisibility(open?View.VISIBLE:View.GONE);box.addView(body);
+                String key=title+"|"+(meta==null?"":meta.toString());boolean open=OPEN.contains(key);body.setVisibility(open?View.VISIBLE:View.GONE);box.addView(body);
                 ImageView chevron=theme.icon("chevron",theme.muted,12);chevron.setAlpha(.4f);chevron.setRotation(open?-90:90);LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(dp(12),dp(12));cp.leftMargin=dp(6);head.addView(chevron,cp);
                 head.setBackground(theme.ripple(theme.shape(Color.TRANSPARENT,16),16));head.setFocusable(true);head.setClickable(true);head.setStateDescription(open?"已展开":"已收起");
                 head.setOnClickListener(v->{boolean show=body.getVisibility()!=View.VISIBLE;if(show)OPEN.add(key);else OPEN.remove(key);body.setVisibility(show?View.VISIBLE:View.GONE);head.setStateDescription(show?"已展开":"已收起");

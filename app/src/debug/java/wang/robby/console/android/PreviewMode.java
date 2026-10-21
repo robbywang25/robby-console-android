@@ -141,7 +141,17 @@ final class PreviewMode {
  if(path.equals("tokens/quotas"))return tokens();
  if(path.equals("tokens/tibo"))return tibo();
  if(path.equals("deepseek/models"))return deepseek(time);
- if(path.equals("market"))return new JSONObject("{\"apiVersion\":\"2026-07-01\",\"sourceStatus\":{},\"watchlist\":[{\"label\":\"合成行情 A\",\"price\":123.45,\"currency\":\"USD\",\"changePct\":1.23}],\"sectors\":[],\"benchmarks\":[],\"aiUpstream\":[],\"disclaimer\":{\"text\":\"完全合成的界面预览数据\"}}").put("generatedAt",time);
+ if(path.equals("market"))return new JSONObject("""
+  {"apiVersion":"2026-07-01","sourceStatus":{},"disclaimer":{"text":"完全合成的界面预览数据"},"aiUpstream":[],
+   "watchlist":[{"symbol":"BTC","label":"合成币 A","price":82874.36,"currency":"USD","changePct":1.23,"ytdPct":-5.28,"updatedAt":"NOW"},
+                {"symbol":"0700.HK","label":"合成港股 B","price":410.4,"currency":"HKD","changePct":-1.77,"ytdPct":12.4,"updatedAt":"NOW"},
+                {"symbol":"XAU","label":"合成金价 C","price":640.1,"currency":"CNY/g","ytdPct":-9.11,"updatedAt":"NOW"},
+                {"symbol":"USD/CNY","label":"合成汇率 D","price":6.6774,"currency":"CNY","updatedAt":"NOW"}],
+   "sectors":[{"symbol":"SH512800","label":"合成板块 银行","price":0.866,"change":-0.011,"changePct":-1.25,"ytdPct":5.22,"updatedAt":"NOW"},
+              {"symbol":"SZ159928","label":"合成板块 消费","price":0.664,"change":0,"changePct":0,"ytdPct":-16.27,"updatedAt":"NOW"}],
+   "benchmarks":[{"market":"A 股","label":"合成指数 甲","price":3735.37,"change":4.45,"changePct":0.12,"ytdPct":-6.31},
+                 {"market":"美股","label":"合成指数 乙","price":7712.57,"change":21.8,"changePct":0.28}]}
+  """.replace("NOW",time)).put("generatedAt",time);
  throw new IllegalStateException("此预览不连接真实服务");
  }
 }
