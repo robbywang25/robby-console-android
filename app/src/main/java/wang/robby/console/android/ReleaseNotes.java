@@ -15,7 +15,7 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
-        new Entry("0.27.0", "2026-10-20", "增强提醒与额度自动刷新",
+        new Entry("0.27.0", "2026-10-21", "增强提醒与额度自动刷新",
             "「我 → 通知」新增增强提醒：额度和站点提醒以横幅、声音和震动送达。",
             "打开持续提醒后，通知会一直响到你点「知道了」，10 分钟后再响，最多 3 轮。",
             "从通知打开 God 也算「知道了」；关闭增强提醒会停止正在响的提醒。",
