@@ -15,12 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
-        new Entry("0.28.0", "2026-10-21", "DeepSeek 模型一览",
+        new Entry("0.28.0", "2026-10-21", "DeepSeek 模型与扫码授权",
             "「功能 → 工具」新增 DeepSeek 模型，实时列出官方接口返回的全部模型。",
             "点开模型可看上下文、最大输出、输入类型、思考强度和官方返回的每个字段。",
             "价格按 deepseek.robby.wang 登记的官方单价显示，注明核对日期和来源。",
             "官方新出现、尚未登记价格的模型标为「待核验」，不会显示成免费。",
-            "页面底部可展开接口完整返回，长按可复制。"),
+            "页面底部可展开接口完整返回，长按可复制。",
+            "「通过已有设备授权」显示二维码，用已登录的 iPhone 扫码即可打开验证页。"),
         new Entry("0.27.0", "2026-10-21", "增强提醒与额度自动刷新",
             "「我 → 通知」新增增强提醒：额度和站点提醒以横幅、声音和震动送达。",
             "打开持续提醒后，通知会一直响到你点「知道了」，10 分钟后再响，最多 3 轮。",

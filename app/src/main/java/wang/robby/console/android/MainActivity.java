@@ -1310,9 +1310,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void showDeviceAuthorization(DeviceAuthorization info){
         heading.setText("授权此设备");session.setText("等待本人确认");
         leading.removeAllViews();leading.addView(theme.circle("back","取消验证",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));
-        LinearLayout c=step(1,"打开安全验证页");
-        TextView url=text(info.verificationUri.toString(),15,ACCENT,false);url.setPadding(0,dp(12),0,dp(12));c.addView(url);
-        c.addView(text("使用已经能登录 God 的电脑或其他设备。",14,MUTED,false));
+        LinearLayout c=step(1,"扫码打开安全验证页");
+        // The code only carries the fixed verification address, never the one-time code: that is still typed and checked on the other device.
+        android.widget.ImageView qr=new android.widget.ImageView(this);qr.setImageDrawable(new QrDrawable(QrCode.encode(info.verificationUri)));qr.setContentDescription("安全验证页地址的二维码");
+        LinearLayout.LayoutParams qp=new LinearLayout.LayoutParams(dp(196),dp(196));qp.gravity=Gravity.CENTER_HORIZONTAL;qp.topMargin=dp(14);qp.bottomMargin=dp(10);c.addView(qr,qp);
+        c.addView(text("用已经能登录 God 的 iPhone、手机或电脑扫码；也可以手动打开：",14,MUTED,false));
+        TextView url=text(info.verificationUri.toString(),15,ACCENT,false);url.setPadding(0,dp(8),0,dp(4));c.addView(url);
         c=step(2,"输入这组一次性代码");
         TextView code=text(info.userCode,30,INK,true);code.setLetterSpacing(0.12f);code.setPadding(0,dp(18),0,dp(18));code.setGravity(Gravity.CENTER);code.setBackground(theme.shape(theme.soft,18));
         LinearLayout.LayoutParams box=new LinearLayout.LayoutParams(-1,-2);box.topMargin=dp(14);box.bottomMargin=dp(14);c.addView(code,box);
