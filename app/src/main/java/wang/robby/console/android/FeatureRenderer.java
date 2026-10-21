@@ -183,12 +183,13 @@ public final class FeatureRenderer {
                 Dashboard.saveTokenRows(context, rowsShown);
                 break; }
             case "calendar": {
-                // The next few resets of every connected account, soonest first; the page has the month.
-                long now = System.currentTimeMillis(); ZoneId zone = ZoneId.systemDefault();
+                // Every reset of every connected account within the range chosen in 编辑看板, soonest first; the page has the month.
+                long now = System.currentTimeMillis(); ZoneId zone = ZoneId.systemDefault(); int days = Dashboard.calendarDays(context);
                 QuotaCalendar.Model m = QuotaCalendar.build(tokenAccounts(p), zone, now);
-                List<QuotaCalendar.Event> next = new ArrayList<>(); for (QuotaCalendar.Event e : m.events) if (e.at > now) next.add(e);
-                if (next.isEmpty()) { widgetMessage(context, shell, "暂时没有已知的下一次重置"); break; }
-                for (int i = 0; i < Math.min(4, next.size()); i++) { QuotaCalendar.Event e = next.get(i); boolean live = QuotaCalendar.SCHEDULED.equals(e.status);
+                List<QuotaCalendar.Event> next = Dashboard.calendarWithin(m.events, now, m.today, days);
+                if (next.isEmpty()) { widgetMessage(context, shell, Dashboard.calendarRange(days) + "内没有已知的重置"); break; }
+                int rows = Math.min(Dashboard.CALENDAR_MAX_ROWS, next.size());
+                for (int i = 0; i < rows; i++) { QuotaCalendar.Event e = next.get(i); boolean live = QuotaCalendar.SCHEDULED.equals(e.status);
                     LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(i == 0 ? 8 : 5), 0, 0);
                     TextView when = u.text(QuotaCalendar.shortDay(e.day, m.today) + " " + DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(e.at).atZone(zone)), 13, true);
                     when.setTextColor(live ? u.theme.ink : u.theme.muted); when.setSingleLine(true); r.addView(when, new LinearLayout.LayoutParams(u.dp(84), -2));
@@ -196,7 +197,9 @@ public final class FeatureRenderer {
                     TextView what = u.text(e.platform + " " + e.shortLabel(), 14, false); what.setTextColor(u.theme.ink); what.setPadding(u.dp(7), 0, 0, 0); what.setSingleLine(true); what.setEllipsize(android.text.TextUtils.TruncateAt.END); r.addView(what, new LinearLayout.LayoutParams(0, -2, 1));
                     TextView who = u.text(live ? QuotaCalendar.shortAccount(e.account) : "待核实", 11, false); who.setTextColor(u.theme.faint); who.setSingleLine(true); who.setEllipsize(android.text.TextUtils.TruncateAt.END); who.setMaxWidth(u.dp(84)); who.setPadding(u.dp(8), 0, 0, 0); r.addView(who);
                     r.setContentDescription(QuotaCalendar.relativeDay(e.day, m.today) + " " + DateTimeFormatter.ofPattern("HH:mm").format(Instant.ofEpochMilli(e.at).atZone(zone)) + "，" + e.platform + " " + e.label + "，" + e.account + (live ? "" : "，待核实")); shell.addView(r); }
-                if (next.size() > 4) { TextView more = u.text("之后还有 " + (next.size() - 4) + " 项", 12, false); more.setTextColor(u.theme.faint); more.setPadding(0, u.dp(4), 0, 0); shell.addView(more); }
+                // The range and the total, so a short list never reads as "nothing else is coming".
+                String footer = Dashboard.calendarRange(days) + "共 " + next.size() + " 次" + (next.size() > rows ? "，还有 " + (next.size() - rows) + " 次在重置日历里" : "");
+                TextView more = u.text(footer, 12, false); more.setTextColor(u.theme.faint); more.setPadding(0, u.dp(6), 0, 0); shell.addView(more);
                 break; }
             case "market": {
                 JSONArray list = arr(p, "watchlist"); if (list.length() == 0) { widgetMessage(context, shell, "关注列表为空"); break; }

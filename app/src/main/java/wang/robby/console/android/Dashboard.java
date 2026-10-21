@@ -43,6 +43,23 @@ final class Dashboard {
     }
     static String toggleHidden(String saved, String id) { Set<String> ids = hiddenTokens(saved); if (!ids.remove(id) && id.matches("[a-z0-9-]{1,32}")) ids.add(id); return String.join(",", ids); }
     static final String HIDDEN_TOKENS = "tokenBoardHidden", CLOCKS = "boardClocks", TOKEN_ROWS = "tokenBoardRows";
+
+    /** 重置日历 on 总览 lists the resets in a day range, chosen in 编辑看板: 今天, or the next 3, 7, 14 or 30 days. */
+    static final String CALENDAR_DAYS = "boardCalendarDays";
+    static final List<Integer> CALENDAR_RANGES = List.of(1, 3, 7, 14, 30);
+    static final int CALENDAR_DEFAULT = 7, CALENDAR_MAX_ROWS = 12;
+    static int calendarDays(String saved) {
+        try { int d = Integer.parseInt(saved == null ? "" : saved.trim()); if (CALENDAR_RANGES.contains(d)) return d; } catch (NumberFormatException ignored) { }
+        return CALENDAR_DEFAULT;
+    }
+    static int calendarDays(android.content.Context c) { return calendarDays(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(CALENDAR_DAYS, null)); }
+    static String calendarRange(int days) { return days == 1 ? "今天" : "未来 " + days + " 天"; }
+    /** Resets still ahead of {@code now} whose local day is within {@code days} days counting today, soonest first. */
+    static List<QuotaCalendar.Event> calendarWithin(List<QuotaCalendar.Event> events, long now, java.time.LocalDate today, int days) {
+        java.time.LocalDate last = today.plusDays(Math.max(1, days) - 1L); List<QuotaCalendar.Event> out = new java.util.ArrayList<>();
+        for (QuotaCalendar.Event e : events) if (e.at > now && e.day != null && !e.day.isAfter(last)) out.add(e);
+        out.sort(java.util.Comparator.comparingLong(e -> e.at)); return out;
+    }
     /** The Token card's last rows as id and product label (ChatGPT Codex, Claude…): layout only, never figures or emails. */
     static List<String[]> tokenRows(String saved) {
         List<String[]> out = new ArrayList<>(); if (saved == null) return out;

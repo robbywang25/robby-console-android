@@ -425,6 +425,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         for(int i=0;i<ids.size();i++){Dashboard.Card card=Dashboard.find(ids.get(i));if(card!=null)boardRow(on,card,true,i>0,i<ids.size()-1);}
         if(ids.isEmpty()){TextView t=text("还没有添加卡片",14,MUTED,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(14),dp(12),dp(14));on.addView(t);}
         if(ids.contains("clocks")){section("时区时钟卡片");LinearLayout zones=groupCard();clockRows(zones);}
+        if(ids.contains("calendar")){section("重置日历卡片");LinearLayout range=groupCard();int days=Dashboard.calendarDays(this);
+            featureRow("显示范围 · "+Dashboard.calendarRange(days),"总览列出这段时间内的全部重置","calendar",range,this::calendarRangeMenu);}
         if(ids.contains("tokens")){section("Token 额度卡片");LinearLayout accounts=groupCard();JSONObject cached=snapshots.get("tokens/quotas");
             if(cached!=null)tokenToggles(accounts,cached);
             else{TextView wait=text("正在读取账号…",14,MUTED,false);wait.setPadding(dp(12),dp(14),dp(12),dp(14));accounts.addView(wait);int epoch=generation;
@@ -434,6 +436,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!rest.isEmpty()){section("可添加");LinearLayout off=groupCard();for(Dashboard.Card card:rest)boardRow(off,card,false,false,false);}
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.topMargin=dp(6);content.addView(button("恢复默认组合",()->{saveBoard(Dashboard.DEFAULT);build();}),rp);
         restoreViewport();
+    }
+    /** 重置日历's range on 总览: 今天 or the next 3, 7, 14 or 30 days; saved on this phone, applied at once. */
+    private void calendarRangeMenu(){
+        List<Integer> ranges=Dashboard.CALENDAR_RANGES;String[] names=new String[ranges.size()];for(int i=0;i<names.length;i++)names[i]=Dashboard.calendarRange(ranges.get(i));
+        show(new AlertDialog.Builder(this).setTitle("重置日历显示范围").setSingleChoiceItems(names,ranges.indexOf(Dashboard.calendarDays(this)),(d,w)->{
+            prefs().edit().putString(Dashboard.CALENDAR_DAYS,String.valueOf(ranges.get(w))).apply();d.dismiss();build();}).setNegativeButton("取消",null));
     }
     /** 时区时钟 zones: tap to rename, the bin removes, 添加时区 picks a zone and then its name. Stored on this phone. */
     private void clockRows(LinearLayout group){

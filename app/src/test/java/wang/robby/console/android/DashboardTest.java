@@ -73,4 +73,17 @@ public final class DashboardTest {
         assertEquals(3, back.size()); assertEquals("ChatGPT Codex", back.get(0)[1]); assertEquals("TodayAI 中国版", back.get(1)[1]); assertEquals("a b c", back.get(2)[1]);
         assertTrue(Dashboard.tokenRows((String) null).isEmpty());
     }
+    @Test public void calendarCardShowsTheChosenDayRange() {
+        java.time.LocalDate today = java.time.LocalDate.of(2026, 10, 22); long now = 1_000_000L, h = 3_600_000L;
+        java.util.function.BiFunction<Long, Integer, QuotaCalendar.Event> ev = (at, plus) -> new QuotaCalendar.Event("a", "Codex", "5 小时", "codex", QuotaCalendar.SCHEDULED, at, today.plusDays(plus));
+        List<QuotaCalendar.Event> all = List.of(ev.apply(now + 30 * h, 1), ev.apply(now - h, 0), ev.apply(now + 2 * h, 0), ev.apply(now + 200 * h, 8), ev.apply(now + 60 * h, 2));
+        assertEquals("today only, past ones dropped", 1, Dashboard.calendarWithin(all, now, today, 1).size());
+        List<QuotaCalendar.Event> three = Dashboard.calendarWithin(all, now, today, 3);
+        assertEquals("today, tomorrow and the day after", 3, three.size());
+        assertTrue("soonest first", three.get(0).at < three.get(1).at && three.get(1).at < three.get(2).at);
+        assertEquals("a week leaves out day 8", 3, Dashboard.calendarWithin(all, now, today, 7).size());
+        assertEquals(4, Dashboard.calendarWithin(all, now, today, 14).size());
+        assertEquals(7, Dashboard.calendarDays((String) null)); assertEquals(14, Dashboard.calendarDays("14")); assertEquals("only offered ranges", 7, Dashboard.calendarDays("5"));
+        assertEquals("今天", Dashboard.calendarRange(1)); assertEquals("未来 30 天", Dashboard.calendarRange(30));
+    }
 }

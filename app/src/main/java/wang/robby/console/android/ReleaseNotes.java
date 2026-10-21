@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.30.0", "2026-10-22", "重置日历按天数显示",
+            "总览的重置日历卡片可以选显示今天，或未来 3、7、14、30 天内的全部重置。",
+            "在「编辑看板 → 重置日历卡片」里设置，默认未来 7 天。",
+            "卡片底部写明这段时间共几次重置，太多时提示去重置日历看其余的。"),
         new Entry("0.29.0", "2026-10-21", "Google 登录与红涨绿跌",
             "可以用已绑定的 Google 账号登录 God，只能查看；记账和修改账号仍需 Passkey。",
             "个人中心的第三方账号改成列表：Apple、Google、微信每种最多绑定 5 个，可以逐个解除。",
