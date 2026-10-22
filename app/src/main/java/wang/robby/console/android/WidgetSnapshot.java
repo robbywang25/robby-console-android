@@ -36,21 +36,21 @@ final class WidgetSnapshot {
     /**
      * Token 额度: every account the 看板 card shows, in its order with the same kind kept together (OpenAI, Claude,
      * Grok, Cursor, TodayAI), as product, email prefix, kind, the tightest remaining percent and the first window's reset.
-     * Accounts without an email that share a product are numbered (Codex 1, Codex 2) instead.
+     * Accounts that share both product and prefix, or the product without an email, are numbered (Codex 1, Codex 2).
      */
     static JSONObject tokens(JSONObject quotas, Set<String> hidden) {
         if (quotas == null) return null;
         List<JSONObject> board = new ArrayList<>(Dashboard.tokenBoardAccounts(FeatureRenderer.tokenAccounts(quotas), hidden));
         board.sort(Comparator.comparingInt(a -> TokensModel.SECTIONS.indexOf(TokensModel.section(a))));
         java.util.Map<String, Integer> count = new java.util.HashMap<>(), seen = new java.util.HashMap<>();
-        for (JSONObject a : board) if (emailPrefix(TokensModel.boardEmail(a)).isEmpty()) count.merge(TokensModel.productName(a), 1, Integer::sum);
+        for (JSONObject a : board) count.merge(TokensModel.productName(a) + "\u0000" + emailPrefix(TokensModel.boardEmail(a)), 1, Integer::sum);
         JSONArray out = new JSONArray();
         for (JSONObject a : board) {
             List<TokensModel.Period> periods = TokensModel.boardWindows(a);
             Double min = null; for (TokensModel.Period p : periods) { Double pc = TokensModel.remaining(p.window); if (pc != null && (min == null || pc < min)) min = pc; }
-            String name = TokensModel.productName(a), who = emailPrefix(TokensModel.boardEmail(a)); int n = who.isEmpty() ? seen.merge(name, 1, Integer::sum) : 0;
+            String name = TokensModel.productName(a), who = emailPrefix(TokensModel.boardEmail(a)), key = name + "\u0000" + who; int n = seen.merge(key, 1, Integer::sum);
             JSONObject row = new JSONObject(); boolean fresh = "connected".equals(a.optString("status"));
-            put(row, "name", who.isEmpty() && count.getOrDefault(name, 0) > 1 ? name + " " + n : name);
+            put(row, "name", count.get(key) > 1 ? name + " " + n : name);
             if (!who.isEmpty()) put(row, "account", who);
             put(row, "kind", TokensModel.section(a));
             put(row, "percent", min == null ? JSONObject.NULL : (Object) Math.round(min));
@@ -70,7 +70,7 @@ final class WidgetSnapshot {
         next.sort(Comparator.comparingLong(e -> e.at));
         JSONArray out = new JSONArray();
         for (int i = 0; i < Math.min(CALENDAR_ROWS, next.size()); i++) {
-            QuotaCalendar.Event e = next.get(i); String who = emailPrefix(e.account);
+            QuotaCalendar.Event e = next.get(i); String who = emailPrefix(e.email);
             JSONObject row = new JSONObject(); put(row, "at", e.at); put(row, "text", e.platform + (who.isEmpty() ? "" : " · " + who) + " " + e.shortLabel()); put(row, "product", e.product);
             if (!who.isEmpty()) put(row, "account", who);
             out.put(row);
@@ -120,7 +120,7 @@ final class WidgetSnapshot {
     static String footer(long savedAt, long now, ZoneId zone) { return stale(savedAt, now) ? STALE_TEXT : HM.format(Instant.ofEpochMilli(savedAt).atZone(zone)) + " 更新"; }
     /** An email's name part (robby for robby@example.com), or "" when there is no email. */
     static String emailPrefix(String email) { int at = email == null ? -1 : email.indexOf('@'); return at > 0 ? email.substring(0, at).trim() : ""; }
-    /** The account's name on a widget: 「Codex · robby」 with an email prefix, else the product (Codex 1 when numbered). */
+    /** The account's name on a widget: 「Codex · robby」 with an email prefix, else the product; numbered ones read 「Codex 1 · robby」. */
     static String label(JSONObject row, boolean narrow) {
         String name = narrow ? shortName(row.optString("name")) : row.optString("name"), who = row.optString("account");
         return who.isEmpty() ? name : name + " · " + who;
