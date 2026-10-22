@@ -549,3 +549,14 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
 其二，Google 登录是只读的（没有 `god.mobile.profile.write`），能拉取账号设置却不能上传，「外观 → 账号」却显示「设置已同步到账号」。现在只读登录显示「设置从账号读取 · 本机修改不上传」，下面一行说明 Google 登录要改用 Passkey 登录才能同步；更早版本留下、缺写入权限的会话提示重新登录。
 
 验证（0.32.1）：`check.sh` 通过（gradle exit=0；unit tests: 224 run, 0 failures, 0 errors；lint debug/release 各 0 errors, 3 warnings，均为既有警告）。正式签名包用 adb 覆盖安装到 Find（0.31.1 → 0.32.1，versionCode 53），安装文件 SHA-256 与构建产物一致，签名为正式证书 `83d624e0…3da569`；启动后进程常驻，crash 缓冲区没有记录。未验证：Find 已授予 `POST_NOTIFICATIONS`，同步提醒触发权限请求与拒绝后说明弹窗这条路径没有在真机走过；只读登录的「设置从账号读取 · 本机修改不上传」只有单测覆盖，登录后界面有 `FLAG_SECURE`，没有截图。
+
+## v0.33.0：Claude 也显示重置卡（2026-10-22）
+
+本人要求「token额度看板claude添加重置卡信息展示」。tokens.robby.wang 网页上 Claude 的重置卡来自 `reportedResetCredits`：本人确认的张数（`owner-confirmed`），或在官网读到的逐张记录（`official-web`，带卡种 `resetType` 和起用时间 `startsAt`）。移动接口原来只透传服务商自己的 `resetCredits`，所以 App 看不到。
+
+- **服务端**（site-admin `services/ios-tokens.js`）：Claude 账号没有 `resetCredits` 时，`tokens/quotas` 多一项 `reportedResetCredits`，结构同 `resetCredits`，另有 `provenance`，每张卡多 `resetType`、`startsAt`。这一项格式不对时只丢掉它，不让整个接口失败。路由、scope、nginx、Authelia 不变。
+- **看板**：Claude 行的小字在 5 小时、每周重置之后接「重置卡 N 张（官网 M月D日核验）· 最近 M月D日到期」，本人确认的写「（你 M月D日确认）」。服务商自己的卡优先，不加标注。规则在 `TokensModel.cardsPart`，Codex 的写法不变。
+- **重置卡明细**：Claude 的卡名按 `resetType` 写「完整重置卡 / 5 小时重置卡 / 每周重置卡」，没有领取时间时写「起可用」。官网核验的记录先写「官网核验：时间」和「核验时可使用 N 张」，超过 5 分钟按「上次记录」；本人确认的写「你确认有 N 张，待自动核验（MM/DD）」。和网页 `renderResetCards` 一致。
+- 不变：桌面小组件、重置卡到期提醒仍只看服务商的 `resetCredits`。
+
+验证：见 `check.sh`；`TokensModelTest` 覆盖看板小字、明细、来源标注和服务商优先。

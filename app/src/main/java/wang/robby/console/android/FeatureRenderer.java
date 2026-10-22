@@ -180,7 +180,7 @@ public final class FeatureRenderer {
                         if (!prefix.isEmpty()) { TextView l = u.text(prefix, 11, false); l.setPadding(u.dp(10), 0, u.dp(3), 0); r.addView(l); }
                         TextView val = u.text(whole.format(pc) + "%", 14, true); if (prefix.isEmpty()) val.setPadding(u.dp(10), 0, 0, 0); r.addView(val); }
                     shell.addView(r);
-                    // The account's email, then Codex Points and reset cards, on a small second line aligned with the account name.
+                    // The account's email, then Codex Points or Claude's resets, and reset cards, on a small second line aligned with the account name.
                     String extras = TokensModel.boardSubline(TokensModel.boardEmail(a), TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault()));
                     if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }
                 if (board.isEmpty()) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");

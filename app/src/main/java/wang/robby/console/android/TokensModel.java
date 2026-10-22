@@ -44,7 +44,8 @@ final class TokensModel {
     }
     /**
      * The small line under a Codex row on the 看板, as on iOS: Points (「正在用 Points」 once the default quota is spent or
-     * not allowed), then the reset cards with the earliest expiry among the available ones. Null when there is neither.
+     * not allowed), then the reset cards with the earliest expiry among the available ones. Claude's line has its resets,
+     * then its reset cards. Null when there is nothing to say.
      */
     static String boardExtras(JSONObject account, boolean fresh, long now, java.time.ZoneId zone) {
         // Claude: both resets on the small line, the 5-hour one first. They come from resetsAt, so a stale reading still
@@ -54,6 +55,7 @@ final class TokensModel {
             for (Period p : boardWindows(account)) { long resets = at(p.window.opt("resetsAt"));
                 if ("5 小时".equals(p.label) && resets > 0) parts.add(resets <= now ? "5 小时额度已重置" : "5 小时额度 " + countdown(resets, now));
                 else if ("每周".equals(p.label)) { String left = days(resets, now); if (left != null) parts.add("每周额度 " + left); } }
+            String cards = cardsPart(account, now, zone); if (cards != null) parts.add(cards);
             return parts.isEmpty() ? null : String.join(" · ", parts);
         }
         if (!"codex".equals(account.opt("product"))) return null;
@@ -64,21 +66,42 @@ final class TokensModel {
             if (Boolean.TRUE.equals(credits.opt("unlimited"))) parts.add("Points 不限量");
             else if (left instanceof Number) parts.add((usesPoints(account) ? "正在用 Points " : "Points ") + new java.text.DecimalFormat("#,##0.#").format(((Number) left).doubleValue()));
         }
-        JSONObject cards = account.optJSONObject("resetCredits");
-        if (cards != null && cards.opt("available") instanceof Number) {
-            int available = ((Number) cards.opt("available")).intValue(); String part = "重置卡 " + available + " 张";
-            long next = Long.MAX_VALUE; JSONArray list = cards.optJSONArray("cards");
-            if (available > 0 && list != null) for (int i = 0; i < list.length(); i++) {
-                JSONObject c = list.optJSONObject(i); if (c == null || !"available".equals(c.opt("status")) || !(c.opt("expiresAt") instanceof String)) continue;
-                try { next = Math.min(next, java.time.Instant.parse((String) c.opt("expiresAt")).toEpochMilli()); } catch (RuntimeException ignored) { }
-            }
-            if (next != Long.MAX_VALUE) { java.time.LocalDate d = java.time.Instant.ofEpochMilli(next).atZone(zone).toLocalDate();
-                part += next <= now ? " · 最近一张已到期" : " · 最近 " + d.getMonthValue() + "月" + d.getDayOfMonth() + "日到期"; }
-            parts.add(part);
-        }
+        String cards = cardsPart(account, now, zone); if (cards != null) parts.add(cards);
         if (parts.isEmpty()) return null;
         return (fresh ? "" : "上次 ") + String.join(" · ", parts);
     }
+    /**
+     * The board's reset card part: the count, then the earliest expiry among the available cards. A Claude count from a
+     * dated observation says so and when, as tokens.robby.wang does, since it is not live provider data.
+     */
+    static String cardsPart(JSONObject account, long now, ZoneId zone) {
+        JSONObject cards = cardData(account);
+        if (cards == null || !(cards.opt("available") instanceof Number)) return null;
+        int available = ((Number) cards.opt("available")).intValue(); String part = "重置卡 " + available + " 张";
+        String source = observation(account); long seen = at(cards.opt("detailsAt"));
+        if (source != null) part += "（" + ("official-web".equals(source) ? "官网" : "你") + (seen >= 0 ? " " + monthDay(seen, zone) : "") + ("official-web".equals(source) ? "核验" : "确认") + "）";
+        long next = Long.MAX_VALUE; JSONArray list = cards.optJSONArray("cards");
+        if (available > 0 && list != null) for (int i = 0; i < list.length(); i++) {
+            JSONObject c = list.optJSONObject(i); if (c == null || !"available".equals(c.opt("status"))) continue;
+            long expires = at(c.opt("expiresAt")); if (expires >= 0) next = Math.min(next, expires);
+        }
+        if (next != Long.MAX_VALUE) part += next <= now ? " · 最近一张已到期" : " · 最近 " + monthDay(next, zone) + "到期";
+        return part;
+    }
+    /**
+     * The account's reset cards: the provider's own, else for Claude the dated observation tokens.robby.wang shows
+     * (confirmed by the owner, or read on the official site). Null when there is neither.
+     */
+    static JSONObject cardData(JSONObject a) {
+        JSONObject live = a.optJSONObject("resetCredits"); if (live != null) return live;
+        return "claude".equals(a.opt("product")) ? a.optJSONObject("reportedResetCredits") : null;
+    }
+    /** Where Claude's cards come from when not from the provider: "official-web" or "owner-confirmed"; null otherwise. */
+    static String observation(JSONObject a) {
+        if (a.optJSONObject("resetCredits") != null) return null; JSONObject r = cardData(a);
+        Object p = r == null ? null : r.opt("provenance"); return "official-web".equals(p) || "owner-confirmed".equals(p) ? (String) p : null;
+    }
+    private static String monthDay(long ms, ZoneId zone) { java.time.LocalDate d = Instant.ofEpochMilli(ms).atZone(zone).toLocalDate(); return d.getMonthValue() + "月" + d.getDayOfMonth() + "日"; }
     /** iOS's rule: Codex is on Points when its default quota is spent or not allowed and a Points balance is known. */
     static boolean usesPoints(JSONObject account) {
         JSONObject credits = account.optJSONObject("credits"), route = account.optJSONObject("usageRoute");
@@ -138,6 +161,7 @@ final class TokensModel {
             "cursor", "Cursor", "today-cn", "TodayAI 中国版", "today-global", "TodayAI 全球版", "chatgpt-dots", "ChatGPT Dots", "chatgpt-chat", "ChatGPT 聊天");
     private static final Map<String, String> IDENTITY_PRODUCTS = Map.of("codex", "ChatGPT", "claude", "Claude", "grok", "Grok Build", "grok-bot", "Grok Bot",
             "cursor", "Cursor", "today-cn", "TodayAI 中国版", "today-global", "TodayAI 全球版");
+    private static final Map<String, String> CLAUDE_CARDS = Map.of("full", "完整重置卡", "five_hour", "5 小时重置卡", "weekly", "每周重置卡");
     private static final DateTimeFormatter SHORT = DateTimeFormatter.ofPattern("MM/dd HH:mm"), LONG = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
     /** Only connected-or-once-connected accounts, never the two ChatGPT entries the web keeps out of the quota grid. */
@@ -311,7 +335,9 @@ final class TokensModel {
     static Cards cards(JSONObject a, ZoneId zone, long now) {
         String product = String.valueOf(a.opt("product"));
         if (!List.of("codex", "claude", "today-cn", "today-global").contains(product)) return null;
-        JSONObject data = a.optJSONObject("resetCredits"); boolean historical = !effectiveStatus(a, now).equals("connected");
+        JSONObject data = cardData(a); String source = observation(a); boolean web = "official-web".equals(source), reported = "owner-confirmed".equals(source);
+        // An official-site reading is a snapshot: older than five minutes it reads as the last record, as on the web.
+        boolean historical = !effectiveStatus(a, now).equals("connected") || web && now - at(data.opt("detailsAt")) > 5 * 60_000L;
         List<String[]> items = new ArrayList<>(); int unused = 0;
         JSONArray list = data == null ? null : data.optJSONArray("cards");
         if (list != null) for (int i = 0; i < list.length(); i++) {
@@ -320,14 +346,19 @@ final class TokensModel {
             String state = status.equals("available") && expires >= 0 && expires <= now ? "已过期"
                     : Map.of("available", "未使用", "redeemed", "已使用", "expired", "已过期", "redeeming", "使用中").getOrDefault(status, "待确认");
             if (state.equals("未使用")) unused++;
-            items.add(new String[] {"重置卡 " + (items.size() + 1), state, expires >= 0 ? longTime(expires, zone) + " 到期" : "到期时间未提供", granted >= 0 ? longTime(granted, zone) + " 领取" : "领取时间未提供"});
+            long starts = at(c.opt("startsAt")); String kind = "claude".equals(product) ? CLAUDE_CARDS.get(String.valueOf(c.opt("resetType"))) : null;
+            items.add(new String[] {(kind != null ? kind : "重置卡") + " " + (items.size() + 1), state, expires >= 0 ? longTime(expires, zone) + " 到期" : "到期时间未提供",
+                    granted >= 0 ? longTime(granted, zone) + " 领取" : starts >= 0 ? longTime(starts, zone) + " 起可用" : "领取时间未提供"});
         }
         List<String> notes = new ArrayList<>();
         int available = data != null && data.opt("available") instanceof Number ? ((Number) data.opt("available")).intValue() : 0;
-        if (data != null && data.opt("applicable") instanceof Number) notes.add("当前可使用 " + ((Number) data.opt("applicable")).intValue() + " 张");
+        long seen = data == null ? -1 : at(data.opt("detailsAt"));
+        if (reported) notes.add("你确认有 " + available + " 张，待自动核验" + (seen >= 0 ? "（" + DateTimeFormatter.ofPattern("MM/dd").format(Instant.ofEpochMilli(seen).atZone(zone)) + "）" : ""));
+        else if (web && seen >= 0) notes.add("官网核验：" + longTime(seen, zone));
+        if (data != null && data.opt("applicable") instanceof Number) notes.add((web ? "核验时" : "当前") + "可使用 " + ((Number) data.opt("applicable")).intValue() + " 张");
         if (data == null) notes.add("重置卡明细暂未读取");
         else if (items.isEmpty()) notes.add(available > 0 ? "共有 " + available + " 张，逐张明细暂未读取" : "暂无可用卡片");
-        String pending = data != null && !items.isEmpty() && available > unused ? "部分可用卡明细待更新" : null;
-        return new Cards("重置卡明细" + (historical && data != null ? "（上次记录）" : ""), notes, items, pending);
+        String pending = !reported && data != null && !items.isEmpty() && available > unused ? "部分可用卡明细待更新" : null;
+        return new Cards("重置卡明细" + (historical && data != null && !reported ? "（上次记录）" : ""), notes, items, pending);
     }
 }

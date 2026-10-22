@@ -162,6 +162,49 @@ public final class TokensModelTest {
         claude.getJSONArray("windows").getJSONObject(0).remove("resetsAt");
         assertNull("no reset times, no line", TokensModel.boardExtras(claude, true, now, zone));
     }
+    /** Claude's reset cards seen on the official site or confirmed by the owner, as tokens.robby.wang shows them. */
+    static org.json.JSONObject observedClaude(String provenance) throws Exception { return observedClaude(provenance, java.time.Instant.parse("2026-10-22T14:30:00Z").toEpochMilli()); }
+    static org.json.JSONObject observedClaude(String provenance, long now) throws Exception {
+        org.json.JSONObject card = "official-web".equals(provenance)
+            ? new org.json.JSONObject().put("status", "available").put("expiresAt", "2026-10-22T16:00:00.000Z").put("grantedAt", JSONObjectNull()).put("resetType", "full").put("startsAt", "2026-09-22T16:00:00.000Z")
+            : new org.json.JSONObject().put("status", "unknown").put("expiresAt", JSONObjectNull()).put("grantedAt", JSONObjectNull()).put("resetType", JSONObjectNull()).put("startsAt", JSONObjectNull());
+        return new org.json.JSONObject().put("product", "claude").put("status", "connected").put("lastSuccessAt", java.time.Instant.ofEpochMilli(now).toString()).put("resetCredits", JSONObjectNull())
+            .put("windows", new org.json.JSONArray()
+                .put(window("five_hour", "5 小时", 72, null).put("resetsAt", java.time.Instant.ofEpochMilli(now + 2 * H).toString()))
+                .put(window("seven_day", "每周", 30, null).put("resetsAt", java.time.Instant.ofEpochMilli(now + 72 * H).toString())))
+            .put("reportedResetCredits", new org.json.JSONObject().put("available", 1).put("applicable", "official-web".equals(provenance) ? (Object) 1 : JSONObjectNull())
+                .put("detailsAt", "official-web".equals(provenance) ? "2026-10-18T16:16:29.710Z" : "2026-10-15T08:10:35.238Z").put("provenance", provenance)
+                .put("cards", new org.json.JSONArray().put(card)));
+    }
+    @Test public void claudeBoardLineAddsObservedResetCards() throws Exception {
+        long now = java.time.Instant.parse("2026-10-22T14:30:00Z").toEpochMilli();
+        org.json.JSONObject web = observedClaude("official-web"), owner = observedClaude("owner-confirmed");
+        assertEquals("5 小时额度 2 小时后重置 · 每周额度 3 天后重置 · 重置卡 1 张（官网 10月19日核验） · 最近 10月23日到期", TokensModel.boardExtras(web, true, now, SHANGHAI));
+        assertEquals("5 小时额度 2 小时后重置 · 每周额度 3 天后重置 · 重置卡 1 张（你 10月15日确认）", TokensModel.boardExtras(owner, true, now, SHANGHAI));
+        assertEquals("an expired card says so", "5 小时额度已重置 · 每周额度 2 天 22 小时后重置 · 重置卡 1 张（官网 10月19日核验） · 最近一张已到期", TokensModel.boardExtras(web, true, now + 2 * H, SHANGHAI));
+        web.getJSONArray("windows").getJSONObject(0).remove("resetsAt"); web.getJSONArray("windows").getJSONObject(1).remove("resetsAt");
+        assertEquals("cards alone still make a line", "重置卡 1 张（官网 10月19日核验） · 最近 10月23日到期", TokensModel.boardExtras(web, true, now, SHANGHAI));
+        // The provider's own cards always win and carry no note; other products never read an observation.
+        owner.put("resetCredits", new org.json.JSONObject().put("available", 2).put("cards", new org.json.JSONArray()));
+        assertEquals("5 小时额度 2 小时后重置 · 每周额度 3 天后重置 · 重置卡 2 张", TokensModel.boardExtras(owner, true, now, SHANGHAI));
+        assertNull(TokensModel.cardData(observedClaude("official-web").put("product", "grok")));
+        assertNull(TokensModel.observation(observedClaude("official-web").put("reportedResetCredits", new org.json.JSONObject().put("available", 1).put("provenance", "guess"))));
+    }
+    @Test public void claudeCardDetailsFollowTheWeb() throws Exception {
+        long now = java.time.Instant.parse("2026-10-22T14:30:00Z").toEpochMilli();
+        TokensModel.Cards web = TokensModel.cards(observedClaude("official-web"), SHANGHAI, now);
+        assertEquals("an official-site reading days old is the last record", "重置卡明细（上次记录）", web.heading);
+        assertEquals(java.util.List.of("官网核验：2026/10/19 00:16", "核验时可使用 1 张"), web.notes);
+        assertArrayEquals(new String[] {"完整重置卡 1", "未使用", "2026/10/23 00:00 到期", "2026/09/23 00:00 起可用"}, web.items.get(0));
+        assertNull(web.pending);
+        long fresh = java.time.Instant.parse("2026-10-18T16:20:00Z").toEpochMilli();
+        assertEquals("within five minutes of the reading it is current", "重置卡明细", TokensModel.cards(observedClaude("official-web", fresh), SHANGHAI, fresh).heading);
+        TokensModel.Cards owner = TokensModel.cards(observedClaude("owner-confirmed"), SHANGHAI, now);
+        assertEquals("重置卡明细", owner.heading);
+        assertEquals(java.util.List.of("你确认有 1 张，待自动核验（10/15）"), owner.notes);
+        assertArrayEquals(new String[] {"重置卡 1", "待确认", "到期时间未提供", "领取时间未提供"}, owner.items.get(0));
+        assertNull("an owner's count is not a missing detail", owner.pending);
+    }
     @org.junit.Test public void boardRefreshFollowsTheServerWithinBounds() throws Exception {
         org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 30)));
         org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 5)));

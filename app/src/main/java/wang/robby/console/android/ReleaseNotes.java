@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.33.0", "2026-10-22", "Claude 也显示重置卡",
+            "总览的 Token 额度卡片里，Claude 账号会显示重置卡张数和最近的到期日。",
+            "Claude 的重置卡来自官网核验或你确认的记录，会注明是哪种、哪天记下的。",
+            "账号详情的重置卡明细显示完整重置卡等卡种，以及从哪天起可用。"),
         new Entry("0.32.1", "2026-10-22", "同步来的提醒会请求通知权限",
             "别的手机打开的提醒同步过来时，这台手机会请求通知权限；没有权限会说明提醒不会送达。",
             "Google 登录只读，「外观」改为显示「设置从账号读取 · 本机修改不上传」。"),
