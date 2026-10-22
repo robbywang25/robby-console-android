@@ -15,9 +15,10 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * What the home screen widgets may show, cut down from a successful read: product names, remaining percentages,
- * reset times and counts. Never an email, account id, site or conversation name, or message text, because a widget is
- * drawn outside God's FLAG_SECURE window. Each kind keeps its own reading time and reads as stale after two hours.
+ * What the home screen widgets may show, cut down from a successful read: product names, an account's email prefix
+ * (the part before @, so two accounts of one product tell apart), remaining percentages, reset times and counts. Never a
+ * whole email, account id, site or conversation name, or message text, because a widget is drawn outside God's
+ * FLAG_SECURE window. Each kind keeps its own reading time and reads as stale after two hours.
  */
 final class WidgetSnapshot {
     private WidgetSnapshot() {}
@@ -34,22 +35,23 @@ final class WidgetSnapshot {
 
     /**
      * Token 额度: every account the 看板 card shows, in its order with the same kind kept together (OpenAI, Claude,
-     * Grok, Cursor, TodayAI), as product, kind, the tightest remaining percent and the first window's reset. Two accounts
-     * of one product are numbered (Codex 1, Codex 2) instead of named, since an email may not reach a widget.
+     * Grok, Cursor, TodayAI), as product, email prefix, kind, the tightest remaining percent and the first window's reset.
+     * Accounts without an email that share a product are numbered (Codex 1, Codex 2) instead.
      */
     static JSONObject tokens(JSONObject quotas, Set<String> hidden) {
         if (quotas == null) return null;
         List<JSONObject> board = new ArrayList<>(Dashboard.tokenBoardAccounts(FeatureRenderer.tokenAccounts(quotas), hidden));
         board.sort(Comparator.comparingInt(a -> TokensModel.SECTIONS.indexOf(TokensModel.section(a))));
         java.util.Map<String, Integer> count = new java.util.HashMap<>(), seen = new java.util.HashMap<>();
-        for (JSONObject a : board) count.merge(TokensModel.productName(a), 1, Integer::sum);
+        for (JSONObject a : board) if (emailPrefix(TokensModel.boardEmail(a)).isEmpty()) count.merge(TokensModel.productName(a), 1, Integer::sum);
         JSONArray out = new JSONArray();
         for (JSONObject a : board) {
             List<TokensModel.Period> periods = TokensModel.boardWindows(a);
             Double min = null; for (TokensModel.Period p : periods) { Double pc = TokensModel.remaining(p.window); if (pc != null && (min == null || pc < min)) min = pc; }
-            String name = TokensModel.productName(a); int n = seen.merge(name, 1, Integer::sum);
+            String name = TokensModel.productName(a), who = emailPrefix(TokensModel.boardEmail(a)); int n = who.isEmpty() ? seen.merge(name, 1, Integer::sum) : 0;
             JSONObject row = new JSONObject(); boolean fresh = "connected".equals(a.optString("status"));
-            put(row, "name", count.get(name) > 1 ? name + " " + n : name);
+            put(row, "name", who.isEmpty() && count.getOrDefault(name, 0) > 1 ? name + " " + n : name);
+            if (!who.isEmpty()) put(row, "account", who);
             put(row, "kind", TokensModel.section(a));
             put(row, "percent", min == null ? JSONObject.NULL : (Object) Math.round(min));
             put(row, "fresh", fresh);
@@ -59,7 +61,7 @@ final class WidgetSnapshot {
         }
         JSONObject o = wrap(out); put(o, "total", board.size()); return o;
     }
-    /** 重置日历: the next five scheduled resets of the connected accounts, as the platform and window only. */
+    /** 重置日历: the next five scheduled resets of the connected accounts, as the platform, email prefix and window. */
     static JSONObject calendar(JSONObject quotas, ZoneId zone, long now) {
         if (quotas == null) return null;
         QuotaCalendar.Model m = QuotaCalendar.build(FeatureRenderer.tokenAccounts(quotas), zone, now);
@@ -68,7 +70,10 @@ final class WidgetSnapshot {
         next.sort(Comparator.comparingLong(e -> e.at));
         JSONArray out = new JSONArray();
         for (int i = 0; i < Math.min(CALENDAR_ROWS, next.size()); i++) {
-            JSONObject row = new JSONObject(); put(row, "at", next.get(i).at); put(row, "text", next.get(i).platform + " " + next.get(i).shortLabel()); put(row, "product", next.get(i).product); out.put(row);
+            QuotaCalendar.Event e = next.get(i); String who = emailPrefix(e.account);
+            JSONObject row = new JSONObject(); put(row, "at", e.at); put(row, "text", e.platform + (who.isEmpty() ? "" : " · " + who) + " " + e.shortLabel()); put(row, "product", e.product);
+            if (!who.isEmpty()) put(row, "account", who);
+            out.put(row);
         }
         return wrap(out);
     }
@@ -113,9 +118,16 @@ final class WidgetSnapshot {
     /** The widget header's corner: the reading's clock time, or 「待更新」 once stale (the full 「打开 God 更新」 goes to the spoken label). */
     static String meta(long savedAt, long now, ZoneId zone) { return stale(savedAt, now) ? "待更新" : HM.format(Instant.ofEpochMilli(savedAt).atZone(zone)); }
     static String footer(long savedAt, long now, ZoneId zone) { return stale(savedAt, now) ? STALE_TEXT : HM.format(Instant.ofEpochMilli(savedAt).atZone(zone)) + " 更新"; }
-    /** 「Claude  72% · 14:30 重置」, the reset written as a clock time so the widget never needs to tick. */
+    /** An email's name part (robby for robby@example.com), or "" when there is no email. */
+    static String emailPrefix(String email) { int at = email == null ? -1 : email.indexOf('@'); return at > 0 ? email.substring(0, at).trim() : ""; }
+    /** The account's name on a widget: 「Codex · robby」 with an email prefix, else the product (Codex 1 when numbered). */
+    static String label(JSONObject row, boolean narrow) {
+        String name = narrow ? shortName(row.optString("name")) : row.optString("name"), who = row.optString("account");
+        return who.isEmpty() ? name : name + " · " + who;
+    }
+    /** 「Claude · robby  72% · 14:30 重置」, the reset written as a clock time so the widget never needs to tick. */
     static String tokenLine(JSONObject row, ZoneId zone, long now) {
-        String name = row.optString("name"), pct = row.isNull("percent") ? row.optString("state", "暂无读数") : (fresh(row) ? "" : "上次 ") + row.optLong("percent") + "%";
+        String name = label(row, false), pct = row.isNull("percent") ? row.optString("state", "暂无读数") : (fresh(row) ? "" : "上次 ") + row.optLong("percent") + "%";
         long reset = row.optLong("resetAt");
         return name + "  " + pct + (reset > now ? " · " + when(reset, zone, now) + " 重置" : "");
     }

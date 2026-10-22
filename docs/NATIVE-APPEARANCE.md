@@ -675,3 +675,14 @@ Find：0.34.1 那次装好后，用 uiautomator 读心力球页面的文字，�
 验证：`check.sh` 通过（256 项 JVM 测试 0 失败，新增 `RefreshPaceTest` 三项，以及 `placedWidgetsAskForTheReadsTheyShowOnce`、`aRouteNoticesJustReadIsNotReadAgain`；lint debug/release 0 错误），Release 为正式证书签名。Find（桌面放了 Token 额度小组件，通知开了两项）：覆盖安装 0.38.0，安装文件 SHA256 与构建一致，没有崩溃。logcat 显示：后台检查在通知之后执行 `GodWidgets read tokens/quotas`。第一版用检查开始时的时间判断「刚读过」，比通知读取写下的时间早，所以同一次检查读了两遍；改为通知读完后再取当前时间，重装后同一次检查只读一次。新的闹钟排在上一次检查后 2 分钟，但 ColorOS 给精确闹钟加了 90 秒窗口，熄屏时还会对齐批处理：实测熄屏时两次检查相隔 4 分 24 秒（01:15:09 → 01:19:33），亮屏时预计在 2～3.5 分钟之间。
 
 未验证：前台停在总览时各卡片的自动刷新（锁屏时 App 不在前台，需本人解锁后停留确认，logcat 会出现 `GodBoard auto refresh`）；Token 额度页的自动刷新；亮屏时后台检查的实际间隔。
+
+## v0.39.0：小组件标出账号（2026-10-23）
+
+- **Token 额度**：每个账号的名字后面加上邮箱 @ 前面的部分，例如「Codex · robby」。快照里多了一个 `account` 字段（`WidgetSnapshot.emailPrefix(TokensModel.boardEmail(a))`），显示时由 `WidgetSnapshot.label` 拼接。两列模式下仍然先用短名（「TodayAI 全球 · …」），放不下时末尾省略。只有没有邮箱、又同属一个产品的账号，才继续编号成 Codex 1、Codex 2。
+- **重置日历**：每一项写成「平台 · 前缀 窗口」，例如「Claude · robby 每周」。前缀从 `QuotaCalendar.Event.account` 取，只认邮箱；「手机尾号 5320」这类名字不显示。
+- **隐私边界改为**：小组件可以显示邮箱 @ 前面的部分，但不显示完整邮箱、域名、账号 ID、站点或会话名。`WidgetSnapshot` 的类注释、Manifest 注释、隐私说明的「桌面小组件」一节和「我 → 小组件」的说明都同步改了。退出登录照样立即清除。
+- 0.38 留下的旧快照没有 `account` 字段，下一次读取（最多 2 分钟）之前，仍按旧样式显示。
+
+验证：JVM 测试 256 项 0 失败（`WidgetSnapshotTest` 改成断言前缀会出现、完整邮箱和域名不会出现，没有邮箱的账号仍然编号），lintDebug 0 错误，assembleDebug 通过。
+
+未验证：真机上的桌面显示效果，包括长前缀在两列模式下怎么截断。

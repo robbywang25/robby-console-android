@@ -39,7 +39,7 @@
    <meta-data android:name="android.appwidget.provider" android:resource="@xml/god_widget_info"/>
   </receiver>
   <!-- Token 额度, 重置日历, 运行状态 and 微信消息 (home screen only) and 时区时钟 (also the lock screen): figures from reads God
-       already made, without emails, account ids, site or conversation names; signing out clears them. -->
+       already made, with an account's email prefix but no whole email, account id, site or conversation name; signing out clears them. -->
   <receiver android:name=".TokenWidget" android:exported="true" android:label="Token 额度">
    <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
    <meta-data android:name="android.appwidget.provider" android:resource="@xml/token_widget_info"/>

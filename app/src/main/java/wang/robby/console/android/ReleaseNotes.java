@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.39.0", "2026-10-23", "小组件标出账号",
+            "Token 额度小组件在产品名后标出账号邮箱 @ 前面的部分，例如 Codex · robby。",
+            "重置日历小组件的每一项也标出是哪个账号，例如 Claude · robby 每周。",
+            "只显示 @ 前面的部分，不显示完整邮箱；退出登录仍会立即清除。"),
         new Entry("0.38.0", "2026-10-23", "数据刷新更快",
             "总览的 Token 额度和重置日历按服务器的节奏刷新，默认每 30 秒一次。",
             "总览上的其他卡片停留时每分钟自动刷新，不用再下拉。",
