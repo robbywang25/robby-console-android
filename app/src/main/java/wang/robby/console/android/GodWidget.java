@@ -58,6 +58,7 @@ public final class GodWidget extends AppWidgetProvider {
     /** Keeps the announcement from a successful read: tokens/tibo and its alerts view when the monitor is current, Token 额度's tiboReset when set. */
     static void observe(Context c, String path, JSONObject data) {
         if (data == null) return;
+        GodWidgets.observe(c, path, data);
         String route = path.split("\\?", 2)[0];
         if ((route.equals("tokens/tibo") || route.equals("tokens/tibo/alerts")) && "connected".equals(data.optString("status"))) remember(c, data.optJSONObject("upcoming"));
         else if (route.equals("tokens/quotas") && data.optJSONObject("tiboReset") != null) remember(c, data.optJSONObject("tiboReset"));

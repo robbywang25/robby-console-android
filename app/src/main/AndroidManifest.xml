@@ -34,6 +34,28 @@
    <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
    <meta-data android:name="android.appwidget.provider" android:resource="@xml/god_widget_info"/>
   </receiver>
+  <!-- Token 额度, 重置日历, 运行状态 and 微信消息 (home screen only) and 时区时钟 (also the lock screen): figures from reads God
+       already made, without emails, account ids, site or conversation names; signing out clears them. -->
+  <receiver android:name=".TokenWidget" android:exported="true" android:label="Token 额度">
+   <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+   <meta-data android:name="android.appwidget.provider" android:resource="@xml/token_widget_info"/>
+  </receiver>
+  <receiver android:name=".CalendarWidget" android:exported="true" android:label="重置日历">
+   <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+   <meta-data android:name="android.appwidget.provider" android:resource="@xml/calendar_widget_info"/>
+  </receiver>
+  <receiver android:name=".ClockWidget" android:exported="true" android:label="时区时钟">
+   <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+   <meta-data android:name="android.appwidget.provider" android:resource="@xml/clock_widget_info"/>
+  </receiver>
+  <receiver android:name=".StatusWidget" android:exported="true" android:label="运行状态">
+   <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+   <meta-data android:name="android.appwidget.provider" android:resource="@xml/status_widget_info"/>
+  </receiver>
+  <receiver android:name=".WechatWidget" android:exported="true" android:label="微信消息">
+   <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
+   <meta-data android:name="android.appwidget.provider" android:resource="@xml/wechat_widget_info"/>
+  </receiver>
   <service android:name=".GodTileService" android:exported="true" android:label="God" android:icon="@drawable/tab_home_solid" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
    <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
   </service>

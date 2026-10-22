@@ -374,7 +374,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private List<String> boardCards(){return Dashboard.parse(prefs().getString("dashboard",null));}
     private void saveBoard(List<String> ids){prefs().edit().putString("dashboard",Dashboard.serialize(ids)).apply();PreferenceSyncHub.note(this,"board");}
     private List<Dashboard.Clock> boardClocks(){return Dashboard.clocks(prefs().getString(Dashboard.CLOCKS,null));}
-    private void saveClocks(List<Dashboard.Clock> clocks){prefs().edit().putString(Dashboard.CLOCKS,Dashboard.serializeClocks(clocks)).apply();PreferenceSyncHub.note(this,"clocks");}
+    private void saveClocks(List<Dashboard.Clock> clocks){prefs().edit().putString(Dashboard.CLOCKS,Dashboard.serializeClocks(clocks)).apply();GodWidgets.refreshAll(this);PreferenceSyncHub.note(this,"clocks");}
     private void openBoardEditor(){++generation;selectedId=BOARD;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
     /**
      * Lays out the chosen cards (wide ones on their own row, small ones two to a row), shows any cached reads at
@@ -865,6 +865,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             {"头像与签名","个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。个性签名保存在你的 God 账号里，本机留一份副本用于显示。"},
             {"设置","看板、外观、功能的隐藏和排序、通知开关、提醒线和 Codex 积分点数线会保存到 God 账号，同一账号的手机保持一致。登录、灵动岛的开孔位置、提醒的检查记录、积分起点和已提醒标记只留在这台手机；未登录时设置也只在本机。"},
             {"重置提醒","开启 Tibo 重置提醒后，应用每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。检查期间会短暂显示一条通知，检查完即消失。"},
+            {"桌面小组件","Token 额度、重置日历、运行状态和微信消息小组件只显示 God 已经读到的数字：产品名、剩余百分比、重置时间、站点在线和异常数、今天的微信消息数与近 7 天日均。本机为它们保留一份这样的副本，不含邮箱、账号、站点或会话名称和消息内容；超过两小时显示「打开 God 更新」，退出登录立即清除。这四个只能放在桌面，时区时钟和 God 小组件可以放在锁屏。"},
             {"通知","开启「我 → 通知」里的提醒后，应用每 5 分钟在后台读取 Token 额度（开启站点提醒时还有运行状态）。检查时会短暂显示「God 正在检查提醒」，检查完这条通知消失，不再常驻「已开启」。为了判断变化，本机会保存每个额度最近的剩余比例、当天累计消耗、Codex 积分起点和是否已提醒、账号状态，以及站点域名和是否在线；不保存邮箱、套餐或其他页面内容，14 天没出现的记录会自动删除，全部关闭后不再读取。这些检查记录只留在这台手机。"}};
         for(String[] part:parts){section(part[0]);LinearLayout c=card();TextView t=text(part[1],14,INK,false);t.setLineSpacing(dp(3),1);c.addView(t);}
         restoreViewport();
@@ -971,16 +972,22 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             String item=items.get(w);if(item.equals("从相册选择"))pickAvatar();else if(item.equals("移除头像")){Avatar.clear(this);build();syncAvatar(true);}else avatarSignIn();
         }).setNegativeButton("取消",null));
     }
+    /** 添加到桌面 offers every widget: God, and the five that show figures God already read. */
+    private void pinWidget(android.appwidget.AppWidgetManager widgets){
+        String[] names={"God","Token 额度","重置日历","时区时钟","运行状态","微信消息"};
+        Class<?>[] kinds={GodWidget.class,TokenWidget.class,CalendarWidget.class,ClockWidget.class,StatusWidget.class,WechatWidget.class};
+        show(new AlertDialog.Builder(this).setTitle("添加到桌面").setItems(names,(d,w)->widgets.requestPinAppWidget(new ComponentName(this,kinds[w]),null,null)).setNegativeButton("取消",null));
+    }
     /** The widget as it looks now, plus the ways to place it: home screen, Pixel lock screen and 快捷设置. */
     private void widgetSheet(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(20),dp(8),dp(20),0);
         FrameLayout frame=new FrameLayout(this);try{frame.addView(GodWidget.views(this).apply(this,frame));}catch(RuntimeException ignored){}
         box.addView(frame,new LinearLayout.LayoutParams(-1,dp(68)));
-        TextView how=text("桌面：点「添加到桌面」，或长按桌面空白处 → 小组件 → God。\n\nPixel 锁屏（Android 16 QPR2 起）：设置 → 显示与触控 → 锁定屏幕 → 锁屏上的微件，打开后在锁屏上编辑并添加 God。锁屏上点按会先要求解锁。\n\n快捷设置：点「添加到快捷设置」，或下拉快捷设置 → 编辑 → 把 God 拖进来。\n\n小组件只显示 God 图标和 Tibo 的公开预告，不显示账号数据。",13,MUTED,false);
+        TextView how=text("桌面：点「添加到桌面」选一个，或长按桌面空白处 → 小组件 → God。还有 Token 额度、重置日历、时区时钟、运行状态和微信消息五个，只显示数字，不显示邮箱和会话名。\n\nPixel 锁屏（Android 16 QPR2 起）：设置 → 显示与触控 → 锁定屏幕 → 锁屏上的微件，打开后在锁屏上编辑并添加 God。锁屏上点按会先要求解锁。\n\n快捷设置：点「添加到快捷设置」，或下拉快捷设置 → 编辑 → 把 God 拖进来。\n\n小组件只显示 God 图标和 Tibo 的公开预告，不显示账号数据。",13,MUTED,false);
         how.setPadding(0,dp(14),0,0);box.addView(how);
         android.appwidget.AppWidgetManager widgets=android.appwidget.AppWidgetManager.getInstance(this);
         AlertDialog.Builder b=new AlertDialog.Builder(this).setTitle("God 小组件").setView(box).setNegativeButton("关闭",null);
-        if(widgets!=null&&widgets.isRequestPinAppWidgetSupported())b.setPositiveButton("添加到桌面",(d,w)->widgets.requestPinAppWidget(new ComponentName(this,GodWidget.class),null,null));
+        if(widgets!=null&&widgets.isRequestPinAppWidgetSupported())b.setPositiveButton("添加到桌面",(d,w)->pinWidget(widgets));
         if(Build.VERSION.SDK_INT>=33)b.setNeutralButton("添加到快捷设置",(d,w)->addTile());
         show(b);
     }
@@ -1193,7 +1200,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             .setPositiveButton("验证",(d,w)->{String code=field.getText().toString().trim();if(!code.matches("\\d{6}")){error("验证码不正确","请输入 6 位数字。");return;}
                 try{accountWrite(AccountCenter.EMAIL_VERIFY,new JSONObject().put("challengeId",challenge).put("code",code),r->{toast("邮箱已绑定");reloadAccount();});}catch(org.json.JSONException ignored){}}));
     }
-    private void signOut(){++generation;snapshots.clear();accountStatus=null;accountDevices=null;devicesUnfolded=false;navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}
+    private void signOut(){++generation;snapshots.clear();GodWidgets.clear(this);accountStatus=null;accountDevices=null;devicesUnfolded=false;navigation.clear();viewportReady=false;selectedId=null;project=null;content.removeAllViews();ledger.close();coordinator.logout();group="总览";build();}
     /** System photo picker where available (no storage permission); otherwise any app that offers an image. */
     private void pickAvatar(){
         // Launch directly: package visibility hides the picker from resolveActivity() on Android 11+.

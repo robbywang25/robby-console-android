@@ -75,9 +75,9 @@ final class NoticeCenter {
         try { state = new Notices.State(new JSONObject(p.getString("state", "{}"))); } catch (org.json.JSONException e) { state = new Notices.State(null); }
         List<Notices.Notice> due = new ArrayList<>(); String error = null;
         boolean quotas = false; for (String k : s.on) if (!k.equals(Notices.SITES)) quotas = true;
-        try { if (quotas) due.addAll(Notices.quotas(api.get("tokens/quotas"), state, s, now, ZoneId.systemDefault())); }
+        try { if (quotas) { JSONObject q = api.get("tokens/quotas"); GodWidgets.observe(c, "tokens/quotas", q); due.addAll(Notices.quotas(q, state, s, now, ZoneId.systemDefault())); } }
         catch (Exception e) { error = reason(e); }
-        try { if (s.has(Notices.SITES)) due.addAll(Notices.sites(api.get("overview"), state, s, now)); }
+        try { if (s.has(Notices.SITES)) { JSONObject o = api.get("overview"); GodWidgets.observe(c, "overview", o); due.addAll(Notices.sites(o, state, s, now)); } }
         catch (Exception e) { if (error == null) error = reason(e); }
         boolean primed = p.getBoolean("primed", false);
         SharedPreferences.Editor edit = p.edit().putString("state", state.json.toString()).putLong("lastCheckAt", now);
