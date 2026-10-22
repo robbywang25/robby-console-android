@@ -177,8 +177,8 @@ public final class FeatureRenderer {
                         if (!prefix.isEmpty()) { TextView l = u.text(prefix, 11, false); l.setPadding(u.dp(10), 0, u.dp(3), 0); r.addView(l); }
                         TextView val = u.text(whole.format(pc) + "%", 14, true); if (prefix.isEmpty()) val.setPadding(u.dp(10), 0, 0, 0); r.addView(val); }
                     shell.addView(r);
-                    // Codex: Points and reset cards on a small second line, aligned with the account name.
-                    String extras = TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault());
+                    // The account's email, then Codex Points and reset cards, on a small second line aligned with the account name.
+                    String extras = TokensModel.boardSubline(TokensModel.boardEmail(a), TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault()));
                     if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }
                 if (board.isEmpty()) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");
                 Dashboard.saveTokenRows(context, rowsShown);
@@ -225,12 +225,11 @@ public final class FeatureRenderer {
             TextView meta = u.text("", 12, false); meta.setTextColor(u.theme.faint); meta.setPadding(u.dp(8), 0, u.dp(10), 0); r.addView(meta);
             TextView time = u.text("", 20, true); time.setTextColor(u.theme.ink); r.addView(time);
             TokensPages.tick(meta, at -> day.format(Instant.ofEpochMilli(at).atZone(zone)) + " · " + Dashboard.offsetLabel(c.zone, phone, at));
-            TextView names = Dashboard.zoneTitle(c.zone, System.currentTimeMillis()) == null ? null : u.text("", 11, false);
+            String title = Dashboard.zoneTitle(c.zone); TextView names = title == null ? null : u.text(title, 11, false);
             TokensPages.tick(time, at -> { String t = hm.format(Instant.ofEpochMilli(at).atZone(zone)); r.setContentDescription(c.name + " " + t + "，" + meta.getText() + (names == null ? "" : "，" + names.getText())); return t; });
             shell.addView(r);
-            // Pacific clocks spell out PST or PDT in Chinese and English on their own line, under the whole row.
-            if (names != null) { names.setTextColor(u.theme.faint); names.setSingleLine(true); names.setEllipsize(android.text.TextUtils.TruncateAt.END);
-                TokensPages.tick(names, at -> Dashboard.zoneTitle(c.zone, at)); shell.addView(names); } }
+            // The PST clock spells out its name in Chinese and English on its own line, under the whole row.
+            if (names != null) { names.setTextColor(u.theme.faint); names.setSingleLine(true); names.setEllipsize(android.text.TextUtils.TruncateAt.END); shell.addView(names); } }
     }
     /** Version and minimum container checks; deeper server contract validation is a separate concern. */
     public static boolean isCompatible(FeatureCatalog.Feature f, JSONObject p) {

@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.31.1", "2026-10-22", "PST 时钟与账号邮箱",
+            "时区时钟的第三个改为 PST，全年按太平洋标准时间（UTC−8）显示，不随夏令时切换。",
+            "PST 下方标注中英文全称；Tibo 时钟仍按美西当地时间显示。",
+            "总览的 Token 额度卡片在每个账号下面显示账号邮箱。"),
         new Entry("0.31.0", "2026-10-22", "设置跟账号走，提醒更清楚",
             "看板、外观、功能排序、提醒开关和灵动岛内容保存到账号，换手机也一致。",
             "开孔位置留在本机；未登录或预览不上传，「外观」显示同步状态。",

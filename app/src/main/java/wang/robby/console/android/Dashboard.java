@@ -90,25 +90,20 @@ final class Dashboard {
     }
     static List<String[]> tokenRows(android.content.Context c) { return tokenRows(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(TOKEN_ROWS, null)); }
     static void saveTokenRows(android.content.Context c, List<String[]> rows) { c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).edit().putString(TOKEN_ROWS, serializeTokenRows(rows)).apply(); }
-    /** 时区时钟: a name and an IANA zone each; Tibo, Beijing and Pacific time until the person changes them. */
+    /** 时区时钟: a name and an IANA zone each; Tibo, Beijing and fixed PST until the person changes them. */
     static final class Clock { final String name, zone; Clock(String name, String zone) { this.name = name; this.zone = zone; } }
     static final String PACIFIC = "America/Los_Angeles";
-    static final List<Clock> DEFAULT_CLOCKS = List.of(new Clock("Tibo", PACIFIC), new Clock("北京时间", "Asia/Shanghai"), new Clock("太平洋时间", PACIFIC));
+    /** Pacific Standard Time all year (UTC-8). POSIX Etc zones invert the sign, so GMT+8 is eight hours behind UTC. */
+    static final String PST = "Etc/GMT+8";
+    static final List<Clock> DEFAULT_CLOCKS = List.of(new Clock("Tibo", PACIFIC), new Clock("北京时间", "Asia/Shanghai"), new Clock("PST", PST));
     static final int MAX_CLOCKS = 6;
     /** Zones offered by 添加时区, with the name a new clock starts with. */
-    static final List<Clock> SUGGESTED = List.of(new Clock("北京时间", "Asia/Shanghai"), new Clock("太平洋时间", PACIFIC), new Clock("Tibo", PACIFIC), new Clock("新西兰", "Pacific/Auckland"),
+    static final List<Clock> SUGGESTED = List.of(new Clock("北京时间", "Asia/Shanghai"), new Clock("PST", PST), new Clock("Tibo", PACIFIC), new Clock("新西兰", "Pacific/Auckland"),
         new Clock("香港", "Asia/Hong_Kong"), new Clock("东京", "Asia/Tokyo"), new Clock("首尔", "Asia/Seoul"), new Clock("新加坡", "Asia/Singapore"), new Clock("迪拜", "Asia/Dubai"),
         new Clock("伦敦", "Europe/London"), new Clock("巴黎", "Europe/Paris"), new Clock("柏林", "Europe/Berlin"), new Clock("纽约", "America/New_York"),
         new Clock("芝加哥", "America/Chicago"), new Clock("悉尼", "Australia/Sydney"), new Clock("UTC", "Etc/UTC"));
-    /**
-     * The Pacific zone's names under its clock: PST in winter and PDT while daylight saving applies at {@code at}, so
-     * the label never disagrees with the time shown. Null for every other zone.
-     */
-    static String zoneTitle(String zone, long at) {
-        if (!PACIFIC.equals(zone)) return null;
-        return java.time.ZoneId.of(zone).getRules().isDaylightSavings(java.time.Instant.ofEpochMilli(at))
-            ? "PDT · 太平洋夏令时间 · Pacific Daylight Time" : "PST · 太平洋标准时间 · Pacific Standard Time";
-    }
+    /** The line under a fixed PST clock, the same all year; null for every other zone. */
+    static String zoneTitle(String zone) { return PST.equals(zone) ? "PST · 太平洋标准时间 · Pacific Standard Time" : null; }
     /** 同本机, 晚 15 小时 or 早 5.5 小时: the zone against the phone's own at {@code at}. */
     static String offsetLabel(String zone, java.time.ZoneId phone, long at) {
         java.time.Instant i = java.time.Instant.ofEpochMilli(at);
@@ -136,7 +131,7 @@ final class Dashboard {
         if (raw == null) return null; String s = raw.replaceAll("[\\u0000-\\u001f\\u007f|]", " ").trim();
         int[] points = s.codePoints().limit(max).toArray(); s = new String(points, 0, points.length).trim(); return s.isEmpty() ? null : s;
     }
-    static boolean validZone(String zone) { try { return zone != null && zone.matches("[A-Za-z_]+(/[A-Za-z_+-]+){0,2}") && java.time.ZoneId.of(zone) != null; } catch (RuntimeException e) { return false; } }
+    static boolean validZone(String zone) { try { return zone != null && zone.matches("[A-Za-z_]+(/[A-Za-z0-9_+-]+){0,2}") && java.time.ZoneId.of(zone) != null; } catch (RuntimeException e) { return false; } }
     static Set<String> hiddenTokens(android.content.Context c) { return hiddenTokens(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(HIDDEN_TOKENS, null)); }
 
     static Card find(String id) { for (Card c : ALL) if (c.id.equals(id)) return c; return null; }

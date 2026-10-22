@@ -165,4 +165,15 @@ public final class TokensModelTest {
         org.junit.Assert.assertEquals(60_000L, TokensModel.refreshMs(null));
         org.junit.Assert.assertEquals(60_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 0)));
     }
+
+    @Test public void boardSmallLineStartsWithTheAccountEmail() throws Exception {
+        org.json.JSONObject a = new org.json.JSONObject("{\"profile\":{\"email\":\" a@example.com \"}}");
+        assertEquals("a@example.com", TokensModel.boardEmail(a));
+        assertNull("no profile, no email", TokensModel.boardEmail(new org.json.JSONObject("{}")));
+        assertNull(TokensModel.boardEmail(new org.json.JSONObject("{\"profile\":{\"email\":\"\"}}")));
+        assertEquals("a@example.com · Points 120", TokensModel.boardSubline("a@example.com", "Points 120"));
+        assertEquals("a@example.com", TokensModel.boardSubline("a@example.com", null));
+        assertEquals("Points 120", TokensModel.boardSubline(null, "Points 120"));
+        assertNull(TokensModel.boardSubline(null, null));
+    }
 }

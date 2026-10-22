@@ -165,6 +165,17 @@ final class TokensModel {
     }
     private static String clean(Object v) { return v instanceof String ? ((String) v).replaceAll("[\\u0000-\\u001f\\u007f-\\u009f]", " ").trim() : ""; }
     private static String meaningful(Object v) { String s = clean(v); return !s.isEmpty() && !s.matches("(?iu).*((账号|账户)\\s*[一二三四五六七八九十百零〇\\d]+|\\baccount\\s*[-#]?\\s*\\d+\\b).*") ? s : ""; }
+    /** The account's email for the 总览 board's small line, or null when the collector reports none. */
+    static String boardEmail(JSONObject a) {
+        JSONObject profile = a.optJSONObject("profile");
+        String email = profile == null ? "" : clean(profile.opt("email"));
+        return email.isEmpty() ? null : email;
+    }
+    /** The board's small second line: the email first, then Points or the weekly reset; null when both are missing. */
+    static String boardSubline(String email, String extras) {
+        if (email == null) return extras;
+        return extras == null ? email : email + " · " + extras;
+    }
     /** The tile's title: the email, else a meaningful name such as 手机尾号 5320, else the product with 身份待核实. */
     static String displayName(JSONObject a) {
         JSONObject profile = a.optJSONObject("profile");

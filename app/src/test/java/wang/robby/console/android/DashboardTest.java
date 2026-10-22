@@ -53,7 +53,7 @@ public final class DashboardTest {
     @Test public void clocksDefaultToTiboAndBeijingAndKeepOnlyValidZones() {
         List<Dashboard.Clock> d = Dashboard.clocks(null);
         assertEquals("Tibo", d.get(0).name); assertEquals("America/Los_Angeles", d.get(0).zone); assertEquals("北京时间", d.get(1).name);
-        assertEquals("太平洋时间", d.get(2).name); assertEquals("America/Los_Angeles", d.get(2).zone);
+        assertEquals("PST", d.get(2).name); assertEquals("Etc/GMT+8", d.get(2).zone);
         String saved = Dashboard.serializeClocks(List.of(new Dashboard.Clock("新西兰", "Pacific/Auckland"), new Dashboard.Clock("坏|名字\n", "Asia/Tokyo"), new Dashboard.Clock("无效", "Mars/Base")));
         List<Dashboard.Clock> back = Dashboard.clocks(saved);
         assertEquals(2, back.size()); assertEquals("新西兰", back.get(0).name); assertEquals("坏 名字", back.get(1).name);
@@ -68,11 +68,14 @@ public final class DashboardTest {
         assertEquals("早 5 小时", Dashboard.offsetLabel("Pacific/Auckland", beijing, at));
         assertEquals("晚 2.5 小时", Dashboard.offsetLabel("Asia/Kolkata", beijing, at));
     }
-    @Test public void pacificClocksNameTheirStandardOrDaylightTime() {
-        long summer = java.time.Instant.parse("2026-10-22T10:00:00Z").toEpochMilli(), winter = java.time.Instant.parse("2026-11-02T10:00:00Z").toEpochMilli();
-        assertEquals("PDT · 太平洋夏令时间 · Pacific Daylight Time", Dashboard.zoneTitle("America/Los_Angeles", summer));
-        assertEquals("PST · 太平洋标准时间 · Pacific Standard Time", Dashboard.zoneTitle("America/Los_Angeles", winter));
-        assertNull("other zones get no extra line", Dashboard.zoneTitle("Asia/Shanghai", winter));
+    @Test public void pstClockStaysEightHoursBehindUtcAllYear() {
+        assertTrue("Etc zones with digits are valid", Dashboard.validZone("Etc/GMT+8"));
+        java.time.ZoneId utc = java.time.ZoneId.of("Etc/UTC");
+        assertEquals("晚 8 小时", Dashboard.offsetLabel("Etc/GMT+8", utc, java.time.Instant.parse("2026-07-01T00:00:00Z").toEpochMilli()));
+        assertEquals("晚 8 小时", Dashboard.offsetLabel("Etc/GMT+8", utc, java.time.Instant.parse("2026-12-01T00:00:00Z").toEpochMilli()));
+        assertEquals("PST · 太平洋标准时间 · Pacific Standard Time", Dashboard.zoneTitle("Etc/GMT+8"));
+        assertNull("Pacific local time and other zones get no extra line", Dashboard.zoneTitle("America/Los_Angeles"));
+        assertEquals("PST", Dashboard.clocks(Dashboard.serializeClocks(List.of(new Dashboard.Clock("PST", "Etc/GMT+8")))).get(0).name);
     }
     @Test public void clockCardNeedsNoRead() {
         assertEquals(List.of("tokens/quotas"), Dashboard.paths(List.of("clocks", "tokens", "calendar")));
