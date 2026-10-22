@@ -10,7 +10,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.junit.Test;
 
-/** The home screen widgets get figures only: no email, account id, site or conversation name, and stale readings say so. */
+/** The home screen widgets get figures and email prefixes only: no whole email, account id, site or conversation name, and stale readings say so. */
 public final class WidgetSnapshotTest {
     private static final long NOW = Instant.parse("2026-10-22T04:00:00Z").toEpochMilli(), H = 3600_000L;
     private static final ZoneId BEIJING = ZoneId.of("Asia/Shanghai");
@@ -28,35 +28,39 @@ public final class WidgetSnapshotTest {
         return new JSONObject().put("accounts", accounts).put("additionalAccounts", new JSONArray().put(account("today-global", "today-global", 30, NOW + 30 * H)));
     }
 
-    @Test public void tokensListEveryBoardAccountKindByKindWithoutEmailsOrHiddenCards() throws Exception {
+    @Test public void tokensListEveryBoardAccountKindByKindWithEmailPrefixesButNoHiddenCards() throws Exception {
         JSONObject snap = WidgetSnapshot.tokens(quotas(), Set.of("codex-5"));
         JSONArray rows = snap.getJSONArray("rows");
         assertEquals("six Codex (one hidden, ChatGPT 聊天 never shown) and TodayAI", 7, rows.length()); assertEquals(7, snap.getInt("total"));
-        assertEquals("the board's order, not least left first", "Codex 1", rows.getJSONObject(0).getString("name")); assertEquals(90, rows.getJSONObject(0).getLong("percent"));
-        assertEquals("Codex 6", rows.getJSONObject(5).getString("name")); assertEquals("TodayAI 全球版", rows.getJSONObject(6).getString("name"));
+        assertEquals("the board's order, not least left first", "Codex · codex-0", WidgetSnapshot.label(rows.getJSONObject(0), false)); assertEquals(90, rows.getJSONObject(0).getLong("percent"));
+        assertEquals("named by email prefix, so not numbered", "Codex", rows.getJSONObject(5).getString("name")); assertEquals("codex-6", rows.getJSONObject(5).getString("account"));
+        assertEquals("TodayAI 全球 · today-global", WidgetSnapshot.label(rows.getJSONObject(6), true));
         assertEquals("OpenAI", rows.getJSONObject(0).getString("kind")); assertEquals("TodayAI", rows.getJSONObject(6).getString("kind"));
-        assertFalse("no email, local part or account id", snap.toString().contains("@") || snap.toString().contains("example") || snap.toString().contains("codex-"));
+        assertFalse("no whole email or domain", snap.toString().contains("@") || snap.toString().contains("example"));
         assertTrue(WidgetSnapshot.low(rows.getJSONObject(1))); assertFalse(WidgetSnapshot.low(rows.getJSONObject(0)));
         String line = WidgetSnapshot.tokenLine(rows.getJSONObject(1), BEIJING, NOW);
-        assertTrue(line, line.startsWith("Codex 2  15%") && line.endsWith(" 重置"));
+        assertTrue(line, line.startsWith("Codex · codex-1  15%") && line.endsWith(" 重置"));
     }
     @Test public void tokensKeepOneKindTogetherWhateverTheServerOrder() throws Exception {
         JSONArray accounts = new JSONArray().put(account("codex-1", "codex", 40, NOW + H)).put(account("claude-1", "claude", 70, NOW + H)).put(account("codex-2", "codex", 10, NOW + H))
             .put(account("grok", "grok", 55, NOW + H).put("status", "needs_auth").put("windows", new JSONArray()));
+        for (int i : new int[]{0, 2}) accounts.getJSONObject(i).remove("profile");
         JSONArray rows = WidgetSnapshot.tokens(new JSONObject().put("accounts", accounts), Set.of()).getJSONArray("rows");
         String[] names = new String[rows.length()]; for (int i = 0; i < names.length; i++) names[i] = rows.getJSONObject(i).getString("name");
-        assertArrayEquals(new String[]{"Codex 1", "Codex 2", "Claude", "Grok Build"}, names);
+        assertArrayEquals("accounts without an email are numbered", new String[]{"Codex 1", "Codex 2", "Claude", "Grok Build"}, names);
+        assertFalse(rows.getJSONObject(0).has("account")); assertEquals("Claude · claude-1", WidgetSnapshot.label(rows.getJSONObject(2), false));
         JSONObject grok = rows.getJSONObject(3);
         assertFalse(WidgetSnapshot.fresh(grok)); assertEquals("待授权", WidgetSnapshot.value(grok)); assertEquals("待授权", grok.getString("state"));
         assertEquals("openai", WidgetSnapshot.family("OpenAI")); assertEquals("claude", WidgetSnapshot.family("claude")); assertEquals("green", WidgetSnapshot.family("today-cn"));
         assertTrue("0.35 snapshots have no flag and count as current", WidgetSnapshot.fresh(new JSONObject().put("percent", 5)));
     }
-    @Test public void calendarListsTheNextFiveWithoutAccounts() throws Exception {
+    @Test public void calendarListsTheNextFiveWithEmailPrefixes() throws Exception {
         JSONArray rows = WidgetSnapshot.calendar(quotas(), BEIJING, NOW).getJSONArray("rows");
         assertEquals(5, rows.length());
         for (int i = 1; i < rows.length(); i++) assertTrue(rows.getJSONObject(i - 1).getLong("at") <= rows.getJSONObject(i).getLong("at"));
         assertFalse(rows.toString().contains("@") || rows.toString().contains("example"));
-        assertEquals("13:00 · Codex 每周", WidgetSnapshot.calendarLine(rows.getJSONObject(0), BEIJING, NOW));
+        assertEquals("13:00 · Codex · codex-0 每周", WidgetSnapshot.calendarLine(rows.getJSONObject(0), BEIJING, NOW)); assertEquals("codex-0", rows.getJSONObject(0).getString("account"));
+        assertEquals("", WidgetSnapshot.emailPrefix("手机尾号 5320")); assertEquals("", WidgetSnapshot.emailPrefix(null)); assertEquals("robby", WidgetSnapshot.emailPrefix("robby@example.com"));
     }
     @Test public void statusCountsSitesAndIssuesOnly() throws Exception {
         JSONObject sum = new JSONObject().put("publicOnline", 6).put("publicKnown", 7).put("publicTotal", 7).put("privateOnline", 9).put("privateKnown", 10).put("privateTotal", 10)

@@ -180,7 +180,7 @@ final class GodWidgets {
                 continue;
             }
             boolean fresh = WidgetSnapshot.fresh(row) && !stale; int level = WidgetSnapshot.level(row);
-            v.setViewVisibility(id[0], View.VISIBLE); v.setTextViewText(id[2], grid ? WidgetSnapshot.shortName(row.optString("name")) : row.optString("name")); v.setTextViewText(id[3], wide && !grid ? WidgetSnapshot.resetNote(row, zone, now) : ""); v.setTextViewText(id[4], WidgetSnapshot.value(row));
+            v.setViewVisibility(id[0], View.VISIBLE); v.setTextViewText(id[2], WidgetSnapshot.label(row, grid)); v.setTextViewText(id[3], wide && !grid ? WidgetSnapshot.resetNote(row, zone, now) : ""); v.setTextViewText(id[4], WidgetSnapshot.value(row));
             v.setViewVisibility(id[1], View.VISIBLE); tint(v, id[1], kindColor(row.optString("kind")));
             if (grid) { v.setTextViewTextSize(id[2], android.util.TypedValue.COMPLEX_UNIT_SP, 12); v.setTextViewTextSize(id[4], android.util.TypedValue.COMPLEX_UNIT_SP, 13); }
             if (grid && Build.VERSION.SDK_INT >= 31) { v.setViewLayoutHeight(id[5], 3, android.util.TypedValue.COMPLEX_UNIT_DIP); v.setViewLayoutMargin(id[5], RemoteViews.MARGIN_TOP, 3, android.util.TypedValue.COMPLEX_UNIT_DIP); }
