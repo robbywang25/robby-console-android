@@ -32,7 +32,9 @@ jobs:
             range="$BEFORE..HEAD"
           fi
           # Each version is tagged at its last commit in the range, so the tag
-          # carries the verification notes recorded after the bump.
+          # carries the verification notes recorded after the bump. Parents come
+          # before children, and a merge commit's side branch is walked too, so
+          # versions bumped inside a merged pull request are not skipped.
           declare -A last
           order=()
           while read -r commit; do
@@ -40,7 +42,7 @@ jobs:
             [[ -n "$version" ]] || continue
             [[ -v "last[$version]" ]] || order+=("$version")
             last[$version]=$commit
-          done < <(git rev-list --reverse --first-parent "$range")
+          done < <(git rev-list --reverse --topo-order "$range")
           existing=$(git ls-remote --tags origin | awk '{print $2}')
           for version in "${order[@]}"; do
             tag="v$version"
