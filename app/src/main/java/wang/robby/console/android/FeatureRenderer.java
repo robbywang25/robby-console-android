@@ -225,8 +225,12 @@ public final class FeatureRenderer {
             TextView meta = u.text("", 12, false); meta.setTextColor(u.theme.faint); meta.setPadding(u.dp(8), 0, u.dp(10), 0); r.addView(meta);
             TextView time = u.text("", 20, true); time.setTextColor(u.theme.ink); r.addView(time);
             TokensPages.tick(meta, at -> day.format(Instant.ofEpochMilli(at).atZone(zone)) + " · " + Dashboard.offsetLabel(c.zone, phone, at));
-            TokensPages.tick(time, at -> { String t = hm.format(Instant.ofEpochMilli(at).atZone(zone)); r.setContentDescription(c.name + " " + t + "，" + meta.getText()); return t; });
-            shell.addView(r); }
+            TextView names = Dashboard.zoneTitle(c.zone, System.currentTimeMillis()) == null ? null : u.text("", 11, false);
+            TokensPages.tick(time, at -> { String t = hm.format(Instant.ofEpochMilli(at).atZone(zone)); r.setContentDescription(c.name + " " + t + "，" + meta.getText() + (names == null ? "" : "，" + names.getText())); return t; });
+            shell.addView(r);
+            // Pacific clocks spell out PST or PDT in Chinese and English on their own line, under the whole row.
+            if (names != null) { names.setTextColor(u.theme.faint); names.setSingleLine(true); names.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                TokensPages.tick(names, at -> Dashboard.zoneTitle(c.zone, at)); shell.addView(names); } }
     }
     /** Version and minimum container checks; deeper server contract validation is a separate concern. */
     public static boolean isCompatible(FeatureCatalog.Feature f, JSONObject p) {
