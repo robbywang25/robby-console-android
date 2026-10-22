@@ -138,7 +138,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         intent.setData(null); coordinator.callback(uri);
     }
     @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}
-        PreferenceSyncHub.attach(this);if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);
+        PreferenceSyncHub.attach(this);if(!PreviewMode.isBuild()){PreferenceSyncHub.foreground(this);PreferenceSyncHub.startPolling(this);}
         // Back on 总览 after a pause (shade, dialog, another app on top): the Token cards resume refreshing themselves.
         if(board!=null)scheduleTokenTick(snapshots.get(TOKENS));
         // Back from the "install unknown apps" settings page: continue the update the person already started.
@@ -155,7 +155,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
-    @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
+    @Override protected void onPause(){resumed=false;PreferenceSyncHub.stopPolling();ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     /** A pulled account document changed settings under this page: repaint from the preference files. */
     void onPreferencesApplied(){if(isDestroyed()||!resumed)return;theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;applyStatusBar();build();askSyncedNotify();}
@@ -375,7 +375,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         }else{
             // 总览 is only 看板 and 常用: the board is the person's own combination of feature cards.
             // Pull down on 总览 to refresh the board; the mark keeps turning until every card's read has finished.
-            final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新看板",()->loadBoard(true,page::finishRefresh));
+            final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新看板",()->{if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);loadBoard(true,page::finishRefresh);});
             board=new LinearLayout(this);board.setOrientation(LinearLayout.VERTICAL);content.addView(board,new LinearLayout.LayoutParams(-1,-2));loadBoard(false);
         }
         section("常用");Set<String> hidden=hiddenFeatures();quick(FeatureUsage.top(FeatureUsage.parse(prefs().getString("featureUsage",null)),System.currentTimeMillis(),4,id->find(id)!=null&&!"overview".equals(id)&&!hidden.contains(id)));

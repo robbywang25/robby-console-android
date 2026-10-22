@@ -581,8 +581,143 @@ public final class PreferenceSyncTest {
     }
 
     /** Clock, scheduler and inline runner sharing one timeline. A task runs only once its delay has elapsed. */
+    private static JSONArray clockArray(String... pairs) throws Exception {
+        JSONArray a = new JSONArray();
+        for (String pair : pairs) { String[] p = pair.split("\\|"); a.put(new JSONObject().put("name", p[0]).put("zone", p[1])); }
+        return a;
+    }
+    private static PreferenceSync.Sync quiet(Manual time, Net net) {
+        return new PreferenceSync.Sync(time, time, time, net, new PreferenceSync.Listener() {
+            public void applied(Map<String, Object> changed) {}
+            public void persisted(PreferenceSync.Snapshot snap) {}
+        });
+    }
+
+    @Test public void anOlderUnsentEditHereLosesToANewerOneFromAnotherPhone() throws Exception {
+        Manual time = new Manual(); time.now = 1_000;
+        Net net = new Net();
+        PreferenceSync.Sync sync = quiet(time, net);
+        // This phone changed its clocks at t=500 and never uploaded; another phone added UTC at t=5000.
+        sync.restore(5, "2026-10-22T00:00:00Z", new JSONObject(), Set.of("clocks"), true,
+            Map.of("clocks", List.of("Tibo|America/Los_Angeles")), Map.of("clocks", 500L));
+        JSONObject remote = new JSONObject().put("clocks", clockArray("Tibo|America/Los_Angeles", "UTC|Etc/UTC"))
+            .put(PreferenceSync.EDITED, new JSONObject().put("clocks", 5_000L));
+        net.nextGet = PreferenceSync.Response.ok(6, "2026-10-22T14:07:16Z", remote);
+        sync.setReady(true, true);
+        sync.foreground();
+        assertEquals(List.of("Tibo|America/Los_Angeles", "UTC|Etc/UTC"), sync.local().get("clocks"));
+        assertTrue(sync.dirty().isEmpty());
+        assertFalse(sync.pending());
+        assertEquals(0, net.puts);
+        assertEquals(Long.valueOf(5_000L), sync.edited().get("clocks"));
+    }
+
+    @Test public void aNewerUnsentEditHereIsKeptAndUploadedWithItsTime() throws Exception {
+        Manual time = new Manual(); time.now = 9_000;
+        Net net = new Net(); net.echo = true; net.echoVersion = 7; net.echoAt = "2026-10-22T14:10:00Z";
+        PreferenceSync.Sync sync = quiet(time, net);
+        sync.restore(6, "2026-10-22T00:00:00Z", new JSONObject(), Set.of(), false,
+            Map.of("clocks", List.of("Tibo|America/Los_Angeles"), "glassLevel", 10), Map.of());
+        sync.setReady(true, true);
+        sync.edit("clocks", List.of("北京时间|Asia/Shanghai"));
+        JSONObject remote = new JSONObject().put("clocks", clockArray("UTC|Etc/UTC")).put("glassLevel", 80)
+            .put(PreferenceSync.EDITED, new JSONObject().put("clocks", 5_000L).put("glassLevel", 5_000L));
+        net.nextGet = PreferenceSync.Response.ok(7, "2026-10-22T14:07:16Z", remote);
+        net.echoVersion = 8;
+        sync.foreground();
+        assertEquals(1, net.puts);
+        assertEquals(List.of("北京时间|Asia/Shanghai"), PreferenceSync.read(net.lastPrefs).get("clocks"));
+        assertEquals(80, ((Number) PreferenceSync.read(net.lastPrefs).get("glassLevel")).intValue());
+        assertEquals(9_000L, net.lastPrefs.getJSONObject(PreferenceSync.EDITED).getLong("clocks"));
+        assertEquals(5_000L, net.lastPrefs.getJSONObject(PreferenceSync.EDITED).getLong("glassLevel"));
+        assertEquals(80, ((Number) sync.local().get("glassLevel")).intValue());
+        assertEquals(List.of("北京时间|Asia/Shanghai"), sync.local().get("clocks"));
+        assertTrue(sync.dirty().isEmpty());
+    }
+
+    @Test public void aDocumentWithoutEditTimesIsDatedByItsUpdatedAt() throws Exception {
+        Manual time = new Manual();
+        long updated = PreferenceSync.epochMillis("2026-10-22T14:07:16Z");
+        assertTrue(updated > 0);
+        Net net = new Net();
+        PreferenceSync.Sync older = quiet(time, net);
+        older.restore(5, null, new JSONObject(), Set.of("calendarDays"), true, Map.of("calendarDays", 3), Map.of("calendarDays", updated - 1));
+        net.nextGet = PreferenceSync.Response.ok(6, "2026-10-22T14:07:16Z", new JSONObject().put("calendarDays", 14));
+        older.setReady(true, false);
+        older.foreground();
+        assertEquals(14, ((Number) older.local().get("calendarDays")).intValue());
+        assertTrue(older.dirty().isEmpty());
+
+        Net net2 = new Net();
+        PreferenceSync.Sync newer = quiet(time, net2);
+        newer.restore(5, null, new JSONObject(), Set.of("calendarDays"), true, Map.of("calendarDays", 3), Map.of("calendarDays", updated + 1));
+        net2.nextGet = PreferenceSync.Response.ok(6, "2026-10-22T14:07:16Z", new JSONObject().put("calendarDays", 14));
+        newer.setReady(true, false);
+        newer.foreground();
+        assertEquals(3, ((Number) newer.local().get("calendarDays")).intValue());
+        assertEquals(Set.of("calendarDays"), newer.dirty());
+    }
+
+    @Test public void editTimesIgnoreUnknownKeysAndBadValuesAndNeverBecomeASetting() throws Exception {
+        JSONObject doc = new JSONObject().put("glassLevel", 30).put(PreferenceSync.EDITED, new JSONObject()
+            .put("glassLevel", 1_234L).put("clocks", -5).put("board", 1.5).put("mystery", 99L).put("calendarDays", "7"));
+        assertEquals(Map.of("glassLevel", 1_234L), PreferenceSync.editedTimes(doc));
+        assertFalse(PreferenceSync.read(doc).containsKey(PreferenceSync.EDITED));
+        assertEquals(Set.of("glassLevel"), PreferenceSync.read(doc).keySet());
+        assertTrue(PreferenceSync.editedTimes(new JSONObject().put("glassLevel", 30)).isEmpty());
+        assertEquals(0L, PreferenceSync.epochMillis("not a date"));
+        JSONObject sent = PreferenceSync.document(Map.of("glassLevel", 30, "board", List.of("clocks")), Map.of("glassLevel", 77L, "clocks", 88L));
+        assertEquals(77L, sent.getJSONObject(PreferenceSync.EDITED).getLong("glassLevel"));
+        assertFalse(sent.getJSONObject(PreferenceSync.EDITED).has("clocks"));
+        assertFalse(sent.getJSONObject(PreferenceSync.EDITED).has("board"));
+    }
+
+    @Test public void aConflictRetryMergesByEditTime() throws Exception {
+        Manual time = new Manual(); time.now = 2_000;
+        Net net = new Net();
+        PreferenceSync.Sync sync = quiet(time, net);
+        sync.restore(3, "2026-10-22T00:00:00Z", new JSONObject(), Set.of("clocks"), true,
+            Map.of("clocks", List.of("Tibo|America/Los_Angeles"), "glassLevel", 10), Map.of("clocks", 1_000L));
+        sync.setReady(true, true);
+        sync.edit("glassLevel", 60);
+        JSONObject current = new JSONObject().put("clocks", clockArray("UTC|Etc/UTC")).put("glassLevel", 20)
+            .put(PreferenceSync.EDITED, new JSONObject().put("clocks", 1_500L).put("glassLevel", 1_500L));
+        JSONObject body = new JSONObject().put("error", "version_conflict").put("current", new JSONObject()
+            .put("schemaVersion", 1).put("version", 4).put("updatedAt", "2026-10-22T14:00:00Z").put("preferences", current));
+        net.nextPut = PreferenceSync.conflict(body);
+        net.afterPut = PreferenceSync.Response.fail(500);
+        time.advance(PreferenceSync.QUIET_MS);
+        assertEquals(2, net.puts);
+        Map<String, Object> retried = PreferenceSync.read(net.sent.get(1));
+        assertEquals(List.of("UTC|Etc/UTC"), retried.get("clocks"));
+        assertEquals(60, ((Number) retried.get("glassLevel")).intValue());
+        assertEquals(List.of("UTC|Etc/UTC"), sync.local().get("clocks"));
+        assertEquals(Set.of("glassLevel"), sync.dirty());
+    }
+
+    @Test public void thePollerPullsEveryMinuteOnlyWhileRunning() {
+        Manual time = new Manual();
+        int[] pulls = {0};
+        PreferenceSync.Poller poller = new PreferenceSync.Poller(time, () -> pulls[0]++);
+        poller.start();
+        time.advance(PreferenceSync.POLL_MS - 1);
+        assertEquals(0, pulls[0]);
+        time.advance(1);
+        assertEquals(1, pulls[0]);
+        time.advance(PreferenceSync.POLL_MS);
+        assertEquals(2, pulls[0]);
+        poller.stop();
+        assertFalse(poller.running());
+        time.advance(PreferenceSync.POLL_MS * 3);
+        assertEquals(2, pulls[0]);
+        poller.start(); poller.start();
+        time.advance(PreferenceSync.POLL_MS);
+        assertEquals(3, pulls[0]);
+    }
+
     private static final class Manual implements PreferenceSync.Clock, PreferenceSync.Scheduler, PreferenceSync.Runner {
-        long now; Runnable task; long due; boolean armed;
+        /** Wall-clock time like a real phone's, so edits made here are later than the 2026-10-22 documents above. */
+        long now = 1_793_620_800_000L; Runnable task; long due; boolean armed;
         public long millis() { return now; }
         public void schedule(Runnable task, long delayMs) { this.task = task; due = now + delayMs; armed = true; }
         public void cancel(Runnable task) { if (this.task == task) armed = false; }

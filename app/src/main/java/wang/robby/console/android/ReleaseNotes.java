@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.33.1", "2026-10-22", "多台手机设置及时同步",
+            "在一台手机上改了看板、时钟或外观，另一台开着 God 时一分钟内跟上。",
+            "总览下拉刷新时也会拉取账号里的最新设置。",
+            "两台手机都改过同一项时，以后改的为准，不会被旧改动覆盖。"),
         new Entry("0.33.0", "2026-10-22", "Claude 也显示重置卡",
             "总览的 Token 额度卡片里，Claude 账号会显示重置卡张数和最近的到期日。",
             "Claude 的重置卡来自官网核验或你确认的记录，会注明是哪种、哪天记下的。",

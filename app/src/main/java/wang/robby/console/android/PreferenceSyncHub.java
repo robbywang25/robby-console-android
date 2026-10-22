@@ -34,8 +34,25 @@ final class PreferenceSyncHub {
     private static final AtomicInteger applying = new AtomicInteger();
     /** Keys noted while a server document was being written; replayed from the preference files afterwards. */
     private static final Set<String> skipped = new LinkedHashSet<>();
+    private static PreferenceSync.Poller poller;
 
     static void attach(MainActivity activity) { ui = new WeakReference<>(activity); }
+    /** While the app is in front, pull every minute so changes made on another phone show up here. */
+    static void startPolling(Context context) {
+        if (PreviewMode.isBuild()) return;
+        Context app = context.getApplicationContext();
+        PreferenceSync.Poller p;
+        synchronized (LOCK) {
+            if (main == null) main = new Handler(Looper.getMainLooper());
+            if (poller == null) poller = new PreferenceSync.Poller(new PreferenceSync.Scheduler() {
+                public void schedule(Runnable task, long delayMs) { main.postDelayed(task, delayMs); }
+                public void cancel(Runnable task) { main.removeCallbacks(task); }
+            }, () -> foreground(app));
+            p = poller;
+        }
+        p.start();
+    }
+    static void stopPolling() { PreferenceSync.Poller p; synchronized (LOCK) { p = poller; } if (p != null) p.stop(); }
     /** A local change to one sync key. A change during a server write is kept and applied when that write ends. */
     static void note(Context context, String key) {
         if (PreviewMode.isBuild()) return;
@@ -90,7 +107,7 @@ final class PreferenceSyncHub {
             try { base = new JSONObject(ui.getString("prefSyncBase", "{}")); } catch (org.json.JSONException e) { base = new JSONObject(); }
             Set<String> dirty = new LinkedHashSet<>();
             for (String key : ui.getString("prefSyncDirty", "").split(",")) if (!key.isEmpty()) dirty.add(key);
-            sync.restore(ui.getInt("prefSyncVersion", 0), ui.getString("prefSyncUpdatedAt", null), base, dirty, ui.getBoolean("prefSyncPending", false), current(app));
+            sync.restore(ui.getInt("prefSyncVersion", 0), ui.getString("prefSyncUpdatedAt", null), base, dirty, ui.getBoolean("prefSyncPending", false), current(app), edited(ui.getString("prefSyncEdited", "{}")));
             return sync;
         }
     }
@@ -149,7 +166,8 @@ final class PreferenceSyncHub {
                 .putString("prefSyncUpdatedAt", at)
                 .putString("prefSyncBase", snap.baseJson)
                 .putString("prefSyncDirty", String.join(",", snap.dirty))
-                .putBoolean("prefSyncPending", snap.pending).apply();
+                .putBoolean("prefSyncPending", snap.pending)
+                .putString("prefSyncEdited", new JSONObject(snap.edited).toString()).apply();
             // A sync that changed no setting still moves the "synced at" line.
             if (moved && main != null) main.post(() -> { MainActivity activity = ui.get(); if (activity != null) activity.onPreferencesApplied(); });
         }
@@ -230,6 +248,14 @@ final class PreferenceSyncHub {
     private static boolean skip(String key, Map<String, Object> before, Map<String, Object> now) {
         if (!Objects.equals(before.get(key), now.get(key))) { skipped.add(key); return true; }
         return blocked(key);
+    }
+    private static Map<String, Long> edited(String json) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        try {
+            JSONObject o = new JSONObject(json == null ? "{}" : json);
+            for (String key : PreferenceSync.KEYS) { Object v = o.opt(key); if (v instanceof Number n && n.longValue() > 0) out.put(key, n.longValue()); }
+        } catch (org.json.JSONException e) { return out; }
+        return out;
     }
     private static List<String> strings(Object value) {
         List<String> out = new java.util.ArrayList<>();
