@@ -6,7 +6,7 @@ import java.util.*;
  * Which features 功能 leaves out. A feature is hidden when the person hid it, or when it ships hidden by default
  * ({@link FeatureCatalog#DEFAULT_HIDDEN}, features that do not read yet) and the person has not shown it again.
  * Showing a default-hidden feature is remembered, so it stays visible after an update; hiding it again forgets that.
- * Only feature ids are kept, on this phone. Pure Java for JVM tests.
+ * Only feature ids are kept; the choice syncs with the account. Pure Java for JVM tests.
  */
 final class FeatureVisibility {
     private FeatureVisibility() {}

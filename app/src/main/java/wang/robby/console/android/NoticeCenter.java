@@ -41,10 +41,11 @@ final class NoticeCenter {
         if (value) on.add(kind); else on.remove(kind);
         // A newly switched-on kind learns the current state on its next read before it may notify.
         prefs(c).edit().putStringSet("on", on).putBoolean("primed", false).apply();
+        PreferenceSyncHub.note(c, "noticeKinds");
         if (!service) return;
         if (TiboWatch.active(c)) { TiboWatch.start(c, true); TiboWatch.refreshWatch(c); } else TiboWatch.stop(c);
     }
-    static void threshold(Context c, String which, int value) { prefs(c).edit().putInt(which, value).apply(); }
+    static void threshold(Context c, String which, int value) { prefs(c).edit().putInt(which, value).apply(); PreferenceSyncHub.note(c, "daily".equals(which) ? "dailyLine" : "lowLine"); }
 
     /** One read for every switched-on kind; runs on the watch's background thread. Failures are only recorded. */
     @android.annotation.SuppressLint("ApplySharedPref")
@@ -84,6 +85,7 @@ final class NoticeCenter {
     /** 增强提醒 off also ends 持续提醒 and silences anything still ringing. */
     static void setMode(Context c, String which, boolean value) {
         prefs(c).edit().putBoolean(which, value).apply();
+        PreferenceSyncHub.note(c, "enhanced".equals(which) ? "enhancedNotice" : "persistentNotice");
         if (!persistent(c)) ackAll(c);
     }
     static void post(Context context, Notices.Notice n) { post(context, n, 1); }

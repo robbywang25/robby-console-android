@@ -6,7 +6,7 @@ import java.util.function.Predicate;
 /**
  * 常用 on 总览: features ranked by how often and how lately they were opened. Each open adds 1 to a score that halves
  * every seven days, so a page opened daily outranks one opened often last month, and one opened once today does not
- * displace a habit at once. Only feature ids and open times are kept, on this phone. Pure Java for JVM tests.
+ * displace a habit at once. Only feature ids and open times are kept; they sync with the account. Pure Java for JVM tests.
  */
 final class FeatureUsage {
     private FeatureUsage() {}

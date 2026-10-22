@@ -138,6 +138,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         intent.setData(null); coordinator.callback(uri);
     }
     @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}
+        PreferenceSyncHub.attach(this);if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);
         // Back on 总览 after a pause (shade, dialog, another app on top): the Token cards resume refreshing themselves.
         if(board!=null)scheduleTokenTick(snapshots.get(TOKENS));
         // Back from the "install unknown apps" settings page: continue the update the person already started.
@@ -153,7 +154,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
     @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
-    @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
+    @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
+    /** A pulled account document changed settings under this page: repaint from the preference files. */
+    void onPreferencesApplied(){if(isDestroyed()||!resumed)return;theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;applyStatusBar();build();}
     private static final int AUTH_TAB=41;
     /** The sign-in the Auth Tab was opened for, so its browser fallback repeats the same one (Google or Passkey). */
     private boolean lastFederated;
@@ -369,9 +372,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         restoreViewport();
     }
     private List<String> boardCards(){return Dashboard.parse(prefs().getString("dashboard",null));}
-    private void saveBoard(List<String> ids){prefs().edit().putString("dashboard",Dashboard.serialize(ids)).apply();}
+    private void saveBoard(List<String> ids){prefs().edit().putString("dashboard",Dashboard.serialize(ids)).apply();PreferenceSyncHub.note(this,"board");}
     private List<Dashboard.Clock> boardClocks(){return Dashboard.clocks(prefs().getString(Dashboard.CLOCKS,null));}
-    private void saveClocks(List<Dashboard.Clock> clocks){prefs().edit().putString(Dashboard.CLOCKS,Dashboard.serializeClocks(clocks)).apply();}
+    private void saveClocks(List<Dashboard.Clock> clocks){prefs().edit().putString(Dashboard.CLOCKS,Dashboard.serializeClocks(clocks)).apply();PreferenceSyncHub.note(this,"clocks");}
     private void openBoardEditor(){++generation;selectedId=BOARD;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
     /**
      * Lays out the chosen cards (wide ones on their own row, small ones two to a row), shows any cached reads at
@@ -437,13 +440,13 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.topMargin=dp(6);content.addView(button("恢复默认组合",()->{saveBoard(Dashboard.DEFAULT);build();}),rp);
         restoreViewport();
     }
-    /** 重置日历's range on 总览: 今天 or the next 3, 7, 14 or 30 days; saved on this phone, applied at once. */
+    /** 重置日历's range on 总览: 今天 or the next 3, 7, 14 or 30 days; applied at once and synced with the account. */
     private void calendarRangeMenu(){
         List<Integer> ranges=Dashboard.CALENDAR_RANGES;String[] names=new String[ranges.size()];for(int i=0;i<names.length;i++)names[i]=Dashboard.calendarRange(ranges.get(i));
         show(new AlertDialog.Builder(this).setTitle("重置日历显示范围").setSingleChoiceItems(names,ranges.indexOf(Dashboard.calendarDays(this)),(d,w)->{
-            prefs().edit().putString(Dashboard.CALENDAR_DAYS,String.valueOf(ranges.get(w))).apply();d.dismiss();build();}).setNegativeButton("取消",null));
+            prefs().edit().putString(Dashboard.CALENDAR_DAYS,String.valueOf(ranges.get(w))).apply();PreferenceSyncHub.note(this,"calendarDays");d.dismiss();build();}).setNegativeButton("取消",null));
     }
-    /** 时区时钟 zones: tap to rename, the bin removes, 添加时区 picks a zone and then its name. Stored on this phone. */
+    /** 时区时钟 zones: tap to rename, the bin removes, 添加时区 picks a zone and then its name. Synced with the account. */
     private void clockRows(LinearLayout group){
         group.removeAllViews();List<Dashboard.Clock> list=boardClocks();long now=System.currentTimeMillis();
         for(int i=0;i<list.size();i++){Dashboard.Clock c=list.get(i);final int index=i;
@@ -484,7 +487,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);TextView who=text(TokensModel.displayName(a),15,INK,false);who.setSingleLine(true);who.setEllipsize(android.text.TextUtils.TruncateAt.END);labels.addView(who);
             TextView product=text(TokensModel.productName(a),12,MUTED,false);product.setPadding(0,dp(2),0,0);labels.addView(product);row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
             Switch toggle=new Switch(this);toggle.setChecked(!hidden.contains(id));toggle.setContentDescription("在看板显示 "+TokensModel.productName(a)+" "+TokensModel.displayName(a));toggle.setMinimumHeight(dp(48));
-            toggle.setOnCheckedChangeListener((b,checked)->prefs().edit().putString(Dashboard.HIDDEN_TOKENS,Dashboard.toggleHidden(prefs().getString(Dashboard.HIDDEN_TOKENS,null),id)).apply());
+            toggle.setOnCheckedChangeListener((b,checked)->{prefs().edit().putString(Dashboard.HIDDEN_TOKENS,Dashboard.toggleHidden(prefs().getString(Dashboard.HIDDEN_TOKENS,null),id)).apply();PreferenceSyncHub.note(this,"hiddenQuotaCards");});
             row.addView(toggle);group.addView(row);}
     }
     private void boardRow(LinearLayout group,Dashboard.Card card,boolean added,boolean canUp,boolean canDown){
@@ -619,7 +622,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private Set<String> userShown(){return FeatureVisibility.parse(prefs().getString(FeatureVisibility.SHOWN,null));}
     /** Features left out of 功能, 我 → 管理 and 常用; they stay reachable from 已隐藏的功能, shortcuts and the board. */
     private Set<String> hiddenFeatures(){return FeatureVisibility.hidden(userHidden(),userShown(),FeatureCatalog.DEFAULT_HIDDEN);}
-    private void saveVisibility(List<Set<String>> next){prefs().edit().putString(FeatureVisibility.HIDDEN,FeatureVisibility.serialize(next.get(0))).putString(FeatureVisibility.SHOWN,FeatureVisibility.serialize(next.get(1))).apply();}
+    private void saveVisibility(List<Set<String>> next){prefs().edit().putString(FeatureVisibility.HIDDEN,FeatureVisibility.serialize(next.get(0))).putString(FeatureVisibility.SHOWN,FeatureVisibility.serialize(next.get(1))).apply();PreferenceSyncHub.note(this,"hiddenFeatures");PreferenceSyncHub.note(this,"shownFeatures");}
     private void hide(FeatureCatalog.Feature f){
         saveVisibility(FeatureVisibility.hide(userHidden(),userShown(),f.id));build();
         Toast.makeText(this,"已隐藏「"+f.title+"」，可在「我 → 已隐藏的功能」恢复",Toast.LENGTH_SHORT).show();
@@ -668,8 +671,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         parent.addView(row);return row;
     }
     private void open(FeatureCatalog.Feature f){recordUse(f.id);++generation;selectedId=f.id;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
-    /** Counts an open for 常用; only the feature id and time are kept, on this phone. */
-    private void recordUse(String id){if("overview".equals(id))return;prefs().edit().putString("featureUsage",FeatureUsage.serialize(FeatureUsage.record(FeatureUsage.parse(prefs().getString("featureUsage",null)),id,System.currentTimeMillis()))).apply();}
+    /** Counts an open for 常用; the id and time sync with the account, debounced with the other settings. */
+    private void recordUse(String id){if("overview".equals(id))return;prefs().edit().putString("featureUsage",FeatureUsage.serialize(FeatureUsage.record(FeatureUsage.parse(prefs().getString("featureUsage",null)),id,System.currentTimeMillis()))).apply();PreferenceSyncHub.note(this,"recentFeatures");}
     @Override public void openFeature(String id){FeatureCatalog.Feature f=find(id);if(f!=null&&loggedIn())open(f);}
     private void showFeature(FeatureCatalog.Feature f,boolean refresh){showFeature(f,refresh,null);}
     /** {@code done} runs on the main thread when this call's read has finished (at once when it starts none). */
@@ -820,6 +823,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             {"登录","Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份，退出会清除本机令牌。"},
             {"数据","应用仅连接 Robby 的 God 私有接口，没有第三方统计，不保存网页 Cookie。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。可查看原生数据，并在确认后管理账目和人员。"},
             {"头像与签名","个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。个性签名保存在你的 God 账号里，本机留一份副本用于显示。"},
+            {"设置","看板、外观、功能的隐藏和排序、通知开关和提醒线会保存到 God 账号，同一账号的手机保持一致。登录、灵动岛的开孔位置、提醒的检查记录只留在这台手机；未登录时设置也只在本机。"},
             {"重置提醒","开启 Tibo 重置提醒后，应用在后台每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。"},
             {"通知","开启「我 → 通知」里的提醒后，应用每 5 分钟在后台读取 Token 额度（开启站点提醒时还有运行状态）。为了判断变化，本机会保存每个额度最近的剩余比例、当天累计消耗、账号状态，以及站点域名和是否在线；不保存邮箱、套餐或其他页面内容，14 天没出现的记录会自动删除，全部关闭后不再读取。"}};
         for(String[] part:parts){section(part[0]);LinearLayout c=card();TextView t=text(part[1],14,INK,false);t.setLineSpacing(dp(3),1);c.addView(t);}
@@ -836,7 +840,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         gap();LinearLayout look=groupCard();boolean usable=!theme.contrast;
         LinearLayout row=featureRow("Liquid Glass",!usable?"高对比度文字开启时使用不透明表面":theme.glassOn?"半透明玻璃与背景模糊":"已关闭 · 不透明表面，没有模糊","drop",look,null);
         Switch toggle=new Switch(this);toggle.setChecked(theme.glassOn);toggle.setEnabled(usable);toggle.setContentDescription("Liquid Glass");toggle.setMinimumHeight(dp(48));
-        toggle.setOnCheckedChangeListener((b,on)->{prefs().edit().putBoolean(ConsoleTheme.GLASS_ON,on).apply();b.post(()->{theme=new ConsoleTheme(this);build();});});
+        toggle.setOnCheckedChangeListener((b,on)->{prefs().edit().putBoolean(ConsoleTheme.GLASS_ON,on).apply();PreferenceSyncHub.note(this,"glassOn");b.post(()->{theme=new ConsoleTheme(this);build();});});
         row.addView(toggle);
         LinearLayout slider=new LinearLayout(this);slider.setOrientation(LinearLayout.VERTICAL);slider.setPadding(dp(10),0,dp(10),dp(10));
         SeekBar bar=new SeekBar(this);bar.setMax(100);bar.setProgress(theme.glassLevel);bar.setEnabled(usable&&theme.glassOn);
@@ -853,6 +857,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             featureRow("灵动岛左侧 · "+StatusBarStyle.itemLabel(islandItem(true)),"摄像头左边显示的内容","info",look,()->islandItemMenu(true));
             featureRow("灵动岛右侧 · "+StatusBarStyle.itemLabel(islandItem(false)),"摄像头右边显示的内容","info",look,()->islandItemMenu(false));
         }
+        section("账号");LinearLayout syncLine=groupCard();
+        featureRow(PreferenceSync.statusLine(loggedIn()&&!PreviewMode.isBuild(),PreferenceSyncHub.updatedAt(this),System.currentTimeMillis()),"","refresh",syncLine,null);
         final boolean[] dragging={false};
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             @Override public void onProgressChanged(SeekBar s,int level,boolean user){if(!user)return;s.setStateDescription(glassLabel(level));
@@ -867,19 +873,19 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         List<String> styles=StatusBarStyle.ALL;String[] names=new String[styles.size()];
         for(int i=0;i<names.length;i++)names[i]=StatusBarStyle.label(styles.get(i))+" · "+StatusBarStyle.detail(styles.get(i));
         show(new AlertDialog.Builder(this).setTitle("状态栏").setSingleChoiceItems(names,styles.indexOf(statusStyle()),(d,w)->{
-            prefs().edit().putString(StatusBarStyle.KEY,styles.get(w)).remove(StatusBarStyle.LEGACY).apply();d.dismiss();applyStatusBar();build();}).setNegativeButton("取消",null));
+            prefs().edit().putString(StatusBarStyle.KEY,styles.get(w)).remove(StatusBarStyle.LEGACY).apply();PreferenceSyncHub.note(this,"statusBar");d.dismiss();applyStatusBar();build();}).setNegativeButton("取消",null));
     }
     private String islandItem(boolean left){return StatusBarStyle.item(prefs().getString(left?StatusBarStyle.LEFT_KEY:StatusBarStyle.RIGHT_KEY,null),left);}
     /** One side of the island: 时间, 日期, 星期, 电量, Tibo 倒计时 or nothing; applies at once. */
     private void islandItemMenu(boolean left){
         List<String> items=StatusBarStyle.ITEMS;String[] names=new String[items.size()];for(int i=0;i<names.length;i++)names[i]=StatusBarStyle.itemLabel(items.get(i));
         show(new AlertDialog.Builder(this).setTitle(left?"灵动岛左侧":"灵动岛右侧").setSingleChoiceItems(names,items.indexOf(islandItem(left)),(d,w)->{
-            prefs().edit().putString(left?StatusBarStyle.LEFT_KEY:StatusBarStyle.RIGHT_KEY,items.get(w)).apply();d.dismiss();build();}).setNegativeButton("取消",null));
+            prefs().edit().putString(left?StatusBarStyle.LEFT_KEY:StatusBarStyle.RIGHT_KEY,items.get(w)).apply();PreferenceSyncHub.note(this,left?"islandLeft":"islandRight");d.dismiss();build();}).setNegativeButton("取消",null));
     }
     /** Keeps a level, snapping to the default when within 3 of it, and repaints this page with it. */
     private void saveGlassLevel(SeekBar s,int level){
         int kept=Math.abs(level-ConsoleTheme.GLASS_DEFAULT)<=3?ConsoleTheme.GLASS_DEFAULT:level;if(kept!=level){s.setProgress(kept);s.setStateDescription(glassLabel(kept));}
-        prefs().edit().putInt(ConsoleTheme.GLASS_LEVEL,kept).apply();theme=new ConsoleTheme(this);previewGlass(theme);
+        prefs().edit().putInt(ConsoleTheme.GLASS_LEVEL,kept).apply();PreferenceSyncHub.note(this,"glassLevel");theme=new ConsoleTheme(this);previewGlass(theme);
     }
     private static String glassLabel(int level){return level==ConsoleTheme.GLASS_DEFAULT?"默认":(level<ConsoleTheme.GLASS_DEFAULT?"清透 ":"着色 ")+Math.abs(level-ConsoleTheme.GLASS_DEFAULT)*2+"%";}
     /** Repaints this page's cards and the dock for {@code t} without rebuilding, so the dragged slider keeps its touch. */

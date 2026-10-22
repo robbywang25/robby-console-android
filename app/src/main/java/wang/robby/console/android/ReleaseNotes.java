@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.31.0", "2026-10-22", "设置跟着账号走",
+            "看板、外观、功能隐藏和排序会保存到账号，换手机登录后保持一致。",
+            "通知开关、提醒线和 Tibo 提醒开关也跟着账号走。",
+            "灵动岛左右显示的内容会同步，开孔位置仍按这台手机自己对齐。",
+            "未登录或预览时，设置只留在这台手机上。",
+            "「我 → 外观」显示设置已同步到账号，或只保存在本机。"),
         new Entry("0.30.0", "2026-10-22", "重置日历按天数显示",
             "总览的重置日历卡片可以选显示今天，或未来 3、7、14、30 天内的全部重置。",
             "在「编辑看板 → 重置日历卡片」里设置，默认未来 7 天。",

@@ -44,10 +44,12 @@ final class TiboWatch {
 
     static void enable(Context c) {
         prefs(c).edit().putBoolean("enabled", true).putLong("enabledAt", System.currentTimeMillis()).putBoolean("primed", false).remove("seen").remove("lastCheckAt").remove("lastError").apply();
+        PreferenceSyncHub.note(c, "tiboNotice");
         start(c, true);
     }
     static void disable(Context c) {
         prefs(c).edit().putBoolean("enabled", false).remove("pending").remove("round").apply();
+        PreferenceSyncHub.note(c, "tiboNotice");
         c.getSystemService(AlarmManager.class).cancel(pending(c, ACTION_RERING));
         NotificationManager nm = c.getSystemService(NotificationManager.class); nm.cancel(ID_ALARM); nm.cancel(ID_NOTICE);
         if (active(c)) refreshWatch(c); else stop(c);

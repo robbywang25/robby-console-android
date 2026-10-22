@@ -13,8 +13,9 @@ public final class MobileApi {
     private final AuthSession auth;
     public MobileApi(AuthSession auth) { this.auth = auth; }
     public static final class ApiError extends IOException {
-        public final int status; public final String code;
-        ApiError(int status,String code,String message){super(message);this.status=status;this.code=code;}
+        public final int status; public final String code; public final JSONObject body;
+        ApiError(int status,String code,String message){this(status,code,message,null);}
+        ApiError(int status,String code,String message,JSONObject body){super(message);this.status=status;this.code=code;this.body=body;}
     }
     public static String checkedPath(String path) {
         if (path == null || path.length()>5000 || !path.matches("[a-z0-9][a-z0-9/-]*(\\?[a-zA-Z0-9_=&%.-]+)?") || path.contains("..") || path.contains("//"))
@@ -77,6 +78,12 @@ public final class MobileApi {
             throw new ApiError(status,code,switch(status){case 401->"会话已失效，请重新登录";case 403->"需要重新登录一次，授权 God 保存头像";case 413->"头像文件过大";case 415,422->"头像格式不受支持";case 429->"请求较多，请稍后再试";default->status>=500?"服务暂不可用，请稍后重试":"服务器未返回预期结果";});
         }finally{c.disconnect();}
     }
+    /** How many response bytes may be read. A preferences 409 carries the current document plus its wrapper. */
+    static int responseLimit(int status, String path) {
+        if (status == 200) return path != null && path.startsWith("travel-ledger/current/snapshot") ? 2097152 : 524288;
+        if (status == 409 && AccountCenter.PREFERENCES.equals(path)) return 24576;
+        return 16384;
+    }
     public JSONObject post(String path,JSONObject body) throws Exception {
         checkedPath(path);
         if(!path.matches("travel-ledger/(entry-writes|people-writes)/(prepare|commit|resolve)")&&!AccountCenter.writeRoute(path))throw new IllegalArgumentException("写入接口未登记");
@@ -96,7 +103,7 @@ public final class MobileApi {
         try {
             if(body!=null){byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);if(bytes.length>16384)throw new IOException("提交内容过大");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json; charset=utf-8");c.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=c.getOutputStream()){out.write(bytes);}}
             int status = c.getResponseCode();
-            int max=status==200?(path.startsWith("travel-ledger/current/snapshot")?2097152:524288):16384;
+            int max=responseLimit(status, path);
             String type = c.getContentType();JSONObject result=null;
             if(type!=null&&type.toLowerCase(java.util.Locale.ROOT).split(";",2)[0].trim().equals("application/json")){
                 if(c.getContentLengthLong()>max)throw new IOException("响应超出安全大小");
@@ -107,7 +114,7 @@ public final class MobileApi {
             }
             // Ledger routes name the refusal in "code", the account routes in "error".
             if(status!=200){String code=result==null?"http_error":result.optString("code",result.optString("error","http_error"));if(!code.matches("[a-z0-9_]{1,80}"))code="http_error";
-                throw new ApiError(status,code,switch(status){case 401->"会话已失效，请重新登录";case 403->"当前账号没有此功能的权限";case 404->"此移动接口尚未启用";case 409->"数据已变化，请刷新后重试";case 429->"请求较多，请稍后刷新";default->status>=500?"服务暂不可用，请稍后重试":"服务器未返回预期结果";});}
+                throw new ApiError(status,code,switch(status){case 401->"会话已失效，请重新登录";case 403->"当前账号没有此功能的权限";case 404->"此移动接口尚未启用";case 409->"数据已变化，请刷新后重试";case 429->"请求较多，请稍后刷新";default->status>=500?"服务暂不可用，请稍后重试":"服务器未返回预期结果";},result);}
             if(result==null)throw new IOException("接口返回格式不匹配");reusable=true;return result;
         } finally { if(!reusable)c.disconnect(); }
     }
