@@ -1,0 +1,58 @@
+name: Version tags
+on:
+  push:
+    branches: [robbywang/god-android]
+    paths: [app/build.gradle]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: version-tags
+  cancel-in-progress: false
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tag each new versionName as v<versionName>
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          version_at() {
+            git show "$1:app/build.gradle" 2>/dev/null |
+              sed -nE "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/p" | head -n1
+          }
+          # A manual run, a new branch or rewritten history scans the whole branch.
+          if [[ -z "${BEFORE:-}" || "$BEFORE" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range=HEAD
+          else
+            range="$BEFORE..HEAD"
+          fi
+          # Each version is tagged at its last commit in the range, so the tag
+          # carries the verification notes recorded after the bump. Parents come
+          # before children, and a merge commit's side branch is walked too, so
+          # versions bumped inside a merged pull request are not skipped.
+          declare -A last
+          order=()
+          while read -r commit; do
+            version=$(version_at "$commit")
+            [[ -n "$version" ]] || continue
+            [[ -v "last[$version]" ]] || order+=("$version")
+            last[$version]=$commit
+          done < <(git rev-list --reverse --topo-order "$range")
+          existing=$(git ls-remote --tags origin | awk '{print $2}')
+          for version in "${order[@]}"; do
+            tag="v$version"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "::warning::Skipping versionName '$version': not MAJOR.MINOR.PATCH"
+            elif grep -qxF "refs/tags/$tag" <<<"$existing"; then
+              echo "$tag already exists"
+            else
+              git tag "$tag" "${last[$version]}"
+              git push origin "refs/tags/$tag"
+              echo "::notice::Tagged $tag at ${last[$version]}"
+            fi
+          done
