@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.35.1", "2026-10-23", "心力球：立即转写正在录的这段",
+            "点「立即整理」或下拉时，正在录的这一段会马上结束并转写，不用再等满 10 分钟。",
+            "录音时显示这一段已录多久、听到了多少说话声。",
+            "全天录音没开、没有麦克风权限或没在录音时，页面会直接说明。"),
         new Entry("0.35.0", "2026-10-23", "小组件换上新外观",
             "6 个桌面小组件统一换成和 App 一样的卡片，顶部是彩色图标、名称和更新时间。",
             "Token 额度每个账号多了一条余量条，充足绿色、偏少橙色、不足 20% 红色。",

@@ -132,6 +132,17 @@ final class MindBall {
         long at = day.optLong("summarizedAt", 0); if (at > 0) parts.add("上次整理 " + clock(at));
         return String.join(" · ", parts);
     }
+    /** The page's line about the segment being recorded, or "" when not recording. */
+    static String live() { MindBallService s = MindBallService.current; return s == null ? "" : liveLine(s.recordedMs(), s.voicedSeconds()); }
+    /** "这一段已录 3 分钟 · 听到说话 40 秒 · 满 10 分钟或点「立即整理」就转写"; pure for the tests. */
+    static String liveLine(long recordedMs, int voicedSeconds) {
+        if (recordedMs < 0) return "麦克风被通话或其他录音占用，一分钟后再试";
+        long m = recordedMs / 60_000; String when = "这一段已录 " + (m == 0 ? "不到 1 分钟" : m + " 分钟");
+        if (voicedSeconds == 0) return when + " · 还没听到说话声";
+        String heard = when + " · 听到说话 " + (voicedSeconds < 60 ? voicedSeconds + " 秒" : voicedSeconds / 60 + " 分 " + voicedSeconds % 60 + " 秒");
+        // A full segment needs MIN_VOICED_SECONDS of speech to be kept; 立即整理 keeps any.
+        return heard + (voicedSeconds < MIN_VOICED_SECONDS ? " · 点「立即整理」可现在转写" : " · 满 " + SEGMENT / 60_000 + " 分钟或点「立即整理」就转写");
+    }
     static String lastError(Context c) { return prefs(c).getString("lastError", ""); }
     static int minutes(JSONArray segs) {
         long ms = 0; if (segs != null) for (int i = 0; i < segs.length(); i++) { JSONObject s = segs.optJSONObject(i); if (s != null) ms += Math.max(0, s.optLong("end") - s.optLong("start")); }
@@ -234,6 +245,8 @@ final class MindBall {
     // ---------------------------------------------------------------- pipeline
 
     static void notifyChanged() { Runnable r = listener; if (r != null) main().post(r); }
+    /** 立即整理 and the page's pull, on the main thread: the segment being recorded is closed first so it is transcribed now too. */
+    static void processNow(Context c, Runnable done) { MindBallService s = MindBallService.current; if (s != null) s.cut(); processAsync(c, true, done); }
     /** Transcribes waiting segments, then summarizes days with new text: at most hourly unless {@code force}. */
     static void processAsync(Context c, boolean force) { processAsync(c, force, null); }
     static void processAsync(Context c, boolean force, Runnable done) {

@@ -21,12 +21,14 @@ import java.io.File;
 public final class MindBallService extends Service {
     /** Peak amplitude (of 32767) that counts a second as speech rather than room noise. */
     static final int VOICED = 1800;
+    /** The running recorder, for the page's live line and 立即整理; main thread only. */
+    static MindBallService current;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private MediaRecorder recorder; private File file; private long started; private int voiced; private PowerManager.WakeLock wake;
     private final Runnable tick = new Runnable() { @Override public void run() {
         if (recorder == null) return;
         try { if (recorder.getMaxAmplitude() >= VOICED) voiced++; } catch (RuntimeException ignored) {}
-        if (System.currentTimeMillis() - started >= MindBall.SEGMENT) { finish(); begin(); } else handler.postDelayed(this, 1_000L);
+        if (System.currentTimeMillis() - started >= MindBall.SEGMENT) { finish(MindBall.MIN_VOICED_SECONDS); begin(); } else handler.postDelayed(this, 1_000L);
     } };
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -41,7 +43,7 @@ public final class MindBallService extends Service {
             // A restart from the background may not use the microphone: wait until God is opened again.
             Log.w(MindBall.TAG, "foreground_refused"); MindBall.afterRestart(this); stopSelf(); return START_NOT_STICKY;
         }
-        if (recorder == null) { MindBall.recording = true; begin(); MindBall.processAsync(this, false); MindBall.notifyChanged(); }
+        if (recorder == null) { current = this; MindBall.recording = true; begin(); MindBall.processAsync(this, false); MindBall.notifyChanged(); }
         return START_STICKY;
     }
     private void begin() {
@@ -52,23 +54,28 @@ public final class MindBallService extends Service {
         try {
             r.setAudioSource(MediaRecorder.AudioSource.MIC); r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4); r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
             r.setAudioChannels(1); r.setAudioSamplingRate(16_000); r.setAudioEncodingBitRate(32_000); r.setOutputFile(file.getAbsolutePath());
-            r.setOnErrorListener((mr, what, extra) -> { Log.w(MindBall.TAG, "recorder_error " + what); finish(); handler.postDelayed(this::begin, 5_000L); });
+            r.setOnErrorListener((mr, what, extra) -> { Log.w(MindBall.TAG, "recorder_error " + what); finish(MindBall.MIN_VOICED_SECONDS); handler.postDelayed(this::begin, 5_000L); });
             r.prepare(); r.start(); recorder = r; r.getMaxAmplitude(); handler.postDelayed(tick, 1_000L);
         } catch (Exception e) {
             // The microphone is held by a call or another recorder: try again in a minute.
             Log.w(MindBall.TAG, "recorder_start_failed"); r.release(); file.delete(); recorder = null; handler.postDelayed(this::begin, 60_000L);
         }
     }
-    /** Closes the current segment; a mostly silent one is deleted, a spoken one queued for transcription. */
-    private void finish() {
+    /** Milliseconds into the segment being recorded, or -1 while the microphone is unavailable. */
+    long recordedMs() { return recorder == null ? -1 : System.currentTimeMillis() - started; }
+    int voicedSeconds() { return recorder == null ? 0 : voiced; }
+    /** 立即整理: closes the segment being recorded so it is transcribed now; it is kept if anyone spoke at all. */
+    void cut() { if (recorder != null && System.currentTimeMillis() - started >= 3_000L) { finish(1); begin(); } }
+    /** Closes the current segment; one with fewer than {@code minVoiced} loud seconds is deleted, a spoken one queued for transcription. */
+    private void finish(int minVoiced) {
         handler.removeCallbacks(tick); MediaRecorder r = recorder; recorder = null; if (r == null) return;
         boolean ok = true; try { r.stop(); } catch (RuntimeException tooShort) { ok = false; } r.release();
         long end = System.currentTimeMillis();
-        if (ok && voiced >= MindBall.MIN_VOICED_SECONDS && file.renameTo(MindBall.segmentFile(this, started, end))) MindBall.processAsync(this, false);
+        if (ok && voiced >= minVoiced && file.renameTo(MindBall.segmentFile(this, started, end))) MindBall.processAsync(this, false);
         else file.delete();
     }
     @Override public void onDestroy() {
-        handler.removeCallbacksAndMessages(null); finish(); MindBall.recording = false;
+        handler.removeCallbacksAndMessages(null); finish(MindBall.MIN_VOICED_SECONDS); MindBall.recording = false; if (current == this) current = null;
         // Switched off: the last segment is in, so the day is summarized now instead of within the hour.
         if (!MindBall.enabled(this)) MindBall.processAsync(this, true);
         if (wake != null && wake.isHeld()) wake.release();

@@ -70,7 +70,16 @@ final class MindBallPage {
         top.addView(toggle); c.addView(top);
         if (preview) return;
         TextView status = t.text(MindBall.status(ctx), 12, false); status.setTextColor(t.faint); status.setPadding(0, t.dp(8), 0, 0); c.addView(status);
+        if (live) {
+            // The segment being recorded is not in the day yet: show how far it is, ticking while the page is in view.
+            TextView now = t.text(MindBall.live(), 13, false); now.setTextColor(t.ink); now.setPadding(0, t.dp(6), 0, 0); c.addView(now);
+            Runnable tick = new Runnable() { @Override public void run() { if (!now.isAttachedToWindow()) return; now.setText(MindBall.live()); now.postDelayed(this, 15_000L); } };
+            now.postDelayed(tick, 15_000L);
+        }
         List<String> problems = new ArrayList<>();
+        if (!on) problems.add("全天录音还没开启：打开上方开关并允许麦克风后才会开始录音");
+        else if (!MindBall.micAllowed(ctx)) problems.add("没有麦克风权限：在系统设置里为 God 允许麦克风");
+        else if (!live) problems.add("已开启但还没在录音：重新打开一次 God 即可继续");
         if (!MindBall.hasSecret(ctx, MindBall.KEY_ASR)) problems.add("还没有填写转写服务的 API Key");
         if (!MindBall.hasSecret(ctx, MindBall.KEY_DEEPSEEK)) problems.add("还没有填写 DeepSeek API Key");
         String error = MindBall.lastError(ctx); if (!error.isEmpty() && !problems.contains(error.replaceAll("^未填写", "还没有填写"))) problems.add(error);
@@ -79,7 +88,7 @@ final class MindBallPage {
             View dot = t.dot(t.warning, 7); ((LinearLayout.LayoutParams) dot.getLayoutParams()).rightMargin = t.dp(8); r.addView(dot);
             TextView w = t.text(p, 13, false); w.setTextColor(t.ink); r.addView(w, new LinearLayout.LayoutParams(0, -2, 1)); c.addView(r);
         }
-        Button now = t.button(MindBall.busy ? "正在转写和整理…" : "立即整理", () -> MindBall.processAsync(ctx, true));
+        Button now = t.button(MindBall.busy ? "正在转写和整理…" : "立即整理", () -> MindBall.processNow(ctx, null));
         now.setEnabled(!MindBall.busy); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = t.dp(12); c.addView(now, lp);
     }
 

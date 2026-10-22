@@ -67,6 +67,12 @@ public final class MindBallTest {
         assertEquals("服务暂不可用（HTTP 503）", MindBall.reason(new MindBall.HttpError(503)));
         assertEquals("网络不可用，稍后自动重试", MindBall.reason(new java.io.IOException("boom")));
     }
+    @Test public void liveLineSaysHowFarTheSegmentIs() {
+        assertEquals("这一段已录 不到 1 分钟 · 还没听到说话声", MindBall.liveLine(40_000, 0));
+        assertEquals("这一段已录 3 分钟 · 听到说话 5 秒 · 点「立即整理」可现在转写", MindBall.liveLine(200_000, 5));
+        assertEquals("这一段已录 7 分钟 · 听到说话 1 分 5 秒 · 满 10 分钟或点「立即整理」就转写", MindBall.liveLine(7 * 60_000 + 59_000, 65));
+        assertEquals("麦克风被通话或其他录音占用，一分钟后再试", MindBall.liveLine(-1, 0));
+    }
     @Test public void settingsShowHostAndModelName() {
         assertEquals("api.siliconflow.cn", MindBallPage.host("https://api.siliconflow.cn/v1"));
         assertEquals("SenseVoiceSmall", MindBallPage.shortModel("FunAudioLLM/SenseVoiceSmall"));

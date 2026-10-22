@@ -698,7 +698,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         ticker.removeCallbacks(statusTick);if("status".equals(f.id)&&loggedIn())ticker.postDelayed(statusTick,60_000);
         if(!loggedIn()){LinearLayout c=card();c.addView(text(f.title,17,INK,true));TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(6),0,dp(18));c.addView(t);Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);c.addView(passkey,new LinearLayout.LayoutParams(-1,-2));LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);c.addView(button("通过已有设备授权",this::deviceLogin),d);restoreViewport();return;}
         // 心力球 reads only this phone: pulling down transcribes and summarizes what is waiting.
-        if(f.local()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processAsync(this,true,page::finishRefresh);});
+        if(f.local()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processNow(this,page::finishRefresh);});
             LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);MindBallPage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
