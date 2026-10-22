@@ -75,6 +75,59 @@ public final class NoticesTest {
         assertTrue(Notices.quotas(q, st, s, T0 + 600_000, ZONE).isEmpty());
     }
 
+    @Test public void codexCreditDropsCrossTheLineOncePerAccountPerDay() throws Exception {
+        Notices.State st = new Notices.State(null);
+        Notices.Settings s = new Notices.Settings(new HashSet<>(Notices.KINDS), 30, 10, 50);
+        long evening = T0 + 13 * H, morning = T0 + 15 * H; // 23:00, then 01:00 the next local day
+        assertTrue(Notices.quotas(credits(T0, 200, 200, 500, null), st, s, T0, ZONE).isEmpty());
+        // A crosses 50. B has only dropped 40, so it waits. Claude and the unlimited account stay quiet.
+        List<Notices.Notice> n = Notices.quotas(credits(T0 + H, 140, 160, 100, 0), st, s, T0 + H, ZONE);
+        assertEquals(List.of(Notices.CREDITS), kinds(n));
+        assertEquals("OpenAI · a@example.com 今天已用掉 60 点积分", n.get(0).title);
+        assertTrue(n.get(0).text.contains("50 点"));
+        // A already rang today. B tops up: the rise is not consumption, and 300 is the new baseline.
+        assertTrue(Notices.quotas(credits(T0 + 2 * H, 100, 300, 0, null), st, s, T0 + 2 * H, ZONE).isEmpty());
+        JSONObject b = st.json.getJSONObject("credits").getJSONObject("codex-b");
+        assertEquals(0, b.getDouble("used"), 0.001);
+        assertEquals(300, b.getDouble("base"), 0.001);
+        assertTrue(Notices.quotas(credits(T0 + 3 * H, 90, 260, 0, null), st, s, T0 + 3 * H, ZONE).isEmpty());
+        n = Notices.quotas(credits(T0 + 4 * H, 80, 240, 0, null), st, s, T0 + 4 * H, ZONE);
+        assertEquals(1, n.size());
+        assertEquals("OpenAI · b@example.com 今天已用掉 60 点积分", n.get(0).title);
+        assertTrue("A does not ring a second time the same day", Notices.quotas(credits(evening, 10, 200, 0, null), st, s, evening, ZONE).isEmpty());
+        // The local day rolls over. The first read is the new baseline, even when the balance is unchanged.
+        assertTrue(Notices.quotas(credits(morning, 10, 200, 0, null), st, s, morning, ZONE).isEmpty());
+        n = Notices.quotas(credits(morning + H, 10, 140, 0, null), st, s, morning + H, ZONE);
+        assertEquals(List.of(Notices.CREDITS), kinds(n));
+        assertEquals("codex-b", n.get(0).key.split(":")[1]);
+        // No line, no notice. A missing balance and an unlimited balance never count.
+        Notices.State off = new Notices.State(null);
+        Notices.Settings none = new Notices.Settings(Set.of(Notices.DAILY), 30, 10, 50);
+        assertTrue(Notices.quotas(credits(T0, 200, 200, 500, 500), off, none, T0, ZONE).isEmpty());
+        assertTrue(Notices.quotas(credits(T0 + H, 0, 0, 0, 0), off, none, T0 + H, ZONE).isEmpty());
+    }
+    private static JSONObject credits(long now, int aLeft, int bLeft, Integer unlimitedLeft, Integer claudeLeft) throws Exception {
+        JSONArray accounts = new JSONArray()
+            .put(codex("codex-a", "a@example.com", now, aLeft, false))
+            .put(codex("codex-b", "b@example.com", now, bLeft, false))
+            .put(codex("codex-unlimited", "u@example.com", now, unlimitedLeft, true))
+            .put(codex("codex-blank", "n@example.com", now, null, false));
+        if (claudeLeft != null) accounts.put(new JSONObject().put("id", "claude-1").put("provider", "Anthropic").put("product", "claude").put("label", "Claude")
+            .put("profile", new JSONObject().put("name", "演示账号")).put("status", "connected").put("lastSuccessAt", iso(now))
+            .put("credits", new JSONObject().put("remaining", claudeLeft).put("unlimited", false))
+            .put("windows", new JSONArray().put(window("seven_day", "每周", 80, T0 - 3 * DAY, T0 + 4 * DAY))));
+        return new JSONObject().put("accounts", accounts);
+    }
+    /** {@code remaining} null omits credits. {@code unlimited} true never reminds, whatever the number does. */
+    private static JSONObject codex(String id, String email, long now, Integer remaining, boolean unlimited) throws Exception {
+        JSONObject a = new JSONObject().put("id", id).put("provider", "OpenAI").put("product", "codex").put("label", "ChatGPT Codex")
+            .put("profile", new JSONObject().put("email", email)).put("status", "connected").put("lastSuccessAt", iso(now))
+            .put("windows", new JSONArray().put(window("weekly", "每周", 80, T0 - 3 * DAY, T0 + 4 * DAY)));
+        if (unlimited) a.put("credits", new JSONObject().put("unlimited", true).put("remaining", remaining == null ? 0 : remaining));
+        else if (remaining != null) a.put("credits", new JSONObject().put("unlimited", false).put("remaining", remaining));
+        return a;
+    }
+
     @Test public void sitesNeedTwoMissesAndReportRecovery() throws Exception {
         Notices.State st = new Notices.State(null); Notices.Settings s = all(30, 10);
         assertTrue(Notices.sites(overview(true, "active"), st, s, T0).isEmpty());

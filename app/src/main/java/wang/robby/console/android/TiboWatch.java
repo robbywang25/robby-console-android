@@ -22,11 +22,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import wang.robby.console.android.auth.AuthSession;
 
 /**
- * Tibo 重置提醒. Without Google push on the phone, a foreground service and exact alarms read tokens/tibo/alerts every
- * five minutes (the server's own monitor interval). A new reset or card-grant announcement rings like an alarm: alarm
- * sound repeating, full screen on the lock screen, until 知道了 — re-ringing every ten minutes for at most three rounds.
- * Stored on the phone: the switch, check times and the ids of public posts already announced; never account data.
- * The same service and alarm also run 我 → 通知's checks ({@link NoticeCenter}); it runs while either is on.
+ * Tibo 重置提醒. Without Google push on the phone, an exact alarm reads tokens/tibo/alerts every five minutes (the
+ * server's own monitor interval). The foreground service lives only for that read, then its notification comes down
+ * and the service stops; the next alarm starts another. A new reset or card-grant announcement rings like an alarm:
+ * alarm sound repeating, full screen on the lock screen, until 知道了 — re-ringing every ten minutes for at most three
+ * rounds. Stored on the phone: the switch, check times and the ids of public posts already announced; never account
+ * data. The same alarm also runs 我 → 通知's checks ({@link NoticeCenter}); it is scheduled while either is on.
  */
 final class TiboWatch {
     private TiboWatch() {}
@@ -60,11 +61,12 @@ final class TiboWatch {
         c.stopService(new Intent(c, TiboWatchService.class));
         c.getSystemService(NotificationManager.class).cancel(ID_WATCH);
     }
-    /** Starts (or keeps) the monitoring service; {@code check} asks it to read now. Refused starts fall back to the alarm. */
+    /** Keeps the exact alarm. {@code check} starts one read in front; a refused start falls back to the alarm a second later. */
     static void start(Context c, boolean check) {
         if (!active(c)) return;
-        try { c.startForegroundService(new Intent(c, TiboWatchService.class).putExtra("check", check)); }
-        catch (RuntimeException refused) { Log.w("GodTibo", "service_start_refused"); schedule(c, System.currentTimeMillis() + (check ? 1_000L : INTERVAL)); }
+        if (!check) { ensureScheduled(c); return; }
+        try { c.startForegroundService(new Intent(c, TiboWatchService.class).putExtra("check", true)); }
+        catch (RuntimeException refused) { Log.w("GodTibo", "service_start_refused"); schedule(c, System.currentTimeMillis() + 1_000L); }
     }
 
     /** The last read is older than one interval, or there has been none. */
@@ -85,21 +87,27 @@ final class TiboWatch {
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, p);
     }
 
-    /** One read on a background thread under a short wake lock; {@code done} runs when it has finished. */
-    static void checkAsync(Context context, Runnable done) {
+    /**
+     * One read on a background thread under a short wake lock; {@code done} runs when it has finished.
+     * @return false when a read is already running. {@code done} is not called then, so the caller finishes its own work.
+     */
+    static boolean checkAsync(Context context, Runnable done) {
         Context c = context.getApplicationContext();
-        if (!RUNNING.compareAndSet(false, true)) { if (done != null) done.run(); return; }
+        if (!RUNNING.compareAndSet(false, true)) return false;
         PowerManager.WakeLock lock = c.getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "God:TiboWatch"); lock.acquire(60_000L);
         new Thread(() -> {
             try { check(c); }
             finally { RUNNING.set(false); if (lock.isHeld()) lock.release(); if (done != null) done.run(); }
         }, "tibo-watch").start();
+        return true;
     }
     // Runs on its own thread; commit() so what was announced is on disk before the process may be stopped.
     @android.annotation.SuppressLint("ApplySharedPref")
     private static void check(Context c) {
         SharedPreferences p = prefs(c); if (!active(c)) return;
         long now = System.currentTimeMillis();
+        // Booked before the read too, so a process killed mid-check still comes back; the finally below replaces it.
+        schedule(c, now + INTERVAL);
         try {
             AuthSession auth = new AuthSession(c);
             if (!auth.hasSession()) { record(p, now, "登录后才能检查"); return; }
@@ -119,7 +127,8 @@ final class TiboWatch {
             Log.w("GodTibo", "check failed " + (e instanceof MobileApi.ApiError ? "http=" + ((MobileApi.ApiError) e).status : e.getClass().getSimpleName()));
             record(p, now, reason);
         } finally {
-            if (active(c)) { schedule(c, System.currentTimeMillis() + INTERVAL); refreshWatch(c); }
+            // The next exact alarm is what brings the check back. The status notification is not refreshed: it only exists while this read runs.
+            if (active(c)) schedule(c, System.currentTimeMillis() + INTERVAL);
         }
     }
     @android.annotation.SuppressLint("ApplySharedPref")
@@ -132,9 +141,12 @@ final class TiboWatch {
         Uri sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM); if (sound == null) sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);
         alarm.setSound(sound, new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
         alarm.enableVibration(true); alarm.setVibrationPattern(new long[]{0, 900, 500, 900, 500, 900}); alarm.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC); alarm.setBypassDnd(true);
-        NotificationChannel watch = new NotificationChannel(CH_WATCH, "Tibo 监测状态", NotificationManager.IMPORTANCE_MIN);
-        watch.setDescription("开启重置提醒时常驻，显示上次检查时间"); watch.setShowBadge(false);
-        nm.createNotificationChannels(List.of(alarm, watch));
+        // A channel's importance cannot be lowered later, so the brief check uses a new silent one. The old always-on channel goes.
+        // IMPORTANCE_MIN is WatchCheck.MIN_IMPORTANCE; lint only accepts the named constant in this call.
+        NotificationChannel check = new NotificationChannel(WatchCheck.CHANNEL_ID, "God 检查提醒", NotificationManager.IMPORTANCE_MIN);
+        check.setDescription("每 5 分钟检查时短暂显示，检查完消失"); check.setShowBadge(false); check.setSound(null, null); check.enableVibration(false); check.setLockscreenVisibility(Notification.VISIBILITY_SECRET);
+        nm.createNotificationChannels(List.of(alarm, check));
+        nm.deleteNotificationChannel(CH_WATCH);
     }
 
     /** Rings for {@code alert}: round 1..3 repeat the alarm sound until acknowledged; later rounds stay silent. */
@@ -175,18 +187,23 @@ final class TiboWatch {
         ring(c, new TiboAlert("0000000000000000000", "reset-scheduled", "试响：这是一次提醒演示", "Tibo 发出重置预告时会这样提醒你，直到你点「知道了」。", "https://x.com/thsottiaux/status/0000000000000000000", now, now + 3 * 3600_000L, false), 1, true, 0);
     }
 
-    static Notification watchNotification(Context context) {
-        Context c = context.getApplicationContext(); channels(c);
-        Intent open = new Intent(c, MainActivity.class).putExtra(EXTRA_OPEN, "tibo").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        boolean tibo = enabled(c);
-        return new Notification.Builder(c, CH_WATCH).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle(tibo ? (NoticeCenter.any(c) ? "God 提醒已开启 · 含 Tibo 重置" : "Tibo 重置提醒已开启") : "God 提醒已开启").setContentText(tibo ? status(c) : NoticeCenter.status(c))
+    /** Shown only while a check is running. No "上次检查" time: that line lives on the settings page, not in the shade. */
+    static Notification checkingNotification(Context context) {
+        Context c = context.getApplicationContext(); channels(c); WatchCheck.Copy copy = WatchCheck.notification();
+        Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        // This SDK stub has no Builder.setSilent. The channel is already minimum and mute; the builder clears sound and vibration too.
+        Notification.Builder b = new Notification.Builder(c, copy.channel).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle(copy.title).setContentText(copy.text)
             .setContentIntent(PendingIntent.getActivity(c, 3, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
-            .setOngoing(true).setShowWhen(false).setCategory(Notification.CATEGORY_SERVICE).setVisibility(Notification.VISIBILITY_PUBLIC).build();
+            .setOnlyAlertOnce(copy.onlyAlertOnce).setOngoing(true).setShowWhen(false)
+            .setCategory(Notification.CATEGORY_SERVICE).setVisibility(Notification.VISIBILITY_SECRET);
+        if (copy.silent) b.setDefaults(0).setSound(null).setVibrate(null);
+        return b.build();
     }
+    /** Updates the in-check notification if one is already up. It never posts one of its own. */
     static void refreshWatch(Context c) {
         if (!active(c)) return;
         NotificationManager nm = c.getSystemService(NotificationManager.class);
-        for (android.service.notification.StatusBarNotification s : nm.getActiveNotifications()) if (s.getId() == ID_WATCH) { nm.notify(ID_WATCH, watchNotification(c)); return; }
+        for (android.service.notification.StatusBarNotification s : nm.getActiveNotifications()) if (s.getId() == ID_WATCH) { nm.notify(ID_WATCH, checkingNotification(c)); return; }
     }
     /** 上次检查 HH:mm · 正常, or the reason the last check failed. */
     static String status(Context c) {

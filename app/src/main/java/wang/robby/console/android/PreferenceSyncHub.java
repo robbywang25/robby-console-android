@@ -188,6 +188,7 @@ final class PreferenceSyncHub {
                     case "noticeKinds" -> { notices.putStringSet("on", new HashSet<>(strings(e.getValue()))).putBoolean("primed", false); noticeTouch = true; }
                     case "dailyLine" -> { notices.putInt("daily", ((Number) e.getValue()).intValue()); noticeTouch = true; }
                     case "lowLine" -> { notices.putInt("low", ((Number) e.getValue()).intValue()); noticeTouch = true; }
+                    case "creditsLine" -> { notices.putInt("creditsLine", ((Number) e.getValue()).intValue()); noticeTouch = true; }
                     default -> { }
                 }
             }

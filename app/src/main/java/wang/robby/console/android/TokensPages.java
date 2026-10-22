@@ -252,7 +252,7 @@ final class TokensPages {
             }
             if (host != null) { LinearLayout r = new LinearLayout(ctx); r.setGravity(Gravity.END); r.addView(link(t, "打开应用设置", "打开 God 的系统设置", () -> host.tiboFix("app"))); c.addView(r); }
         }
-        List<String> notes = new ArrayList<>(List.of("Tibo 发出重置或发卡预告时，用闹钟铃声持续响铃并全屏提醒，直到你点「知道了」；没处理会每 10 分钟再响，最多三轮。", "开启后每 5 分钟检查一次，通知栏常驻一条「已开启」。"));
+        List<String> notes = new ArrayList<>(List.of("Tibo 发出重置或发卡预告时，用闹钟铃声持续响铃并全屏提醒，直到你点「知道了」；没处理会每 10 分钟再响，最多三轮。", "开启后每 5 分钟检查一次。检查期间短暂显示一条「God 正在检查提醒」，检查完即消失。"));
         if (on) notes.add("OPPO / ColorOS 还需在 设置 → 应用 → God → 耗电管理 中允许后台行为，否则锁屏后检查可能被暂停。");
         c.addView(t.info(notes));
         if (host != null) { android.widget.Button test = t.button("试响一次", host::tiboTest); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = t.dp(12); c.addView(test, lp); }

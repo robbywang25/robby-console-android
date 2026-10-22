@@ -15,10 +15,11 @@ import java.time.ZoneId;
 import java.util.*;
 
 /**
- * 我 → 通知: which of God's notifications are on, their thresholds, and posting them. Runs inside the same five-minute
- * background read as Tibo 重置提醒 (one foreground service while any notification is on). The first read after a
- * notification is switched on only learns the current state, so turning one on never floods the shade.
- * Notifications show their content only when the phone is unlocked; the lock screen says just "God · 额度提醒".
+ * 我 → 通知: which of God's notifications are on, their thresholds, and posting them. The five-minute read is the same
+ * one Tibo 重置提醒 uses; that read is a foreground service only while it runs. The first read after a notification is
+ * switched on only learns the current state, so turning one on never floods the shade. A switch or a line that is
+ * already where the person left it does not clear that latch. Notifications show their content only when the phone is
+ * unlocked; the lock screen says just "God · 额度提醒".
  */
 final class NoticeCenter {
     private NoticeCenter() {}
@@ -27,7 +28,13 @@ final class NoticeCenter {
 
     static Notices.Settings settings(Context c) {
         SharedPreferences p = prefs(c);
-        return new Notices.Settings(new HashSet<>(p.getStringSet("on", Collections.emptySet())), p.getInt("daily", 30), p.getInt("low", 10));
+        return new Notices.Settings(new HashSet<>(p.getStringSet("on", Collections.emptySet())), p.getInt("daily", 30), p.getInt("low", 10), creditsLine(p));
+    }
+    /** One of 20/50/100/200/500; anything else, including a missing key, is 50. */
+    static int creditsLine(SharedPreferences p) {
+        int v = p.getInt("creditsLine", Notices.CREDIT_DEFAULT);
+        for (int choice : Notices.CREDIT_CHOICES) if (choice == v) return v;
+        return Notices.CREDIT_DEFAULT;
     }
     static boolean any(Context c) { return !prefs(c).getStringSet("on", Collections.emptySet()).isEmpty(); }
     static boolean on(Context c, String kind) { return prefs(c).getStringSet("on", Collections.emptySet()).contains(kind); }
@@ -35,17 +42,30 @@ final class NoticeCenter {
 
     /** Switches one kind; the service starts with the first and stops with the last (unless Tibo 重置提醒 keeps it). */
     static void set(Context c, String kind, boolean value) { set(c, kind, value, true); }
-    /** {@code service} false (the preview build) only records the choice. */
+    /** {@code service} false (the preview build) only records the choice. The same position again changes nothing. */
     static void set(Context c, String kind, boolean value, boolean service) {
         Set<String> on = new HashSet<>(prefs(c).getStringSet("on", Collections.emptySet()));
+        if (on.contains(kind) == value) return;
         if (value) on.add(kind); else on.remove(kind);
         // A newly switched-on kind learns the current state on its next read before it may notify.
         prefs(c).edit().putStringSet("on", on).putBoolean("primed", false).apply();
         PreferenceSyncHub.note(c, "noticeKinds");
         if (!service) return;
-        if (TiboWatch.active(c)) { TiboWatch.start(c, true); TiboWatch.refreshWatch(c); } else TiboWatch.stop(c);
+        if (TiboWatch.active(c)) TiboWatch.start(c, true); else TiboWatch.stop(c);
     }
-    static void threshold(Context c, String which, int value) { prefs(c).edit().putInt(which, value).apply(); PreferenceSyncHub.note(c, "daily".equals(which) ? "dailyLine" : "lowLine"); }
+    /**
+     * daily, low or creditsLine. Picking the line already stored does nothing, so opening the menu cannot clear the
+     * first-read latch. A real change does not clear it either: the next read would otherwise mark the day fired and
+     * drop the notice this line was set to catch.
+     */
+    static void threshold(Context c, String which, int value) {
+        String sync = switch (which) { case "daily" -> "dailyLine"; case "low" -> "lowLine"; case "creditsLine" -> "creditsLine"; default -> null; };
+        if (sync == null) return;
+        int fallback = "daily".equals(which) ? 30 : "low".equals(which) ? 10 : Notices.CREDIT_DEFAULT;
+        if (prefs(c).getInt(which, fallback) == value) return;
+        prefs(c).edit().putInt(which, value).apply();
+        PreferenceSyncHub.note(c, sync);
+    }
 
     /** One read for every switched-on kind; runs on the watch's background thread. Failures are only recorded. */
     @android.annotation.SuppressLint("ApplySharedPref")
@@ -70,7 +90,7 @@ final class NoticeCenter {
 
     static void channels(Context c) {
         NotificationChannel quota = new NotificationChannel(CH_QUOTA, "Token 额度提醒", NotificationManager.IMPORTANCE_DEFAULT);
-        quota.setDescription("当天消耗、额度将用完、额度重置、账号与重置卡"); quota.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+        quota.setDescription("当天消耗、Codex 积分、额度将用完、额度重置、账号与重置卡"); quota.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
         NotificationChannel sites = new NotificationChannel(CH_SITES, "站点状态", NotificationManager.IMPORTANCE_HIGH);
         sites.setDescription("监测中的站点离线与恢复"); sites.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
         // A channel's importance cannot be raised after it exists, so 增强提醒 has a channel of its own.
@@ -82,8 +102,10 @@ final class NoticeCenter {
     }
     static boolean enhanced(Context c) { return prefs(c).getBoolean("enhanced", false); }
     static boolean persistent(Context c) { return enhanced(c) && prefs(c).getBoolean("persistent", false); }
-    /** 增强提醒 off also ends 持续提醒 and silences anything still ringing. */
+    /** 增强提醒 off also ends 持续提醒 and silences anything still ringing. The same position again changes nothing. */
     static void setMode(Context c, String which, boolean value) {
+        if (!"enhanced".equals(which) && !"persistent".equals(which)) return;
+        if (prefs(c).getBoolean(which, false) == value) return;
         prefs(c).edit().putBoolean(which, value).apply();
         PreferenceSyncHub.note(c, "enhanced".equals(which) ? "enhancedNotice" : "persistentNotice");
         if (!persistent(c)) ackAll(c);

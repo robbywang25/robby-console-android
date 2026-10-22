@@ -1,5 +1,6 @@
 package wang.robby.console.android;
 
+import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,6 +44,8 @@ final class Dashboard {
     }
     static String toggleHidden(String saved, String id) { Set<String> ids = hiddenTokens(saved); if (!ids.remove(id) && id.matches("[a-z0-9-]{1,32}")) ids.add(id); return String.join(",", ids); }
     static final String HIDDEN_TOKENS = "tokenBoardHidden", CLOCKS = "boardClocks", TOKEN_ROWS = "tokenBoardRows";
+    /** The Token card lists every connected account, up to this many. Eight used to drop TodayAI 全球版. */
+    static final int MAX_TOKEN_ROWS = 32;
 
     /** 重置日历 on 总览 lists the resets in a day range, chosen in 编辑看板: 今天, or the next 3, 7, 14 or 30 days. */
     static final String CALENDAR_DAYS = "boardCalendarDays";
@@ -60,15 +63,29 @@ final class Dashboard {
         for (QuotaCalendar.Event e : events) if (e.at > now && e.day != null && !e.day.isAfter(last)) out.add(e);
         out.sort(java.util.Comparator.comparingLong(e -> e.at)); return out;
     }
+    /**
+     * Accounts the Token card shows, in the order given: on the page, not hidden, at most {@link #MAX_TOKEN_ROWS}.
+     * Two accounts of one product both stay, and names are left as they arrived.
+     */
+    static List<JSONObject> tokenBoardAccounts(List<JSONObject> accounts, Set<String> hidden) {
+        List<JSONObject> out = new ArrayList<>(); if (accounts == null) return out;
+        Set<String> hide = hidden == null ? Set.of() : hidden;
+        for (JSONObject a : accounts) {
+            if (a == null || !TokensModel.shownOnPage(a) || hide.contains(a.optString("id"))) continue;
+            if (out.size() >= MAX_TOKEN_ROWS) break;
+            out.add(a);
+        }
+        return out;
+    }
     /** The Token card's last rows as id and product label (ChatGPT Codex, Claude…): layout only, never figures or emails. */
     static List<String[]> tokenRows(String saved) {
         List<String[]> out = new ArrayList<>(); if (saved == null) return out;
-        for (String part : saved.split("\n")) { int bar = part.indexOf('|'); if (bar <= 0 || out.size() >= 8) continue;
+        for (String part : saved.split("\n")) { int bar = part.indexOf('|'); if (bar <= 0 || out.size() >= MAX_TOKEN_ROWS) continue;
             String id = part.substring(0, bar), label = label(part.substring(bar + 1), 32); if (id.matches("[a-z0-9-]{1,32}") && label != null) out.add(new String[]{id, label}); }
         return out;
     }
     static String serializeTokenRows(List<String[]> rows) {
-        List<String> parts = new ArrayList<>(); for (String[] r : rows) { String label = label(r[1], 32); if (r[0].matches("[a-z0-9-]{1,32}") && label != null && parts.size() < 8) parts.add(r[0] + "|" + label); }
+        List<String> parts = new ArrayList<>(); for (String[] r : rows) { String label = label(r[1], 32); if (r[0].matches("[a-z0-9-]{1,32}") && label != null && parts.size() < MAX_TOKEN_ROWS) parts.add(r[0] + "|" + label); }
         return String.join("\n", parts);
     }
     static List<String[]> tokenRows(android.content.Context c) { return tokenRows(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(TOKEN_ROWS, null)); }

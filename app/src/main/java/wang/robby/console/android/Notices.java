@@ -18,13 +18,15 @@ import java.util.*;
  */
 final class Notices {
     private Notices() {}
-    static final String DAILY = "daily", LOW = "low", RESET = "reset", ACCOUNT = "account", CARD = "card", SITES = "sites";
-    static final List<String> KINDS = List.of(DAILY, LOW, RESET, ACCOUNT, CARD, SITES);
-    static final int[] DAILY_CHOICES = {10, 20, 30, 40, 50, 70}, LOW_CHOICES = {5, 10, 20, 30};
+    static final String DAILY = "daily", CREDITS = "credits", LOW = "low", RESET = "reset", ACCOUNT = "account", CARD = "card", SITES = "sites";
+    static final List<String> KINDS = List.of(DAILY, CREDITS, LOW, RESET, ACCOUNT, CARD, SITES);
+    static final int[] DAILY_CHOICES = {10, 20, 30, 40, 50, 70}, LOW_CHOICES = {5, 10, 20, 30}, CREDIT_CHOICES = {20, 50, 100, 200, 500};
+    static final int CREDIT_DEFAULT = 50;
 
     static final class Settings {
-        final Set<String> on; final int daily, low;
-        Settings(Set<String> on, int daily, int low) { this.on = on; this.daily = daily; this.low = low; }
+        final Set<String> on; final int daily, low, credits;
+        Settings(Set<String> on, int daily, int low) { this(on, daily, low, CREDIT_DEFAULT); }
+        Settings(Set<String> on, int daily, int low, int credits) { this.on = on; this.daily = daily; this.low = low; this.credits = credits; }
         boolean has(String kind) { return on.contains(kind); }
     }
     static final class Notice {
@@ -92,10 +94,36 @@ final class Notices {
                 if (w == main) daily(out, e, s, key, name, w, r, last, known, refilled, today);
                 put(e, "last", r); put(e, "resetsAt", resets); put(e, "seenAt", now);
             }
+            credits(out, state, a, name, s, today, now);
             if (s.has(CARD)) cards(out, state, a, name, now);
         }
         prune(state.section("windows"), now);
+        prune(state.section("credits"), now);
         return out;
+    }
+    /**
+     * Codex 积分消耗: the phone remembers the day's starting balance and adds each drop. A rise is a top-up, so the new
+     * balance becomes the baseline and what was used before it does not carry. Unlimited and missing balances stay quiet.
+     * One notice per account per local day, once the day's drops reach the point line.
+     */
+    private static void credits(List<Notice> out, State state, JSONObject a, String name, Settings s, String today, long now) {
+        if (!"codex".equals(a.optString("product"))) return;
+        JSONObject credits = a.optJSONObject("credits");
+        if (credits == null || Boolean.TRUE.equals(credits.opt("unlimited")) || !(credits.opt("remaining") instanceof Number)) return;
+        double left = ((Number) credits.opt("remaining")).doubleValue();
+        if (Double.isNaN(left) || left < 0) return;
+        JSONObject e = state.entry("credits", a.optString("id"));
+        boolean sameDay = today.equals(e.optString("day")), known = sameDay && e.has("last");
+        double used = sameDay ? e.optDouble("used", 0) : 0, last = known ? e.optDouble("last") : left;
+        boolean fired = sameDay && e.optBoolean("fired", false);
+        if (known) { if (left > last) used = 0; else used += Math.max(0, last - left); }
+        double base = !known || left > last ? left : e.optDouble("base", last);
+        put(e, "day", today); put(e, "last", left); put(e, "base", base); put(e, "used", used); put(e, "fired", fired); put(e, "seenAt", now);
+        if (s.has(CREDITS) && !fired && used >= s.credits) {
+            out.add(new Notice("credits:" + a.optString("id") + ":" + today, CREDITS, name + " 今天已用掉 " + fmt(Math.floor(used)) + " 点积分",
+                "超过你设的每日 " + s.credits + " 点提醒线，现在剩 " + fmt(left) + " 点。", "tokens"));
+            put(e, "fired", true);
+        }
     }
     private static void daily(List<Notice> out, JSONObject e, Settings s, String key, String name, JSONObject w, double r, double last, boolean known, boolean refilled, String today) {
         double used = today.equals(e.optString("day")) ? e.optDouble("used", 0) : 0; boolean fired = today.equals(e.optString("day")) && e.optBoolean("fired", false);
@@ -146,13 +174,15 @@ final class Notices {
 
     static String label(String kind) {
         switch (kind) {
-            case DAILY: return "当天消耗超过提醒线"; case LOW: return "额度即将用完"; case RESET: return "每周额度已重置";
-            case ACCOUNT: return "账号需要处理"; case CARD: return "重置卡即将过期"; default: return "站点离线与恢复";
+            case DAILY: return "当天消耗超过提醒线"; case CREDITS: return "Codex 积分消耗"; case LOW: return "额度即将用完";
+            case RESET: return "每周额度已重置"; case ACCOUNT: return "账号需要处理"; case CARD: return "重置卡即将过期";
+            default: return "站点离线与恢复";
         }
     }
     static String detail(String kind, Settings s) {
         switch (kind) {
             case DAILY: return "任一账号当天用掉主要额度的 " + s.daily + "% 时提醒";
+            case CREDITS: return "任一 Codex 账号当天积分余额累计下降 " + s.credits + " 点时提醒";
             case LOW: return "任一额度剩余低于 " + s.low + "% 时提醒";
             case RESET: return "每周等长周期额度被重置时提醒";
             case ACCOUNT: return "账号需要重新授权或读不到时提醒";

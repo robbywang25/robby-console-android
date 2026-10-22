@@ -30,7 +30,7 @@ final class PreferenceSync {
         "board", "clocks", "calendarDays", "hiddenQuotaCards",
         "glassOn", "glassLevel", "statusBar", "islandLeft", "islandRight",
         "hiddenFeatures", "shownFeatures", "recentFeatures",
-        "noticeKinds", "dailyLine", "lowLine", "enhancedNotice", "persistentNotice", "tiboNotice");
+        "noticeKinds", "dailyLine", "lowLine", "creditsLine", "enhancedNotice", "persistentNotice", "tiboNotice");
     /**
      * Stored on the phone, never uploaded. Listed so a test can hand every one of them in and watch the document
      * stay clear of them: session, cutout geometry, read caches, reminder runtime, signature and avatar.
@@ -44,6 +44,7 @@ final class PreferenceSync {
         "islandLeftPx", "islandTopPx", "islandRightPx", "islandBottomPx",
         "screenWidth", "statusHeight",
         "state", "pending", "seen", "lastCheckAt", "lastError", "primed",
+        "creditBase", "creditFired",
         "enabledAt", "round", "pendingTest", "more",
         "hideStatusBar", "prefSyncVersion", "prefSyncUpdatedAt", "prefSyncBase", "prefSyncDirty", "prefSyncPending");
 
@@ -137,6 +138,7 @@ final class PreferenceSync {
             copy(raw, "noticeKinds", notices, "on");
             copy(raw, "dailyLine", notices, "daily");
             copy(raw, "lowLine", notices, "low");
+            copy(raw, "creditsLine", notices, "creditsLine");
             copy(raw, "enhancedNotice", notices, "enhanced");
             copy(raw, "persistentNotice", notices, "persistent");
         }
@@ -405,6 +407,7 @@ final class PreferenceSync {
             case "noticeKinds" -> kinds(raw);
             case "dailyLine" -> choice(raw, boxes(Notices.DAILY_CHOICES));
             case "lowLine" -> choice(raw, boxes(Notices.LOW_CHOICES));
+            case "creditsLine" -> choice(raw, boxes(Notices.CREDIT_CHOICES));
             default -> null;
         };
     }

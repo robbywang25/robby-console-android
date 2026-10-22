@@ -156,11 +156,12 @@ public final class FeatureRenderer {
             case "okx": u.big(number(p, "totalEquityUsd"), "总权益 USD · 持仓 " + number(p, "openPositionCount")); break;
             case "clipboard": u.big(String.valueOf(arr(p, "items").length()), "条剪贴内容 · 来源 " + source(obj(p, "sourceStatus"))); break;
             case "tokens": {
-                // One row per connected account; accounts not set up are left off the board (the page lists them).
-                long now = System.currentTimeMillis(); int shown = 0; java.text.DecimalFormat whole = new java.text.DecimalFormat("0");
+                // One row per connected account, including both TodayAI lines. Accounts not set up stay off the board.
+                long now = System.currentTimeMillis(); java.text.DecimalFormat whole = new java.text.DecimalFormat("0");
                 List<JSONObject> accounts = tokenAccounts(p); Set<String> hidden = Dashboard.hiddenTokens(context); boolean anyHidden = false; List<String[]> rowsShown = new ArrayList<>();
-                for (JSONObject a : accounts) { String st = a.optString("status");
-                    if (!TokensModel.shownOnPage(a)) continue; if (hidden.contains(a.optString("id"))) { anyHidden = true; continue; } if (shown >= 8) continue; shown++; rowsShown.add(new String[]{a.optString("id"), s(a, "label")});
+                for (JSONObject a : accounts) if (a != null && TokensModel.shownOnPage(a) && hidden.contains(a.optString("id"))) anyHidden = true;
+                List<JSONObject> board = Dashboard.tokenBoardAccounts(accounts, hidden); int shown = 0;
+                for (JSONObject a : board) { String st = a.optString("status"); shown++; rowsShown.add(new String[]{a.optString("id"), s(a, "label")});
                     List<TokensModel.Period> periods = TokensModel.boardWindows(a);
                     Double min = null; for (TokensModel.Period pd : periods) { Double pc = TokensModel.remaining(pd.window); if (pc != null && (min == null || pc < min)) min = pc; }
                     // The countdown is the first window's: Claude's 5 hours, otherwise the tightest window.
@@ -179,7 +180,7 @@ public final class FeatureRenderer {
                     // Codex: Points and reset cards on a small second line, aligned with the account name.
                     String extras = TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault());
                     if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }
-                if (shown == 0) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");
+                if (board.isEmpty()) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");
                 Dashboard.saveTokenRows(context, rowsShown);
                 break; }
             case "calendar": {

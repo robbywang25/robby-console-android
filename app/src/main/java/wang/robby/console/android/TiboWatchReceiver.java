@@ -17,7 +17,11 @@ public final class TiboWatchReceiver extends BroadcastReceiver {
                 if (!TiboWatch.active(context)) return;
                 // The exact alarm lets the service start from the background; if it is still refused, read here.
                 try { context.startForegroundService(new Intent(context, TiboWatchService.class).putExtra("check", true)); }
-                catch (RuntimeException refused) { PendingResult result = goAsync(); TiboWatch.checkAsync(context, result::finish); }
+                catch (RuntimeException refused) {
+                    PendingResult result = goAsync();
+                    // A read already running does not call the callback, so the broadcast result still has to finish.
+                    if (!TiboWatch.checkAsync(context, result::finish)) result.finish();
+                }
                 break; }
             case Intent.ACTION_BOOT_COMPLETED: case Intent.ACTION_MY_PACKAGE_REPLACED: NoticeCenter.resume(context); TiboWatch.start(context, true); break;
             default: break;

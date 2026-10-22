@@ -1,7 +1,10 @@
 package wang.robby.console.android;
 
 import static org.junit.Assert.*;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import org.json.JSONObject;
 import org.junit.Test;
 
 /** The saved 看板 combination must survive bad input, keep its order, and never read the same path twice. */
@@ -66,6 +69,49 @@ public final class DashboardTest {
     }
     @Test public void clockCardNeedsNoRead() {
         assertEquals(List.of("tokens/quotas"), Dashboard.paths(List.of("clocks", "tokens", "calendar")));
+    }
+    @Test public void tokenBoardKeepsBothTodayAiRowsAndMoreThanEight() throws Exception {
+        List<JSONObject> accounts = new ArrayList<>();
+        accounts.add(account("codex-1", "codex", "connected"));
+        accounts.add(account("codex-2", "codex", "connected"));
+        accounts.add(account("chatgpt-dots", "chatgpt-dots", "connected"));
+        accounts.add(account("chatgpt-chat", "chatgpt-chat", "connected"));
+        accounts.add(account("claude-1", "claude", "connected"));
+        accounts.add(account("claude-2", "claude", "not_configured"));
+        accounts.add(account("grok", "grok", "needs_auth"));
+        accounts.add(account("grok-bot", "grok-bot", "connected"));
+        accounts.add(account("cursor", "cursor", "unavailable"));
+        accounts.add(account("cursor-2", "cursor", "connected"));
+        accounts.add(account("today-cn", "today-cn", "connected"));
+        accounts.add(account("today-global", "today-global", "stale"));
+        List<JSONObject> shown = Dashboard.tokenBoardAccounts(accounts, Set.of());
+        List<String> ids = new ArrayList<>(); for (JSONObject a : shown) ids.add(a.optString("id"));
+        assertEquals(List.of("codex-1", "codex-2", "claude-1", "grok", "grok-bot", "cursor", "cursor-2", "today-cn", "today-global"), ids);
+        assertEquals("today-cn", ids.get(ids.size() - 2));
+        assertEquals("today-global", ids.get(ids.size() - 1));
+        assertTrue(ids.indexOf("today-cn") < ids.indexOf("today-global"));
+        List<JSONObject> hidden = Dashboard.tokenBoardAccounts(accounts, Set.of("today-global"));
+        List<String> left = new ArrayList<>(); for (JSONObject a : hidden) left.add(a.optString("id"));
+        assertEquals(List.of("codex-1", "codex-2", "claude-1", "grok", "grok-bot", "cursor", "cursor-2", "today-cn"), left);
+        assertFalse(left.contains("today-global"));
+        assertFalse(left.contains("claude-2"));
+        assertFalse(left.contains("chatgpt-dots"));
+        assertFalse(left.contains("chatgpt-chat"));
+        List<String[]> rows = new ArrayList<>();
+        for (int i = 0; i < 8; i++) rows.add(new String[]{"acct-" + i, "Label " + i});
+        rows.add(new String[]{"today-global", "TodayAI 全球版"});
+        List<String[]> back = Dashboard.tokenRows(Dashboard.serializeTokenRows(rows));
+        assertTrue(back.size() > 8);
+        assertEquals(9, back.size());
+        assertEquals("today-global", back.get(8)[0]);
+        assertEquals("TodayAI 全球版", back.get(8)[1]);
+        assertEquals(32, Dashboard.MAX_TOKEN_ROWS);
+        List<JSONObject> many = new ArrayList<>();
+        for (int i = 0; i < 40; i++) many.add(account("row-" + i, "codex", "connected"));
+        assertEquals(Dashboard.MAX_TOKEN_ROWS, Dashboard.tokenBoardAccounts(many, Set.of()).size());
+    }
+    private static JSONObject account(String id, String product, String status) throws Exception {
+        return new JSONObject().put("id", id).put("product", product).put("status", status).put("label", product);
     }
     @Test public void tokenRowsKeepIdsAndProductLabelsOnly() {
         String saved = Dashboard.serializeTokenRows(List.of(new String[]{"codex-1", "ChatGPT Codex"}, new String[]{"today-cn", "TodayAI 中国版"}, new String[]{"Bad Id", "x"}, new String[]{"grok", "a|b\nc"}));
