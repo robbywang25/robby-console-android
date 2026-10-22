@@ -22,14 +22,16 @@ final class AccountCenter {
     static final String SIGNATURE = "account/profile/signature";
     /** Account-wide app settings (看板, 外观, 通知开关). Same write scope as the signature. */
     static final String PREFERENCES = "account/preferences";
+    /** 心力球's keys and service settings, shared by the account's phones; sealed by the gateway, same scope as the signature. */
+    static final String APP_SECRETS = "account/app-secrets";
     /** The web user center; binding Apple or WeChat starts there, since it needs the provider's own sign-in page. */
     static final String WEB = "https://god.robby.wang/account/";
     static final String SETTINGS = "https://auth.god.robby.wang/settings/two-factor-authentication";
     /** Devices shown before the rest fold under one row. */
     static final int FOLD = 6;
 
-    static boolean readRoute(String route) { return route.equals(STATUS) || route.equals(DEVICES) || route.equals(PREFERENCES); }
-    static boolean writeRoute(String route) { return route.equals(EMAIL_SEND) || route.equals(EMAIL_VERIFY) || route.equals(UNBIND) || route.equals(REVOKE_OTHERS) || route.equals(SIGNATURE) || route.equals(PREFERENCES); }
+    static boolean readRoute(String route) { return route.equals(STATUS) || route.equals(DEVICES) || route.equals(PREFERENCES) || route.equals(APP_SECRETS); }
+    static boolean writeRoute(String route) { return route.equals(EMAIL_SEND) || route.equals(EMAIL_VERIFY) || route.equals(UNBIND) || route.equals(REVOKE_OTHERS) || route.equals(SIGNATURE) || route.equals(PREFERENCES) || route.equals(APP_SECRETS); }
 
     static final class Passkey {
         final String id, name, detail;

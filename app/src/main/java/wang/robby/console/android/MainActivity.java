@@ -152,6 +152,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         askSyncedNotify();
         // The microphone may only start while God is in front: opening the app resumes 心力球 after a reboot or update.
         if(!PreviewMode.isBuild()&&MindBall.enabled(this))MindBall.start(this);
+        if(!PreviewMode.isBuild())MindBall.syncAsync(this);
         MindBallPage.refresh();
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
         // A change waiting for a session that may now write (after signing in again) goes at once.

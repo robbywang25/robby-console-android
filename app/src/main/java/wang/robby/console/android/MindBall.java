@@ -253,7 +253,11 @@ final class MindBall {
         Context app = c.getApplicationContext();
         WORK.execute(() -> { busy = true; notifyChanged(); try { process(app, force); } finally { busy = false; notifyChanged(); refreshNotification(app); if (done != null) main().post(done); } });
     }
+    /** Brings the keys from the account (or sends this phone's), then redraws; on the worker, so it never races a transcription. */
+    static void syncAsync(Context c) { Context app = c.getApplicationContext(); WORK.execute(() -> { MindBallSync.run(app); notifyChanged(); }); }
     private static void process(Context c, boolean force) {
+        // A key typed on another phone is used for this round already.
+        MindBallSync.run(c);
         purge(c);
         String error = "";
         Set<String> touched = new TreeSet<>();
