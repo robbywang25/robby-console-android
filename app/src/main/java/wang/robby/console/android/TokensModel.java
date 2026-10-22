@@ -47,10 +47,14 @@ final class TokensModel {
      * not allowed), then the reset cards with the earliest expiry among the available ones. Null when there is neither.
      */
     static String boardExtras(JSONObject account, boolean fresh, long now, java.time.ZoneId zone) {
-        // Claude: the row counts down the 5-hour window, so the weekly reset gets the small line.
+        // Claude: both resets on the small line, the 5-hour one first. They come from resetsAt, so a stale reading still
+        // shows when its window starts over; a 5-hour window already past says so instead of vanishing.
         if ("claude".equals(account.opt("product"))) {
-            for (Period p : boardWindows(account)) if ("每周".equals(p.label)) { String left = days(at(p.window.opt("resetsAt")), now); return left == null ? null : "每周额度 " + left; }
-            return null;
+            List<String> parts = new ArrayList<>();
+            for (Period p : boardWindows(account)) { long resets = at(p.window.opt("resetsAt"));
+                if ("5 小时".equals(p.label) && resets > 0) parts.add(resets <= now ? "5 小时额度已重置" : "5 小时额度 " + countdown(resets, now));
+                else if ("每周".equals(p.label)) { String left = days(resets, now); if (left != null) parts.add("每周额度 " + left); } }
+            return parts.isEmpty() ? null : String.join(" · ", parts);
         }
         if (!"codex".equals(account.opt("product"))) return null;
         List<String> parts = new ArrayList<>();

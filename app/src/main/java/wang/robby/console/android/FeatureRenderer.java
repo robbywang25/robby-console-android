@@ -170,7 +170,8 @@ public final class FeatureRenderer {
                     boolean fresh = "connected".equals(st); int level = fresh ? TokensModel.level(min) : 0;
                     r.addView(u.theme.dot(level == 1 ? u.theme.success : level == 2 ? u.theme.warning : level == 3 ? u.theme.danger : u.theme.faint, 7));
                     TextView name = u.text(s(a, "label"), 14, false); name.setTextColor(u.theme.ink); name.setPadding(u.dp(8), 0, 0, 0); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
-                    String cd = fresh ? TokensModel.countdown(reset, now) : null; if (cd != null) r.addView(u.text(cd, 11, false));
+                    // Claude counts its 5-hour and weekly resets down on the small line instead.
+                    String cd = fresh && !"claude".equals(a.opt("product")) ? TokensModel.countdown(reset, now) : null; if (cd != null) r.addView(u.text(cd, 11, false));
                     if (min == null) { TextView val = u.text(TokensModel.status(st), 14, true); val.setPadding(u.dp(10), 0, 0, 0); r.addView(val); }
                     else for (int i = 0; i < periods.size(); i++) { TokensModel.Period pd = periods.get(i); Double pc = TokensModel.remaining(pd.window); if (pc == null) continue;
                         String prefix = (!fresh && i == 0 ? "上次 " : "") + (pd.label == null ? "" : pd.label);

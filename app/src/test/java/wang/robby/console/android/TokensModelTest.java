@@ -149,13 +149,18 @@ public final class TokensModelTest {
         org.json.JSONObject claude = new org.json.JSONObject().put("product", "claude").put("windows", new org.json.JSONArray()
             .put(window("five_hour", "5 小时", 72, null).put("resetsAt", java.time.Instant.ofEpochMilli(now + 2 * H).toString()))
             .put(window("seven_day", "每周", 30, null).put("resetsAt", java.time.Instant.ofEpochMilli(now + 72 * H).toString())));
-        assertEquals("每周额度 3 天后重置", TokensModel.boardExtras(claude, true, now, zone));
+        assertEquals("5 小时额度 2 小时后重置 · 每周额度 3 天后重置", TokensModel.boardExtras(claude, true, now, zone));
+        assertEquals("a stale reading still counts down", "5 小时额度 2 小时后重置 · 每周额度 3 天后重置", TokensModel.boardExtras(claude, false, now, zone));
         claude.getJSONArray("windows").getJSONObject(1).put("resetsAt", java.time.Instant.ofEpochMilli(now + 47 * H + 59 * 60_000L).toString());
-        assertEquals("每周额度 1 天 23 小时后重置", TokensModel.boardExtras(claude, true, now, zone));
+        assertEquals("5 小时额度 2 小时后重置 · 每周额度 1 天 23 小时后重置", TokensModel.boardExtras(claude, true, now, zone));
         claude.getJSONArray("windows").getJSONObject(1).put("resetsAt", java.time.Instant.ofEpochMilli(now + 5 * H).toString());
-        assertEquals("under a day, the usual countdown", "每周额度 " + TokensModel.countdown(now + 5 * H, now), TokensModel.boardExtras(claude, true, now, zone));
+        assertEquals("under a day, the usual countdown", "5 小时额度 2 小时后重置 · 每周额度 " + TokensModel.countdown(now + 5 * H, now), TokensModel.boardExtras(claude, true, now, zone));
         claude.getJSONArray("windows").getJSONObject(1).put("resetsAt", java.time.Instant.ofEpochMilli(now - 1).toString());
-        assertNull("a passed reset says nothing", TokensModel.boardExtras(claude, true, now, zone));
+        assertEquals("a passed weekly reset says nothing", "5 小时额度 2 小时后重置", TokensModel.boardExtras(claude, true, now, zone));
+        claude.getJSONArray("windows").getJSONObject(0).put("resetsAt", java.time.Instant.ofEpochMilli(now - 1).toString());
+        assertEquals("a passed 5-hour window says it started over", "5 小时额度已重置", TokensModel.boardExtras(claude, false, now, zone));
+        claude.getJSONArray("windows").getJSONObject(0).remove("resetsAt");
+        assertNull("no reset times, no line", TokensModel.boardExtras(claude, true, now, zone));
     }
     @org.junit.Test public void boardRefreshFollowsTheServerWithinBounds() throws Exception {
         org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 30)));

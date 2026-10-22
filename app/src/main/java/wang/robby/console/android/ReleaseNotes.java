@@ -15,6 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.31.2", "2026-10-22", "Claude 显示 5 小时重置",
+            "总览 Token 卡片的 Claude 小字先写 5 小时额度多久后重置，再写每周额度。",
+            "读数不是最新时也照常倒计时；5 小时窗口已过会写「5 小时额度已重置」。"),
         new Entry("0.31.1", "2026-10-22", "PST 时钟与账号邮箱",
             "时区时钟的第三个改为 PST，全年按太平洋标准时间（UTC−8）显示，不随夏令时切换。",
             "PST 下方标注中英文全称；Tibo 时钟仍按美西当地时间显示。",
