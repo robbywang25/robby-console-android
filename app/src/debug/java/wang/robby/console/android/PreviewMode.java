@@ -82,7 +82,20 @@ final class PreviewMode {
   org.json.JSONArray history=new org.json.JSONArray();for(int i=1;i<=6;i++)history.put(new JSONObject().put("id","five_hour").put("label","5 小时").put("quotaGroup",JSONObject.NULL).put("model",JSONObject.NULL).put("resetsAt",now.minusSeconds(i*5*3600L).toString()));
   out.getJSONArray("accounts").getJSONObject(2).put("resetHistory",history);
   out.put("tiboReset",tiboPost("2111600000000000013",13,"reset-scheduled","官方预计太平洋时间今晚重置",now.minusSeconds(1800),now.plusSeconds(2*3600+1234)).put("state","scheduled"));
+  // Four more accounts in the server's slots, so the 看板 and the widgets are checked with as many accounts as the owner has.
+  org.json.JSONArray list=out.getJSONArray("accounts"),order=new org.json.JSONArray();
+  for(int i=0;i<list.length();i++){JSONObject a=list.getJSONObject(i);order.put(a);switch(a.getString("id")){
+   case "codex-2"->order.put(extraAccount("codex-3","OpenAI","codex","ChatGPT Codex","demo-three@example.com",45,5,now));
+   case "claude-2"->order.put(extraAccount("claude-3","Anthropic","claude","Claude","demo-claude@example.com",12,2,now));
+   case "grok"->{order.put(extraAccount("grok-bot","xAI","grok-bot","Grok Bot","demo-grok@example.com",88,20,now));order.put(extraAccount("cursor","Cursor","cursor","Cursor","demo-cursor@example.com",52,200,now));}
+   default->{}}}
+  out.put("accounts",order);
   return out;
+ }
+ private static JSONObject extraAccount(String id,String provider,String product,String label,String email,double left,long resetHours,java.time.Instant now)throws Exception{
+  return new JSONObject().put("id",id).put("provider",provider).put("product",product).put("label",label).put("profile",new JSONObject().put("email",email)).put("status","connected").put("reason","connected")
+   .put("checkedAt",now.toString()).put("lastSuccessAt",now.toString()).put("sourceCollectedAt",now.toString()).put("source","演示采集器")
+   .put("windows",new org.json.JSONArray().put(new JSONObject().put("id","weekly").put("label","每周额度").put("quotaGroup","default").put("remainingPercent",left).put("unit","percent").put("resetsAt",now.plusSeconds(resetHours*3600).toString()).put("unlimited",false)));
  }
  private static JSONObject tiboPost(String id,int day,String kind,String title,java.time.Instant at,java.time.Instant deadline)throws Exception{
   return new JSONObject().put("id",id).put("day",day).put("kind",kind).put("title",title).put("publishedAt",at.toString()).put("deadline",deadline==null?JSONObject.NULL:deadline.toString())

@@ -18,6 +18,8 @@
         <TextView android:id="@+id/wf_unit" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:paddingStart="4dp" android:paddingEnd="0dp"
             android:textSize="13sp" android:textColor="@color/widget_muted" android:singleLine="true" android:ellipsize="end" />
     </LinearLayout>
+    <ProgressBar android:id="@+id/wf_bar" style="?android:attr/progressBarStyleHorizontal" android:layout_width="match_parent" android:layout_height="6dp" android:layout_marginTop="8dp"
+        android:max="100" android:progressDrawable="@drawable/widget_bar" android:visibility="gone" />
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical" android:paddingTop="6dp">
         <TextView android:id="@+id/wf_dot" android:layout_width="wrap_content" android:layout_height="wrap_content" android:paddingStart="0dp" android:paddingEnd="5dp" android:text="@string/widget_dot" android:importantForAccessibility="no"
             android:textSize="11sp" android:textColor="@color/widget_ok" android:visibility="gone" />

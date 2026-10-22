@@ -170,9 +170,16 @@ public final class ConsoleTheme {
         c.drawColor((hue(name)&0x00ffffff)|0x2e000000);c.drawColor(dark?0xff1c1f26:0xfff6f8fc,android.graphics.PorterDuff.Mode.DST_OVER);
         Symbol s=new Symbol(name,0xff0f1115);int g=dp(44);s.setBounds((px-g)/2,(px-g)/2,(px+g)/2,(px+g)/2);s.draw(c);return b;
     }
-    /** A widget's icon tile: the symbol in white on a rounded square of its hue, the same in light and dark. */
+    private static final java.util.Map<String,android.graphics.Bitmap> WIDGET_ICONS=new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * A widget's icon tile: the symbol in white on a rounded square of its hue, the same in light and dark. Cached, so the
+     * eight sizes of one widget share a single bitmap in the update instead of carrying eight copies.
+     */
     static android.graphics.Bitmap widgetIcon(Context context,String name,int hue,int sizeDp){
-        float d=context.getResources().getDisplayMetrics().density;int px=Math.round(sizeDp*d);android.graphics.Bitmap b=android.graphics.Bitmap.createBitmap(px,px,android.graphics.Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);
+        float d=context.getResources().getDisplayMetrics().density;return WIDGET_ICONS.computeIfAbsent(name+"|"+hue+"|"+sizeDp+"|"+d,k->drawWidgetIcon(name,hue,Math.round(sizeDp*d)));
+    }
+    private static android.graphics.Bitmap drawWidgetIcon(String name,int hue,int px){
+        android.graphics.Bitmap b=android.graphics.Bitmap.createBitmap(px,px,android.graphics.Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);
         Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);fill.setColor(hue);c.drawRoundRect(0,0,px,px,px*.28f,px*.28f,fill);
         Symbol s=new Symbol(name,Color.WHITE);s.p.setStrokeWidth(2.1f);int g=Math.round(px*.64f);s.setBounds((px-g)/2,(px-g)/2,(px+g)/2,(px+g)/2);s.draw(c);return b;
     }

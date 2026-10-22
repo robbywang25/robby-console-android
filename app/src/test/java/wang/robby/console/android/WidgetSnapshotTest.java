@@ -25,20 +25,31 @@ public final class WidgetSnapshotTest {
         double[] left = {90, 15, 60, 40, 75, 5, 50};
         for (int i = 0; i < left.length; i++) accounts.put(account("codex-" + i, "codex", left[i], NOW + (i + 1) * H));
         accounts.put(account("chatgpt-chat", "chatgpt-chat", 1, NOW + H));
-        return new JSONObject().put("accounts", accounts).put("additionalAccounts", new JSONArray().put(account("today-global", "todayai", 30, NOW + 30 * H)));
+        return new JSONObject().put("accounts", accounts).put("additionalAccounts", new JSONArray().put(account("today-global", "today-global", 30, NOW + 30 * H)));
     }
 
-    @Test public void tokensKeepSixLeastLeftFirstWithoutEmailsOrHiddenCards() throws Exception {
+    @Test public void tokensListEveryBoardAccountKindByKindWithoutEmailsOrHiddenCards() throws Exception {
         JSONObject snap = WidgetSnapshot.tokens(quotas(), Set.of("codex-5"));
         JSONArray rows = snap.getJSONArray("rows");
-        assertEquals(6, rows.length());
-        assertEquals("the hidden card is left out and the least left comes first", 15, rows.getJSONObject(0).getLong("percent"));
-        for (int i = 1; i < rows.length(); i++) assertTrue(rows.getJSONObject(i - 1).getLong("percent") <= rows.getJSONObject(i).getLong("percent"));
+        assertEquals("six Codex (one hidden, ChatGPT 聊天 never shown) and TodayAI", 7, rows.length()); assertEquals(7, snap.getInt("total"));
+        assertEquals("the board's order, not least left first", "Codex 1", rows.getJSONObject(0).getString("name")); assertEquals(90, rows.getJSONObject(0).getLong("percent"));
+        assertEquals("Codex 6", rows.getJSONObject(5).getString("name")); assertEquals("TodayAI 全球版", rows.getJSONObject(6).getString("name"));
+        assertEquals("OpenAI", rows.getJSONObject(0).getString("kind")); assertEquals("TodayAI", rows.getJSONObject(6).getString("kind"));
         assertFalse("no email, local part or account id", snap.toString().contains("@") || snap.toString().contains("example") || snap.toString().contains("codex-"));
-        assertTrue(WidgetSnapshot.low(rows.getJSONObject(0)));
-        assertFalse(WidgetSnapshot.low(rows.getJSONObject(5)));
-        String line = WidgetSnapshot.tokenLine(rows.getJSONObject(0), BEIJING, NOW);
-        assertTrue(line, line.contains("15%") && line.endsWith(" 重置"));
+        assertTrue(WidgetSnapshot.low(rows.getJSONObject(1))); assertFalse(WidgetSnapshot.low(rows.getJSONObject(0)));
+        String line = WidgetSnapshot.tokenLine(rows.getJSONObject(1), BEIJING, NOW);
+        assertTrue(line, line.startsWith("Codex 2  15%") && line.endsWith(" 重置"));
+    }
+    @Test public void tokensKeepOneKindTogetherWhateverTheServerOrder() throws Exception {
+        JSONArray accounts = new JSONArray().put(account("codex-1", "codex", 40, NOW + H)).put(account("claude-1", "claude", 70, NOW + H)).put(account("codex-2", "codex", 10, NOW + H))
+            .put(account("grok", "grok", 55, NOW + H).put("status", "needs_auth").put("windows", new JSONArray()));
+        JSONArray rows = WidgetSnapshot.tokens(new JSONObject().put("accounts", accounts), Set.of()).getJSONArray("rows");
+        String[] names = new String[rows.length()]; for (int i = 0; i < names.length; i++) names[i] = rows.getJSONObject(i).getString("name");
+        assertArrayEquals(new String[]{"Codex 1", "Codex 2", "Claude", "Grok Build"}, names);
+        JSONObject grok = rows.getJSONObject(3);
+        assertFalse(WidgetSnapshot.fresh(grok)); assertEquals("待授权", WidgetSnapshot.value(grok)); assertEquals("待授权", grok.getString("state"));
+        assertEquals("openai", WidgetSnapshot.family("OpenAI")); assertEquals("claude", WidgetSnapshot.family("claude")); assertEquals("green", WidgetSnapshot.family("today-cn"));
+        assertTrue("0.35 snapshots have no flag and count as current", WidgetSnapshot.fresh(new JSONObject().put("percent", 5)));
     }
     @Test public void calendarListsTheNextFiveWithoutAccounts() throws Exception {
         JSONArray rows = WidgetSnapshot.calendar(quotas(), BEIJING, NOW).getJSONArray("rows");

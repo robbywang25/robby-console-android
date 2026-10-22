@@ -644,3 +644,19 @@ Find：0.34.1 那次装好后，用 uiautomator 读心力球页面的文字，�
 - 其他行为不变。
 
 验证：`check.sh` 通过（250 项 JVM 测试 0 失败，新增 `onlyABusyGatewayIsRetriedAndOnlyOnce`；lint debug/release 0 错误），Release 为正式证书签名。Find：覆盖安装 0.36.1（versionCode 60，保留登录），安装文件 SHA256 `4b5ae482…5aa2330` 与构建产物一致；回到桌面再打开 God，这次同步没有收到 429，也没有崩溃。心力球设置里两个 Key 都显示「已填写」，「多台手机同步」显示「已同步到账号」。
+
+## v0.37.0：Token 小组件显示全部账号（2026-10-23）
+
+本人要求「小组件增加所有 agent 展示，同类型的顺序在一起，和看板保持一致，视觉风格再提高美观和质感」。
+
+- **数据**：`WidgetSnapshot.tokens` 改用 `Dashboard.tokenBoardAccounts`（与看板 Token 卡片同一份账号、同样排除编辑看板里隐藏的账号），再按 `TokensModel.SECTIONS` 做稳定排序，同类相邻、类内保持看板顺序，不再按余量从少到多、也不再只取 6 个（最多 12 个，另存 `total`）。每行新增 `kind`（OpenAI / Claude / …）、`fresh`（本身读数是否为 connected）和 `state`（不是 connected 时的状态文字，如「待授权」）。同一产品出现多次时编号「Codex 1、Codex 2」，仍不含邮箱和账号 id。重置日历每行新增 `product`。0.35 的旧快照没有 `fresh`，按最新读数处理。
+- **布局**：`widget_tokens` 是 6 行 × 2 格，每格依次为类别色点、名称、重置时间、百分比和余量条。`GodWidgets.tokens` 按可用高度算出行数：全部放得下时单列，并在宽尺寸下写重置时间；放不下且宽度 ≥ 200 × 字号倍数时改为两列，名称 12sp、百分比 13sp，用 `shortName` 缩写成「TodayAI 中国 / 全球」；仍放不下时，右上角显示「+N」，读屏会读「另有 N 个账号放不下」。剩余高度平均分到行间（每行最多 12dp，用 `setViewPadding`）。Android 12+ 的两列模式更紧凑：余量条 3dp、上间距 3dp（`setViewLayoutHeight` / `setViewLayoutMargin`），名称和数字关掉 `includeFontPadding`，每行按 10 + 18sp × 倍数估算（实测约 27dp）。默认尺寸改为 4×3（`targetCellHeight=3`，Android 11 为 `minHeight=180dp`），尺寸档位加了 330dp 高。为容纳 12 格，`widget_tokens` 标注了 `tools:ignore="TooManyViews"`。
+- **类别色**：`widget_openai / claude / grok / green`，浅色和深色各一套，与编辑看板里账号圆点的 `TokensPages.tint` 一致；`WidgetSnapshot.family` 把类别或产品映射到色系。
+- **质感**：卡片渐变加深（浅色 `#FFFFFF → #F2EFF3FA`，深色 `#F72C313D → #F2151820`），细边略加重。运行状态的大数字下加 6dp 在线比例条（有异常时为琥珀色）。
+- **图标缓存**：`ConsoleTheme.widgetIcon` 按「符号 + 色相 + 尺寸 + 密度」缓存。原先 8 个尺寸各画一张位图，跨进程的小组件更新里会带 8 份；RemoteViews 只合并同一个 Bitmap 对象，所以缓存后只带一份。在预览版里临时把各小组件 8 档 RemoteViews 写入 Parcel 测大小：Token 额度 24.9 KB、重置日历 13.7 KB、运行状态 8.5 KB、微信消息 7.0 KB、时区时钟 9.1 KB，远低于 Binder 约 1 MB 的事务上限。测量代码已删除。
+
+验证：`check.sh` 通过（251 项 JVM 测试 0 失败，新增 `tokensListEveryBoardAccountKindByKindWithoutEmailsOrHiddenCards`、`tokensKeepOneKindTogetherWhateverTheServerOrder`；测试数据里的 TodayAI 改为真实的 `today-global` 产品）。Find 上预览版「我 → 小组件」：浅色和深色下合成的 6 个账号排成两列，依次是 Codex 1、Codex 2、Claude、Grok Build（待授权、灰显）、TodayAI 中国、TodayAI 全球，类别色点和余量条颜色正确，重置日历每项带色点，运行状态显示 6/9 比例条。1.6 倍大字体下，两列名称起初被截成「Cod…」，改为宽度不足 200 × 倍数时用单列：显示 3 行，右上角「+3 · 00:50」。
+
+本人在 0.36.1 的「我 → 小组件」里发现没有 TodayAI 全球版：旧规则最多 6 个、按余量从少到多排，预览框又只放得下 4 行，余量多的全球版排在最后被截掉了。为此在预览版里加了 4 个合成账号（Codex 3、Claude 3、Grok Bot、Cursor，按服务器顺序插入，邮箱仍是 example.com），共显示 10 个账号：4×3 的预览框里全部显示，依次是 Codex 1～3、Claude 1～2、Grok Build、Grok Bot、Cursor、TodayAI 中国、TodayAI 全球。临时把预览改成 4×2 高度时也能全部放下；第一次截图最后一行的余量条压到了底边，按实测行高调整后不再压边，之后预览改回 4×3。
+
+未验证：真实账号在正式版「我 → 小组件」里的显示（登录后无法截图，需本人确认）；在 ColorOS 桌面实际格子里的效果。

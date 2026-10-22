@@ -25,11 +25,17 @@ final class GodWidgets {
     private GodWidgets() {}
     static final String CLOCK = "clock";
     static final String ACTION_REFRESH = "wang.robby.console.android.WIDGETS_REFRESH";
-    private static final int[][] TOKEN_IDS = {{R.id.wt_row1, R.id.wt_name1, R.id.wt_reset1, R.id.wt_pct1, R.id.wt_bar1}, {R.id.wt_row2, R.id.wt_name2, R.id.wt_reset2, R.id.wt_pct2, R.id.wt_bar2},
-        {R.id.wt_row3, R.id.wt_name3, R.id.wt_reset3, R.id.wt_pct3, R.id.wt_bar3}, {R.id.wt_row4, R.id.wt_name4, R.id.wt_reset4, R.id.wt_pct4, R.id.wt_bar4},
-        {R.id.wt_row5, R.id.wt_name5, R.id.wt_reset5, R.id.wt_pct5, R.id.wt_bar5}, {R.id.wt_row6, R.id.wt_name6, R.id.wt_reset6, R.id.wt_pct6, R.id.wt_bar6}};
-    private static final int[][] CALENDAR_IDS = {{R.id.wk_row1, R.id.wk_day1, R.id.wk_time1, R.id.wk_text1}, {R.id.wk_row2, R.id.wk_day2, R.id.wk_time2, R.id.wk_text2},
-        {R.id.wk_row3, R.id.wk_day3, R.id.wk_time3, R.id.wk_text3}, {R.id.wk_row4, R.id.wk_day4, R.id.wk_time4, R.id.wk_text4}, {R.id.wk_row5, R.id.wk_day5, R.id.wk_time5, R.id.wk_text5}};
+    /** Token 额度's six lines of two cells: {cell, dot, name, reset, percent, bar}; a line's left cell is 2r−1, its right one 2r. */
+    private static final int[] TOKEN_LINES = {R.id.wt_row1, R.id.wt_row2, R.id.wt_row3, R.id.wt_row4, R.id.wt_row5, R.id.wt_row6};
+    private static final int[][] TOKEN_IDS = {
+        {R.id.wt_c1, R.id.wt_dot1, R.id.wt_name1, R.id.wt_reset1, R.id.wt_pct1, R.id.wt_bar1}, {R.id.wt_c2, R.id.wt_dot2, R.id.wt_name2, R.id.wt_reset2, R.id.wt_pct2, R.id.wt_bar2},
+        {R.id.wt_c3, R.id.wt_dot3, R.id.wt_name3, R.id.wt_reset3, R.id.wt_pct3, R.id.wt_bar3}, {R.id.wt_c4, R.id.wt_dot4, R.id.wt_name4, R.id.wt_reset4, R.id.wt_pct4, R.id.wt_bar4},
+        {R.id.wt_c5, R.id.wt_dot5, R.id.wt_name5, R.id.wt_reset5, R.id.wt_pct5, R.id.wt_bar5}, {R.id.wt_c6, R.id.wt_dot6, R.id.wt_name6, R.id.wt_reset6, R.id.wt_pct6, R.id.wt_bar6},
+        {R.id.wt_c7, R.id.wt_dot7, R.id.wt_name7, R.id.wt_reset7, R.id.wt_pct7, R.id.wt_bar7}, {R.id.wt_c8, R.id.wt_dot8, R.id.wt_name8, R.id.wt_reset8, R.id.wt_pct8, R.id.wt_bar8},
+        {R.id.wt_c9, R.id.wt_dot9, R.id.wt_name9, R.id.wt_reset9, R.id.wt_pct9, R.id.wt_bar9}, {R.id.wt_c10, R.id.wt_dot10, R.id.wt_name10, R.id.wt_reset10, R.id.wt_pct10, R.id.wt_bar10},
+        {R.id.wt_c11, R.id.wt_dot11, R.id.wt_name11, R.id.wt_reset11, R.id.wt_pct11, R.id.wt_bar11}, {R.id.wt_c12, R.id.wt_dot12, R.id.wt_name12, R.id.wt_reset12, R.id.wt_pct12, R.id.wt_bar12}};
+    private static final int[][] CALENDAR_IDS = {{R.id.wk_row1, R.id.wk_day1, R.id.wk_time1, R.id.wk_text1, R.id.wk_dot1}, {R.id.wk_row2, R.id.wk_day2, R.id.wk_time2, R.id.wk_text2, R.id.wk_dot2},
+        {R.id.wk_row3, R.id.wk_day3, R.id.wk_time3, R.id.wk_text3, R.id.wk_dot3}, {R.id.wk_row4, R.id.wk_day4, R.id.wk_time4, R.id.wk_text4, R.id.wk_dot4}, {R.id.wk_row5, R.id.wk_day5, R.id.wk_time5, R.id.wk_text5, R.id.wk_dot5}};
     private static final int[][] CLOCK_IDS = {{R.id.wc_row1, R.id.wc_name1, R.id.wc_clock1, R.id.wc_day1}, {R.id.wc_row2, R.id.wc_name2, R.id.wc_clock2, R.id.wc_day2}, {R.id.wc_row3, R.id.wc_name3, R.id.wc_clock3, R.id.wc_day3}};
 
     private static SharedPreferences prefs(Context c) { return c.getApplicationContext().getSharedPreferences("god-widgets", Context.MODE_PRIVATE); }
@@ -81,7 +87,7 @@ final class GodWidgets {
         for (int[] s : SIZES) sized.put(new android.util.SizeF(s[0], s[1]), views(c, kind, s[0], s[1]));
         return new RemoteViews(sized);
     }
-    private static final int[][] SIZES = {{110, 110}, {110, 150}, {110, 200}, {110, 260}, {200, 110}, {200, 150}, {200, 200}, {200, 260}};
+    private static final int[][] SIZES = {{110, 110}, {110, 150}, {110, 200}, {110, 260}, {110, 330}, {200, 110}, {200, 150}, {200, 200}, {200, 260}, {200, 330}};
     /**
      * The widget laid out for a cell of {@code w} × {@code h} dp: how many rows fit, and whether the reset note and reading
      * time have room. Text is in sp and the cell in dp, so a larger font shows fewer rows instead of smaller text.
@@ -93,14 +99,18 @@ final class GodWidgets {
         long at = p.getLong(kind + "At", 0); boolean stale = WidgetSnapshot.stale(at, now);
         JSONObject data = null; try { String s = p.getString(kind, null); data = s == null ? null : new JSONObject(s); } catch (JSONException ignored) { }
         switch (kind) {
-            case WidgetSnapshot.TOKENS: return tokens(c, data, stale, at, now, zone, Math.max(1, Math.min(6, (int) ((body - 2) / (16 + 19 * f)))), w >= 200 * f, roomy);
+            case WidgetSnapshot.TOKENS: return tokens(c, data, stale, at, now, zone, body - 2, f, w >= 200 * f, roomy); // two columns only while names stay legible
             case WidgetSnapshot.CALENDAR: return calendar(c, data, stale, at, now, zone, Math.max(1, Math.min(5, (int) ((body - 3) / (6 + 19 * f)))), roomy);
             case WidgetSnapshot.STATUS: {
                 int issues = data == null ? 0 : data.optInt("issues");
                 String value = data == null ? "—" : String.valueOf(data.optInt("online")), unit = data == null ? "" : "/ " + data.optInt("total") + " 在线";
                 String line = data == null ? "打开 God 后显示" : issues > 0 ? issues + " 项异常" : "全部正常";
                 int dot = data == null ? 0 : stale ? R.color.widget_faint : issues > 0 ? R.color.widget_alert : R.color.widget_ok;
-                return figure(c, "运行状态", "pulse", 0xff22c55e, "status", 23, value, unit, line, dot, stale || data == null, at, now, zone, roomy);
+                RemoteViews v = figure(c, "运行状态", "pulse", 0xff22c55e, "status", 23, value, unit, line, dot, stale || data == null, at, now, zone, roomy);
+                int total = data == null ? 0 : data.optInt("total");
+                if (total > 0) { v.setViewVisibility(R.id.wf_bar, View.VISIBLE); v.setProgressBar(R.id.wf_bar, total, Math.max(0, Math.min(total, data.optInt("online"))), false);
+                    if (Build.VERSION.SDK_INT >= 31) v.setColorStateList(R.id.wf_bar, "setProgressTintList", stale ? R.color.widget_faint : issues > 0 ? R.color.widget_warn : R.color.widget_ok); }
+                return v;
             }
             case WidgetSnapshot.WECHAT: {
                 String value = data == null ? "—" : String.valueOf(data.optLong("today")), unit = data == null ? "" : "条";
@@ -116,27 +126,55 @@ final class GodWidgets {
         v.setImageViewBitmap(R.id.w_icon, ConsoleTheme.widgetIcon(c, symbol, hue, 20)); v.setTextViewText(R.id.w_title, title);
         v.setTextViewText(R.id.w_meta, meta == null ? "" : meta); if (meta != null) tint(v, R.id.w_meta, stale ? R.color.widget_warn : R.color.widget_faint);
     }
-    private static RemoteViews tokens(Context c, JSONObject data, boolean stale, long at, long now, ZoneId zone, int fit, boolean wide, boolean roomy) {
+    /**
+     * Token 额度 with {@code lines} rows of room: one column with reset times while every account fits, else two columns
+     * (when {@code twoUp}) so all of them show; any still left over are counted as 「+N」 in the corner.
+     */
+    private static RemoteViews tokens(Context c, JSONObject data, boolean stale, long at, long now, ZoneId zone, float room, float f, boolean wide, boolean roomy) {
+        // A list line is its spacing, a 13sp name and the bar; Android 12+ packs the two-column lines tighter (thinner bar, less space).
+        boolean tight = Build.VERSION.SDK_INT >= 31; float listRow = 16 + 19 * f, gridRow = tight ? 10 + 18 * f : listRow;
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_tokens); tap(c, v, android.R.id.background, "tokens", 21);
-        String footer = WidgetSnapshot.footer(at, now, zone); header(c, v, "Token 额度", "gauge", 0xff6366f1, data == null || !roomy ? null : WidgetSnapshot.meta(at, now, zone), stale);
-        JSONArray list = data == null ? null : data.optJSONArray("rows"); StringBuilder said = new StringBuilder("Token 额度");
-        for (int i = 0; i < TOKEN_IDS.length; i++) {
-            int[] id = TOKEN_IDS[i]; JSONObject row = list == null || i >= fit ? null : list.optJSONObject(i);
+        JSONArray list = data == null ? null : data.optJSONArray("rows"); int n = list == null ? 0 : list.length(), total = data == null ? 0 : Math.max(n, data.optInt("total", n));
+        int lines = Math.max(1, Math.min(TOKEN_LINES.length, (int) (room / listRow))); boolean grid = wide && total > lines;
+        if (grid) lines = Math.max(1, Math.min(TOKEN_LINES.length, (int) (room / gridRow))); float rowDp = grid ? gridRow : listRow;
+        int per = grid ? 2 : 1, shown = Math.min(n, lines * per), more = total - shown;
+        String meta = data == null ? null : (more > 0 ? "+" + more + (roomy ? " · " : "") : "") + (roomy ? WidgetSnapshot.meta(at, now, zone) : "");
+        header(c, v, "Token 额度", "gauge", 0xff6366f1, meta == null || meta.isEmpty() ? null : meta, stale);
+        StringBuilder said = new StringBuilder("Token 额度");
+        // Height left over below the last line goes between the lines (up to 12dp each), so a short list does not leave a gap.
+        int used = Math.max(1, (shown + per - 1) / per); float spare = Math.max(0, Math.min(12, (room - used * rowDp) / used)); float density = c.getResources().getDisplayMetrics().density;
+        for (int r = 0; r < TOKEN_LINES.length; r++) { v.setViewVisibility(TOKEN_LINES[r], r == 0 || r * per < shown ? View.VISIBLE : View.GONE); v.setViewPadding(TOKEN_LINES[r], 0, Math.round(((grid && tight ? r == 0 ? 6 : 4 : r == 0 ? 9 : 7) + spare) * density), 0, 0); }
+        for (int k = 0; k < TOKEN_IDS.length; k++) {
+            int[] id = TOKEN_IDS[k]; int slot = grid ? k : k % 2 == 0 ? k / 2 : -1; JSONObject row = slot < 0 || slot >= shown ? null : list.optJSONObject(slot);
             if (row == null) {
-                boolean note = i == 0; v.setViewVisibility(id[0], note ? View.VISIBLE : View.GONE); v.setViewVisibility(id[4], View.GONE);
-                if (note) { v.setTextViewText(id[1], data == null ? "打开 God 后显示" : "没有已接入的账号"); tint(v, id[1], R.color.widget_muted); v.setTextViewText(id[2], ""); v.setTextViewText(id[3], ""); }
+                boolean note = k == 0 && n == 0; v.setViewVisibility(id[0], note ? View.VISIBLE : k % 2 == 1 && grid && k / 2 * 2 < shown ? View.INVISIBLE : View.GONE);
+                if (note) { v.setTextViewText(id[2], data == null ? "打开 God 后显示" : "没有已接入的账号"); tint(v, id[2], R.color.widget_muted); v.setTextViewText(id[3], ""); v.setTextViewText(id[4], ""); v.setViewVisibility(id[5], View.GONE); v.setViewVisibility(id[1], View.GONE); }
                 continue;
             }
-            int level = WidgetSnapshot.level(row); String pct = level < 0 ? "—" : row.optLong("percent") + "%", reset = WidgetSnapshot.resetNote(row, zone, now);
-            v.setViewVisibility(id[0], View.VISIBLE); v.setTextViewText(id[1], row.optString("name")); v.setTextViewText(id[2], wide ? reset : ""); v.setTextViewText(id[3], pct);
-            int color = stale || level < 0 ? R.color.widget_faint : level == 2 ? R.color.widget_alert : level == 1 ? R.color.widget_warn : R.color.widget_ok;
-            tint(v, id[1], stale ? R.color.widget_muted : R.color.widget_ink); tint(v, id[3], stale || level < 0 ? R.color.widget_faint : level == 2 ? R.color.widget_alert : R.color.widget_ink);
-            v.setViewVisibility(id[4], level < 0 ? View.GONE : View.VISIBLE);
-            if (level >= 0) { v.setProgressBar(id[4], 100, (int) Math.max(2, Math.min(100, row.optLong("percent"))), false); if (Build.VERSION.SDK_INT >= 31) v.setColorStateList(id[4], "setProgressTintList", color); }
+            boolean fresh = WidgetSnapshot.fresh(row) && !stale; int level = WidgetSnapshot.level(row);
+            v.setViewVisibility(id[0], View.VISIBLE); v.setTextViewText(id[2], grid ? WidgetSnapshot.shortName(row.optString("name")) : row.optString("name")); v.setTextViewText(id[3], wide && !grid ? WidgetSnapshot.resetNote(row, zone, now) : ""); v.setTextViewText(id[4], WidgetSnapshot.value(row));
+            v.setViewVisibility(id[1], View.VISIBLE); tint(v, id[1], kindColor(row.optString("kind")));
+            if (grid) { v.setTextViewTextSize(id[2], android.util.TypedValue.COMPLEX_UNIT_SP, 12); v.setTextViewTextSize(id[4], android.util.TypedValue.COMPLEX_UNIT_SP, 13); }
+            if (grid && Build.VERSION.SDK_INT >= 31) { v.setViewLayoutHeight(id[5], 3, android.util.TypedValue.COMPLEX_UNIT_DIP); v.setViewLayoutMargin(id[5], RemoteViews.MARGIN_TOP, 3, android.util.TypedValue.COMPLEX_UNIT_DIP); }
+            int color = !fresh || level < 0 ? R.color.widget_faint : level == 2 ? R.color.widget_alert : level == 1 ? R.color.widget_warn : R.color.widget_ok;
+            tint(v, id[2], stale ? R.color.widget_muted : R.color.widget_ink); tint(v, id[4], !fresh || level < 0 ? R.color.widget_faint : level == 2 ? R.color.widget_alert : R.color.widget_ink);
+            v.setViewVisibility(id[5], level < 0 ? View.GONE : View.VISIBLE);
+            if (level >= 0) { v.setProgressBar(id[5], 100, (int) Math.max(2, Math.min(100, row.optLong("percent"))), false); if (Build.VERSION.SDK_INT >= 31) v.setColorStateList(id[5], "setProgressTintList", color); }
             said.append("，").append(WidgetSnapshot.tokenLine(row, zone, now));
         }
-        v.setContentDescription(android.R.id.background, said + "，" + footer);
+        if (more > 0) said.append("，另有 ").append(more).append(" 个账号放不下");
+        v.setContentDescription(android.R.id.background, said + "，" + WidgetSnapshot.footer(at, now, zone));
         return v;
+    }
+    /** The dot colour of an account kind or product, the same families 编辑看板 uses. */
+    private static int kindColor(String kind) {
+        switch (WidgetSnapshot.family(kind)) {
+            case "openai": return R.color.widget_openai;
+            case "claude": return R.color.widget_claude;
+            case "grok": return R.color.widget_grok;
+            case "green": return R.color.widget_green;
+            default: return R.color.widget_faint;
+        }
     }
     private static RemoteViews calendar(Context c, JSONObject data, boolean stale, long at, long now, ZoneId zone, int fit, boolean roomy) {
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_calendar); tap(c, v, android.R.id.background, "quota-calendar", 22);
@@ -146,10 +184,12 @@ final class GodWidgets {
             int[] id = CALENDAR_IDS[i]; JSONObject row = list == null || i >= fit ? null : list.optJSONObject(i);
             if (row == null) {
                 v.setViewVisibility(id[0], i == 0 ? View.VISIBLE : View.GONE);
+                v.setViewVisibility(id[4], View.GONE);
                 if (i == 0) { v.setTextViewText(id[1], ""); v.setTextViewText(id[2], ""); v.setTextViewText(id[3], data == null ? "打开 God 后显示" : "近期没有已知的重置"); }
                 continue;
             }
             long when = row.optLong("at"); String day = WidgetSnapshot.day(when, zone, now);
+            v.setViewVisibility(id[4], row.has("product") ? View.VISIBLE : View.GONE); tint(v, id[4], stale ? R.color.widget_faint : kindColor(row.optString("product")));
             v.setViewVisibility(id[0], View.VISIBLE); v.setTextViewText(id[1], day.equals(lastDay) ? "" : day); v.setTextViewText(id[2], WidgetSnapshot.clockTime(when, zone)); v.setTextViewText(id[3], row.optString("text"));
             tint(v, id[2], stale ? R.color.widget_faint : i == 0 ? R.color.widget_accent : R.color.widget_ink); tint(v, id[3], stale ? R.color.widget_faint : i == 0 ? R.color.widget_ink : R.color.widget_muted);
             lastDay = day; said.append("，").append(WidgetSnapshot.calendarLine(row, zone, now));

@@ -1000,7 +1000,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void widgetSheet(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(20),dp(8),dp(20),0);
         widgetPreview(box,null,GodWidget.views(this),-1,76);
-        widgetPreview(box,null,GodWidgets.views(this,WidgetSnapshot.TOKENS,250,200),-1,200);
+        widgetPreview(box,null,GodWidgets.views(this,WidgetSnapshot.TOKENS,250,290),-1,290);
         widgetPreview(box,null,GodWidgets.views(this,WidgetSnapshot.CALENDAR,250,150),-1,150);
         LinearLayout pair=null;String[] small={GodWidgets.CLOCK,WidgetSnapshot.STATUS,WidgetSnapshot.WECHAT,GodWidgets.CLOCK};
         for(int i=0;i<small.length;i++){if(i%2==0){pair=new LinearLayout(this);box.addView(pair,new LinearLayout.LayoutParams(-1,-2));}widgetPreview(pair,i%2==0?null:pair,GodWidgets.views(this,small[i],110,i==3?110:160),0,i==3?110:160);}

@@ -1,5 +1,7 @@
 <resources><color name="launcher_background">#000000</color>
 <!-- Widgets: the app's Liquid Glass card (high-opacity surface, hairline rim) and its status colours. -->
-<color name="widget_surface_top">#FAFFFFFF</color><color name="widget_surface">#F5F3F6FB</color><color name="widget_rim">#1A0B1A33</color>
+<color name="widget_surface_top">#FFFFFFFF</color><color name="widget_surface">#F2EFF3FA</color><color name="widget_rim">#1F0B1A33</color>
 <color name="widget_ink">#0F1115</color><color name="widget_muted">#5B6270</color><color name="widget_faint">#8A909C</color><color name="widget_track">#140B1A33</color>
-<color name="widget_accent">#0052D9</color><color name="widget_ok">#1F9A62</color><color name="widget_warn">#C96A0A</color><color name="widget_alert">#D54941</color></resources>
+<color name="widget_accent">#0052D9</color><color name="widget_ok">#1F9A62</color><color name="widget_warn">#C96A0A</color><color name="widget_alert">#D54941</color>
+<!-- Account kinds, as 编辑看板 colours its account dots. -->
+<color name="widget_openai">#0052D9</color><color name="widget_claude">#B8532F</color><color name="widget_grok">#6A4CC0</color><color name="widget_green">#1D7F5F</color></resources>

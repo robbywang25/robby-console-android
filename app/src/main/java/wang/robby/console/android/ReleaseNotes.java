@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.37.0", "2026-10-23", "Token 小组件显示全部账号",
+            "Token 额度小组件显示看板上的全部账号，不再只显示 6 个。",
+            "顺序和看板一致，同一类账号排在一起，几个 Codex 账号会挨着显示。",
+            "每个账号前有一个按类别着色的圆点，同一产品的多个账号标为 Codex 1、Codex 2。",
+            "账号多时自动排成两列，默认 4×3 大小，10 个账号也能全部显示。",
+            "重置日历每一项也加了类别圆点，运行状态多了一条在线比例条。",
+            "卡片的光泽和边线更细致，深色模式下层次更清楚。"),
         new Entry("0.36.1", "2026-10-23", "心力球的 Key 同步更及时",
             "打开 God 时如果服务器正忙，几秒后会自动再同步一次，不用等下一轮。"),
         new Entry("0.36.0", "2026-10-23", "心力球的 Key 多台手机同步",

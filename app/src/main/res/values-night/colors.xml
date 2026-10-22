@@ -1,4 +1,6 @@
 <resources>
-<color name="widget_surface_top">#F5262B36</color><color name="widget_surface">#F2171A22</color><color name="widget_rim">#24FFFFFF</color>
+<color name="widget_surface_top">#F72C313D</color><color name="widget_surface">#F2151820</color><color name="widget_rim">#2EFFFFFF</color>
 <color name="widget_ink">#F2F4F8</color><color name="widget_muted">#A7AEBB</color><color name="widget_faint">#7D8594</color><color name="widget_track">#24FFFFFF</color>
-<color name="widget_accent">#4582E6</color><color name="widget_ok">#5CCB93</color><color name="widget_warn">#F2B552</color><color name="widget_alert">#FF8A80</color></resources>
+<color name="widget_accent">#4582E6</color><color name="widget_ok">#5CCB93</color><color name="widget_warn">#F2B552</color><color name="widget_alert">#FF8A80</color>
+<!-- Account kinds, as 编辑看板 colours its account dots. -->
+<color name="widget_openai">#4582E6</color><color name="widget_claude">#E39A7E</color><color name="widget_grok">#B19CF5</color><color name="widget_green">#6FCFAB</color></resources>
