@@ -15,6 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.32.1", "2026-10-22", "同步来的提醒会请求通知权限",
+            "别的手机打开的提醒同步过来时，这台手机会请求通知权限；没有权限会说明提醒不会送达。",
+            "Google 登录只读，「外观」改为显示「设置从账号读取 · 本机修改不上传」。"),
         new Entry("0.32.0", "2026-10-22", "微信消息汇总与看板",
             "「功能 → 洞察」新增微信消息，可看汇总、日报和近 30 天看板。",
             "汇总分今天、近 7 天、近 30 天，显示消息数、发出和收到、会话数。",

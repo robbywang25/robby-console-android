@@ -497,10 +497,51 @@ public final class PreferenceSyncTest {
 
     @Test public void statusLineNamesTheAccountOrThePhone() {
         long now = 1_779_000_000_000L;
-        assertEquals("设置仅保存在本机", PreferenceSync.statusLine(false, "2026-10-22T00:00:00Z", now));
-        assertEquals("设置仅保存在本机", PreferenceSync.statusLine(false, null, now));
-        assertEquals("设置已同步到账号 · 尚未同步", PreferenceSync.statusLine(true, null, now));
-        assertTrue(PreferenceSync.statusLine(true, "2026-10-22T00:00:00Z", java.time.Instant.parse("2026-10-22T00:00:30Z").toEpochMilli()).endsWith("刚刚"));
+        assertEquals("设置仅保存在本机", PreferenceSync.statusLine(false, false, "2026-10-22T00:00:00Z", now));
+        assertEquals("设置仅保存在本机", PreferenceSync.statusLine(false, true, null, now));
+        assertEquals("设置已同步到账号 · 尚未同步", PreferenceSync.statusLine(true, true, null, now));
+        assertTrue(PreferenceSync.statusLine(true, true, "2026-10-22T00:00:00Z", java.time.Instant.parse("2026-10-22T00:00:30Z").toEpochMilli()).endsWith("刚刚"));
+    }
+
+    @Test public void readOnlyLoginNeverClaimsTheSettingsAreSynced() {
+        long now = java.time.Instant.parse("2026-10-22T00:00:30Z").toEpochMilli();
+        for (String at : new String[]{null, "", "2026-10-22T00:00:00Z"}) {
+            String line = PreferenceSync.statusLine(true, false, at, now);
+            assertEquals("设置从账号读取 · 本机修改不上传", line);
+            assertFalse(line.contains("已同步"));
+        }
+        assertEquals("Google 登录只读，用 Passkey 登录后同步", PreferenceSync.statusDetail(true, false, true));
+        assertEquals("重新登录后，本机修改会同步到账号", PreferenceSync.statusDetail(true, false, false));
+        assertEquals("", PreferenceSync.statusDetail(true, true, false));
+        assertEquals("", PreferenceSync.statusDetail(false, false, true));
+    }
+
+    @Test public void aReminderSwitchedOnElsewhereAsksForNotificationPermission() {
+        Map<String, Object> off = new LinkedHashMap<>();
+        off.put("noticeKinds", List.of());
+        off.put("tiboNotice", false);
+        assertTrue(PreferenceSync.turnsOnReminder(off, Map.of("noticeKinds", List.of("daily"))));
+        assertTrue(PreferenceSync.turnsOnReminder(off, Map.of("tiboNotice", true)));
+        assertTrue(PreferenceSync.turnsOnReminder(Map.of(), Map.of("tiboNotice", true)));
+        assertTrue(PreferenceSync.turnsOnReminder(null, Map.of("noticeKinds", List.of("low"))));
+        assertTrue(PreferenceSync.turnsOnReminder(Map.of("noticeKinds", List.of("daily")), Map.of("noticeKinds", List.of("daily", "sites"))));
+    }
+
+    @Test public void reminderChangesThatAddNothingDoNotAsk() {
+        Map<String, Object> on = new LinkedHashMap<>();
+        on.put("noticeKinds", List.of("daily", "low"));
+        on.put("tiboNotice", true);
+        assertFalse(PreferenceSync.turnsOnReminder(on, Map.of("noticeKinds", List.of("daily"))));
+        assertFalse(PreferenceSync.turnsOnReminder(on, Map.of("noticeKinds", List.of("low", "daily"))));
+        assertFalse(PreferenceSync.turnsOnReminder(on, Map.of("tiboNotice", true)));
+        assertFalse(PreferenceSync.turnsOnReminder(Map.of(), Map.of("tiboNotice", false)));
+        assertFalse(PreferenceSync.turnsOnReminder(Map.of(), Map.of("noticeKinds", List.of(), "glassOn", true, "dailyLine", 80)));
+        assertFalse(PreferenceSync.turnsOnReminder(on, null));
+    }
+
+    @Test public void theAskFlagStaysOnThePhone() {
+        assertTrue(PreferenceSync.LOCAL_ONLY.contains("prefSyncAskNotify"));
+        assertFalse(PreferenceSync.document(Map.of("prefSyncAskNotify", true)).has("prefSyncAskNotify"));
     }
 
     private static Map<String, Object> sample() {

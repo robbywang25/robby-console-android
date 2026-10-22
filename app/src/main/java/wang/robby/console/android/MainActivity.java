@@ -148,6 +148,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(accountBrowserPending){accountBrowserPending=false;if(ACCOUNT_PAGE.equals(selectedId)&&loggedIn()){accountStatus=null;accountDevices=null;build();}}
         // ColorOS may stop the reminder or refuse to restart it after an update; opening the app brings it back.
         if(!PreviewMode.isBuild()&&TiboWatch.active(this))TiboWatch.start(this,TiboWatch.checkDue(this));
+        // A pull that landed while the app was in the background may have switched on a reminder.
+        askSyncedNotify();
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
         // A change waiting for a session that may now write (after signing in again) goes at once.
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
@@ -156,7 +158,15 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @Override protected void onPause(){resumed=false;ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     /** A pulled account document changed settings under this page: repaint from the preference files. */
-    void onPreferencesApplied(){if(isDestroyed()||!resumed)return;theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;applyStatusBar();build();}
+    void onPreferencesApplied(){if(isDestroyed()||!resumed)return;theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;applyStatusBar();build();askSyncedNotify();}
+    /** A reminder switched on from another phone arrives without this phone's notification permission: ask for it here. */
+    private void askSyncedNotify(){
+        if(PreviewMode.isBuild()||isDestroyed()||!resumed||!PreferenceSyncHub.takeNotifyAsk(this))return;
+        if(!TiboWatch.active(this)||!notificationsBlocked())return;
+        if(!notificationsAllowed()){requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},SYNC_PERMISSION);return;}
+        error("通知未开启","提醒已从账号同步到这台手机，但系统通知被关闭，提醒不会送达。可以在系统设置里为 God 开启通知。");
+    }
+    private static final int SYNC_PERMISSION=45;
     private static final int AUTH_TAB=41;
     /** The sign-in the Auth Tab was opened for, so its browser fallback repeats the same one (Google or Passkey). */
     private boolean lastFederated;
@@ -899,7 +909,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             featureRow("灵动岛右侧 · "+StatusBarStyle.itemLabel(islandItem(false)),"摄像头右边显示的内容","info",look,()->islandItemMenu(false));
         }
         section("账号");LinearLayout syncLine=groupCard();
-        featureRow(PreferenceSync.statusLine(loggedIn()&&!PreviewMode.isBuild(),PreferenceSyncHub.updatedAt(this),System.currentTimeMillis()),"","refresh",syncLine,null);
+        boolean onAccount=loggedIn()&&!PreviewMode.isBuild(),canSync=onAccount&&PreferenceSyncHub.canWrite(this);
+        featureRow(PreferenceSync.statusLine(onAccount,canSync,PreferenceSyncHub.updatedAt(this),System.currentTimeMillis()),PreferenceSync.statusDetail(onAccount,canSync,onAccount&&federatedSession()),"refresh",syncLine,null);
         final boolean[] dragging={false};
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener(){
             @Override public void onProgressChanged(SeekBar s,int level,boolean user){if(!user)return;s.setStateDescription(glassLabel(level));
@@ -1453,6 +1464,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(request==NOTICE_PERMISSION){boolean granted=results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED;
             if(!granted){error("没有通知权限","God 需要通知权限才能提醒你。可以在系统设置里为 God 开启通知后再试。");return;}
             if(noticePending==null)NoticeCenter.test(this);else enableNotice(noticePending,true);noticePending=null;return;}
+        if(request==SYNC_PERMISSION){boolean granted=results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED;
+            if(!granted)error("没有通知权限","提醒已从账号同步到这台手机，但 God 没有通知权限，提醒不会送达。可以在系统设置里为 God 开启通知。");
+            else if(TiboWatch.active(this))TiboWatch.start(this,true);
+            TokensPages.refreshReminder();build();return;}
         if(request!=TIBO_PERMISSION)return;
         if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED){if(tiboTestPending)TiboWatch.test(this);else tiboSwitch(true);}
         else error("没有通知权限","重置提醒需要通知权限才能响铃。可以在系统设置里为 God 开启通知后再试。");

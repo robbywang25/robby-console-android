@@ -46,7 +46,8 @@ final class PreferenceSync {
         "state", "pending", "seen", "lastCheckAt", "lastError", "primed",
         "creditBase", "creditFired",
         "enabledAt", "round", "pendingTest", "more",
-        "hideStatusBar", "prefSyncVersion", "prefSyncUpdatedAt", "prefSyncBase", "prefSyncDirty", "prefSyncPending");
+        "hideStatusBar", "prefSyncVersion", "prefSyncUpdatedAt", "prefSyncBase", "prefSyncDirty", "prefSyncPending",
+        "prefSyncAskNotify");
 
     static final class Recent {
         final String id; final double score; final long at;
@@ -150,11 +151,33 @@ final class PreferenceSync {
         }
         return out;
     }
-    /** 「设置已同步到账号 · 刚刚」when this login can store settings; 「设置仅保存在本机」otherwise. */
-    static String statusLine(boolean onAccount, String updatedAt, long nowMs) {
+    /**
+     * 「设置已同步到账号 · 刚刚」when this login can store settings; 「设置从账号读取 · 本机修改不上传」when it can only
+     * pull (a Google login, or a session from before the profile write scope); 「设置仅保存在本机」when signed out.
+     */
+    static String statusLine(boolean onAccount, boolean canWrite, String updatedAt, long nowMs) {
         if (!onAccount) return "设置仅保存在本机";
+        if (!canWrite) return "设置从账号读取 · 本机修改不上传";
         String when = updatedAt == null || updatedAt.isEmpty() ? "尚未同步" : AccountCenter.ago(updatedAt, java.time.Instant.ofEpochMilli(nowMs));
         return "设置已同步到账号 · " + when;
+    }
+    /** Second line under {@link #statusLine}: how a read-only login gets its changes onto the account. */
+    static String statusDetail(boolean onAccount, boolean canWrite, boolean federated) {
+        if (!onAccount || canWrite) return "";
+        return federated ? "Google 登录只读，用 Passkey 登录后同步" : "重新登录后，本机修改会同步到账号";
+    }
+    /**
+     * True when a server document turns on a reminder that was off on this phone: a new kind in {@code noticeKinds},
+     * or {@code tiboNotice} going from off to on. {@code before} is {@link #collect} from just before the write. The
+     * phone that flipped the switch asked for notification permission; this one has not, so the activity must.
+     */
+    static boolean turnsOnReminder(Map<String, ?> before, Map<String, ?> changed) {
+        if (changed == null) return false;
+        if (Boolean.TRUE.equals(changed.get("tiboNotice")) && !Boolean.TRUE.equals(before == null ? null : before.get("tiboNotice"))) return true;
+        if (!(changed.get("noticeKinds") instanceof Collection<?> kinds)) return false;
+        Object had = before == null ? null : before.get("noticeKinds");
+        for (Object kind : kinds) if (!(had instanceof Collection<?> old) || !old.contains(kind)) return true;
+        return false;
     }
 
     interface Clock { long millis(); }

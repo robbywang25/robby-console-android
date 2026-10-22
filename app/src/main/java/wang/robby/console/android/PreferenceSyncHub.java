@@ -58,6 +58,19 @@ final class PreferenceSyncHub {
         engine.setReady(true, writer(app));
         engine.foreground();
     }
+    /** False for a read-only login (Google, or a session older than the profile write scope): pulls, never uploads. */
+    static boolean canWrite(Context context) { return writer(context.getApplicationContext()); }
+    /**
+     * True once after a server document switched on a reminder that was off here. The flag stays in god-ui until an
+     * activity is in front to ask for notification permission, then this clears it.
+     */
+    static boolean takeNotifyAsk(Context context) {
+        SharedPreferences ui = context.getApplicationContext().getSharedPreferences("god-ui", Context.MODE_PRIVATE);
+        if (!ui.getBoolean(ASK_NOTIFY, false)) return false;
+        ui.edit().remove(ASK_NOTIFY).apply();
+        return true;
+    }
+    private static final String ASK_NOTIFY = "prefSyncAskNotify";
     static String updatedAt(Context context) {
         String value = context.getApplicationContext().getSharedPreferences("god-ui", Context.MODE_PRIVATE).getString("prefSyncUpdatedAt", null);
         return value == null || value.isEmpty() ? null : value;
@@ -205,6 +218,9 @@ final class PreferenceSyncHub {
         if (!tiboInChange && noticeTouch) {
             if (TiboWatch.active(c)) TiboWatch.start(c, true); else TiboWatch.stop(c);
         }
+        // Another phone asked for notification permission when it turned this on; this phone still has to.
+        if (PreferenceSync.turnsOnReminder(before, current(c)))
+            c.getSharedPreferences("god-ui", Context.MODE_PRIVATE).edit().putBoolean(ASK_NOTIFY, true).apply();
     }
     /**
      * True when this key must not be overwritten: the person already edited it ({@link #skipped} or a dirty sync
