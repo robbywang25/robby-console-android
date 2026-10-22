@@ -66,7 +66,7 @@ final class NoticePages {
 
     /** 「关闭」 when none of the group's switches are on, otherwise 「已开 N 项」. The read-only group names its rhythm. */
     static String summary(Group g, Snapshot s) {
-        if (g.readOnly) return "每 5 分钟";
+        if (g.readOnly) return TiboWatch.EVERY;
         int n = 0; for (String key : g.keys) if (s.enabled(key)) n++;
         return n == 0 ? "关闭" : "已开 " + n + " 项";
     }

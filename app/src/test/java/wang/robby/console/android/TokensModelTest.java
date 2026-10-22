@@ -207,11 +207,12 @@ public final class TokensModelTest {
     }
     @org.junit.Test public void boardRefreshFollowsTheServerWithinBounds() throws Exception {
         org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 30)));
-        org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 5)));
+        org.junit.Assert.assertEquals(20_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 20)));
+        org.junit.Assert.assertEquals(15_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 5)));
         org.junit.Assert.assertEquals(300_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 3600)));
-        org.junit.Assert.assertEquals(60_000L, TokensModel.refreshMs(new org.json.JSONObject()));
-        org.junit.Assert.assertEquals(60_000L, TokensModel.refreshMs(null));
-        org.junit.Assert.assertEquals(60_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 0)));
+        org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject()));
+        org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(null));
+        org.junit.Assert.assertEquals(30_000L, TokensModel.refreshMs(new org.json.JSONObject().put("refreshAfterSeconds", 0)));
     }
 
     @Test public void boardSmallLineStartsWithTheAccountEmail() throws Exception {

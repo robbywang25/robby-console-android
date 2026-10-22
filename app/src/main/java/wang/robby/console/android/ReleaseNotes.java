@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.38.0", "2026-10-23", "数据刷新更快",
+            "总览的 Token 额度和重置日历按服务器的节奏刷新，默认每 30 秒一次。",
+            "总览上的其他卡片停留时每分钟自动刷新，不用再下拉。",
+            "Token 额度页停留时也会自动刷新，运行状态改为每 30 秒一次。",
+            "桌面放了小组件时，即使不打开 God，也会每 2 分钟在后台更新一次。",
+            "后台检查和 Tibo 重置提醒从每 5 分钟改为每 2 分钟。"),
         new Entry("0.37.0", "2026-10-23", "Token 小组件显示全部账号",
             "Token 额度小组件显示看板上的全部账号，不再只显示 6 个。",
             "顺序和看板一致，同一类账号排在一起，几个 Codex 账号会挨着显示。",

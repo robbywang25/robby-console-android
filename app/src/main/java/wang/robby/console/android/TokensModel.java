@@ -112,8 +112,8 @@ final class TokensModel {
         Double left = primary == null ? null : remaining(primary);
         return (left != null && left == 0) || (route != null && Boolean.FALSE.equals(route.opt("defaultAllowed")));
     }
-    /** How long 总览's Token cards wait before reading again: the server's refreshAfterSeconds within 30 s – 5 min, else 60 s. */
-    static long refreshMs(JSONObject data) { int s = data == null ? 60 : data.optInt("refreshAfterSeconds", 60); return Math.max(30, Math.min(300, s <= 0 ? 60 : s)) * 1000L; }
+    /** How long the Token cards and page wait before reading again: the server's refreshAfterSeconds within 15 s – 5 min, else 30 s. */
+    static long refreshMs(JSONObject data) { int s = data == null ? 30 : data.optInt("refreshAfterSeconds", 30); return Math.max(15, Math.min(300, s <= 0 ? 30 : s)) * 1000L; }
     static Double remaining(JSONObject window) { Object v = window.opt("remainingPercent"); return v instanceof Number ? ((Number) v).doubleValue() : null; }
     private static JSONObject find(List<JSONObject> windows, Set<String> ids, Set<String> labels) {
         for (JSONObject w : windows) if (ids.contains(String.valueOf(w.opt("id")))) return w;

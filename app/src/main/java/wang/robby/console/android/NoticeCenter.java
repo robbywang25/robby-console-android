@@ -184,8 +184,8 @@ final class NoticeCenter {
     /** 上次检查 HH:mm · 正常, or why the last read failed. */
     static String status(Context c) {
         SharedPreferences p = prefs(c); long at = p.getLong("lastCheckAt", 0); String error = p.getString("lastError", null);
-        if (at == 0) return any(c) ? "等待第一次检查 · 每 5 分钟一次" : "未开启";
+        if (at == 0) return any(c) ? "等待第一次检查 · " + TiboWatch.EVERY + "一次" : "未开启";
         String time = java.time.format.DateTimeFormatter.ofPattern("HH:mm").format(java.time.Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
-        return error == null ? "上次检查 " + time + " · 正常 · 每 5 分钟一次" : "上次检查 " + time + " · " + error;
+        return error == null ? "上次检查 " + time + " · 正常 · " + TiboWatch.EVERY + "一次" : "上次检查 " + time + " · " + error;
     }
 }

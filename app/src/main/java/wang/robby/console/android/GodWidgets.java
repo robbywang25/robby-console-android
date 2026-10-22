@@ -10,16 +10,19 @@ import android.content.SharedPreferences;
 import android.os.Build;
 import android.view.View;
 import android.widget.RemoteViews;
+import android.util.Log;
 import java.time.ZoneId;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * The home screen widgets besides God 小组件: Token 额度, 重置日历, 时区时钟, 运行状态 and 微信消息. Nothing here reads the
- * network. A read the app already made (a page, the board, or the five-minute reminder check) is cut down by
- * {@link WidgetSnapshot} and kept in "god-widgets"; signing out deletes it. Only 时区时钟 may sit on the lock screen.
+ * The home screen widgets besides God 小组件: Token 额度, 重置日历, 时区时钟, 运行状态 and 微信消息. Drawing never reads the
+ * network. A read the app made (a page, the board, or the background check, which reads for placed widgets itself
+ * through {@link #read}) is cut down by {@link WidgetSnapshot} and kept in "god-widgets"; signing out deletes it. Only 时区时钟 may sit on the lock screen.
  */
 final class GodWidgets {
     private GodWidgets() {}
@@ -69,7 +72,32 @@ final class GodWidgets {
             default: return ClockWidget.class;
         }
     }
-    static void update(Context c, AppWidgetManager manager, int[] ids, String kind) { if (ids.length > 0) manager.updateAppWidget(ids, views(c, kind)); schedule(c); }
+    static void update(Context c, AppWidgetManager manager, int[] ids, String kind) { if (ids.length > 0) manager.updateAppWidget(ids, views(c, kind)); schedule(c); watch(c); }
+
+    /** What the placed widgets show, as the routes the background check reads for them; empty when none needs a read. */
+    static Set<String> routes(Context context) {
+        Context c = context.getApplicationContext(); AppWidgetManager manager = AppWidgetManager.getInstance(c); Set<String> kinds = new HashSet<>();
+        if (manager == null) return kinds;
+        for (String kind : new String[]{WidgetSnapshot.TOKENS, WidgetSnapshot.CALENDAR, WidgetSnapshot.STATUS, WidgetSnapshot.WECHAT})
+            if (manager.getAppWidgetIds(new ComponentName(c, provider(kind))).length > 0) kinds.add(kind);
+        if (manager.getAppWidgetIds(new ComponentName(c, GodWidget.class)).length > 0) kinds.add(WidgetSnapshot.GOD);
+        return WidgetSnapshot.routes(kinds);
+    }
+    static boolean placed(Context c) { return !routes(c).isEmpty(); }
+    /** A widget was placed or the phone restarted: keep the background check running, reading at once when one is due. */
+    static void watch(Context c) { if (!PreviewMode.isBuild() && placed(c)) TiboWatch.start(c, TiboWatch.checkDue(c)); }
+    /**
+     * The background check's reads for the placed widgets, on its thread. A route 我 → 通知 has just read in the same check
+     * is skipped. Each read goes through {@link GodWidget#observe}, so God 小组件 and these widgets redraw from it.
+     */
+    static void read(Context c, MobileApi api, long now) {
+        SharedPreferences p = prefs(c);
+        for (String route : routes(c)) {
+            if (WidgetSnapshot.justRead(p.getLong(WidgetSnapshot.kind(route) + "At", 0), now)) continue;
+            try { GodWidget.observe(c, route, api.get(route)); Log.i("GodWidgets", "read " + route); }
+            catch (Exception e) { Log.w("GodWidgets", "read " + route + " failed " + (e instanceof MobileApi.ApiError ? "http=" + ((MobileApi.ApiError) e).status : e.getClass().getSimpleName())); }
+        }
+    }
     /** Redraws every placed widget of these five kinds and books the redraw for when a reading turns stale. */
     static void refreshAll(Context context) {
         Context c = context.getApplicationContext(); AppWidgetManager manager = AppWidgetManager.getInstance(c); if (manager == null) return;

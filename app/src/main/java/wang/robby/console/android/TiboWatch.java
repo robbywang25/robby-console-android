@@ -22,12 +22,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import wang.robby.console.android.auth.AuthSession;
 
 /**
- * Tibo 重置提醒. Without Google push on the phone, an exact alarm reads tokens/tibo/alerts every five minutes (the
- * server's own monitor interval). The foreground service lives only for that read, then its notification comes down
+ * Tibo 重置提醒. Without Google push on the phone, an exact alarm reads tokens/tibo/alerts every two minutes (the
+ * server's monitor looks every five, so an announcement reaches the phone at most two minutes after the server sees it). The foreground service lives only for that read, then its notification comes down
  * and the service stops; the next alarm starts another. A new reset or card-grant announcement rings like an alarm:
  * alarm sound repeating, full screen on the lock screen, until 知道了 — re-ringing every ten minutes for at most three
  * rounds. Stored on the phone: the switch, check times and the ids of public posts already announced; never account
- * data. The same alarm also runs 我 → 通知's checks ({@link NoticeCenter}); it is scheduled while either is on.
+ * data. The same alarm also runs 我 → 通知's checks ({@link NoticeCenter}) and feeds the placed home screen widgets
+ * ({@link GodWidgets#read}); it is scheduled while any of the three needs it.
  */
 final class TiboWatch {
     private TiboWatch() {}
@@ -35,13 +36,15 @@ final class TiboWatch {
     static final String ACTION_CHECK = "wang.robby.console.android.TIBO_CHECK", ACTION_RERING = "wang.robby.console.android.TIBO_RERING", ACTION_ACK = "wang.robby.console.android.TIBO_ACK";
     static final String EXTRA_OPEN = "wang.robby.console.android.OPEN_FEATURE";
     static final int ID_WATCH = 7101, ID_ALARM = 7102, ID_NOTICE = 7103;
-    static final long INTERVAL = 5 * 60_000L, RERING = 10 * 60_000L; static final int ROUNDS = 3;
+    static final long INTERVAL = 2 * 60_000L, RERING = 10 * 60_000L; static final int ROUNDS = 3;
+    /** The interval as the settings pages say it. */
+    static final String EVERY = "每 2 分钟";
     private static final AtomicBoolean RUNNING = new AtomicBoolean();
 
     static SharedPreferences prefs(Context c) { return c.getApplicationContext().getSharedPreferences("tibo-watch", Context.MODE_PRIVATE); }
     static boolean enabled(Context c) { return prefs(c).getBoolean("enabled", false); }
-    /** The background read runs while Tibo 重置提醒 or any of 我 → 通知 is on. */
-    static boolean active(Context c) { return enabled(c) || NoticeCenter.any(c); }
+    /** The background read runs while Tibo 重置提醒 or any of 我 → 通知 is on, or a widget that shows a read is placed. */
+    static boolean active(Context c) { return enabled(c) || NoticeCenter.any(c) || GodWidgets.placed(c); }
 
     static void enable(Context c) {
         prefs(c).edit().putBoolean("enabled", true).putLong("enabledAt", System.currentTimeMillis()).putBoolean("primed", false).remove("seen").remove("lastCheckAt").remove("lastError").apply();
@@ -69,8 +72,8 @@ final class TiboWatch {
         catch (RuntimeException refused) { Log.w("GodTibo", "service_start_refused"); schedule(c, System.currentTimeMillis() + 1_000L); }
     }
 
-    /** The last read is older than one interval, or there has been none. */
-    static boolean checkDue(Context c) { return System.currentTimeMillis() - prefs(c).getLong("lastCheckAt", 0) >= INTERVAL; }
+    /** The last check is older than one interval, or there has been none. lastRunAt counts checks without Tibo too. */
+    static boolean checkDue(Context c) { SharedPreferences p = prefs(c); return System.currentTimeMillis() - Math.max(p.getLong("lastCheckAt", 0), p.getLong("lastRunAt", 0)) >= INTERVAL; }
     /** Keeps one pending check alarm without pushing an existing one later. */
     static void ensureScheduled(Context c) {
         PendingIntent existing = PendingIntent.getBroadcast(c, ACTION_CHECK.hashCode(), new Intent(c, TiboWatchReceiver.class).setAction(ACTION_CHECK), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_NO_CREATE);
@@ -107,12 +110,14 @@ final class TiboWatch {
         SharedPreferences p = prefs(c); if (!active(c)) return;
         long now = System.currentTimeMillis();
         // Booked before the read too, so a process killed mid-check still comes back; the finally below replaces it.
-        schedule(c, now + INTERVAL);
+        schedule(c, now + INTERVAL); p.edit().putLong("lastRunAt", now).apply();
         try {
             AuthSession auth = new AuthSession(c);
             if (!auth.hasSession()) { record(p, now, "登录后才能检查"); return; }
             MobileApi api = new MobileApi(auth);
             try { NoticeCenter.check(c, api, now); } catch (RuntimeException e) { Log.w("GodNotices", "check crashed " + e.getClass().getSimpleName()); }
+            // After 通知, so a route it has just read is not read again; the time is taken now, after its reads stamped theirs.
+            try { GodWidgets.read(c, api, System.currentTimeMillis()); } catch (RuntimeException e) { Log.w("GodWidgets", "read crashed " + e.getClass().getSimpleName()); }
             if (!p.getBoolean("enabled", false)) return;
             JSONObject view = api.get("tokens/tibo/alerts"); List<TiboAlert> alerts = TiboAlert.parse(view);
             GodWidget.observe(c, "tokens/tibo/alerts", view);
@@ -144,7 +149,7 @@ final class TiboWatch {
         // A channel's importance cannot be lowered later, so the brief check uses a new silent one. The old always-on channel goes.
         // IMPORTANCE_MIN is WatchCheck.MIN_IMPORTANCE; lint only accepts the named constant in this call.
         NotificationChannel check = new NotificationChannel(WatchCheck.CHANNEL_ID, "God 检查提醒", NotificationManager.IMPORTANCE_MIN);
-        check.setDescription("每 5 分钟检查时短暂显示，检查完消失"); check.setShowBadge(false); check.setSound(null, null); check.enableVibration(false); check.setLockscreenVisibility(Notification.VISIBILITY_SECRET);
+        check.setDescription(EVERY + "检查时短暂显示，检查完消失"); check.setShowBadge(false); check.setSound(null, null); check.enableVibration(false); check.setLockscreenVisibility(Notification.VISIBILITY_SECRET);
         nm.createNotificationChannels(List.of(alarm, check));
         nm.deleteNotificationChannel(CH_WATCH);
     }
@@ -208,9 +213,9 @@ final class TiboWatch {
     /** 上次检查 HH:mm · 正常, or the reason the last check failed. */
     static String status(Context c) {
         SharedPreferences p = prefs(c); long at = p.getLong("lastCheckAt", 0); String error = p.getString("lastError", null);
-        if (at == 0) return "等待第一次检查 · 每 5 分钟一次";
+        if (at == 0) return "等待第一次检查 · " + EVERY + "一次";
         String time = java.time.format.DateTimeFormatter.ofPattern("HH:mm").format(java.time.Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()));
-        return error == null ? "上次检查 " + time + " · 正常 · 每 5 分钟一次" : "上次检查 " + time + " · " + error;
+        return error == null ? "上次检查 " + time + " · 正常 · " + EVERY + "一次" : "上次检查 " + time + " · " + error;
     }
     /** What still stands between an announcement and a ringing phone, each with the settings page that fixes it. */
     static List<String[]> problems(Context c) {

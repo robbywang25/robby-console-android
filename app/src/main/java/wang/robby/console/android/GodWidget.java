@@ -26,7 +26,7 @@ public final class GodWidget extends AppWidgetProvider {
     static final String ACTION_REFRESH = "wang.robby.console.android.WIDGET_REFRESH";
     static final long STALE_MS = 2 * 3600_000L;
 
-    @Override public void onUpdate(Context c, AppWidgetManager manager, int[] ids) { manager.updateAppWidget(ids, views(c)); schedule(c); }
+    @Override public void onUpdate(Context c, AppWidgetManager manager, int[] ids) { manager.updateAppWidget(ids, views(c)); schedule(c); GodWidgets.watch(c); }
     @Override public void onReceive(Context c, Intent intent) { super.onReceive(c, intent); if (ACTION_REFRESH.equals(intent.getAction())) refresh(c); }
 
     /** What the widget says: a line, and the announced instant when a countdown applies (0 otherwise). */

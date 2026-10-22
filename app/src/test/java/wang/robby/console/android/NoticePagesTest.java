@@ -22,7 +22,7 @@ public final class NoticePagesTest {
         for (NoticePages.Group g : NoticePages.GROUPS) {
             assertTrue(NoticePages.page(g.id));
             assertEquals(NoticePages.ROOT, NoticePages.parent(g.id));
-            assertEquals(g.readOnly ? "每 5 分钟" : "关闭", NoticePages.summary(g, none));
+            assertEquals(g.readOnly ? "每 2 分钟" : "关闭", NoticePages.summary(g, none));
         }
         Map<String, Object> on = new LinkedHashMap<>();
         on.put("on", Set.of("daily", "low", "reset"));

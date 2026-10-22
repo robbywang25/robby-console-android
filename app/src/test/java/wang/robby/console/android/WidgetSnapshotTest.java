@@ -119,4 +119,18 @@ public final class WidgetSnapshotTest {
         assertEquals("比日均多 33%", WidgetSnapshot.versusAverage(128, 96)); assertEquals("比日均少 50%", WidgetSnapshot.versusAverage(48, 96));
         assertEquals("与日均持平", WidgetSnapshot.versusAverage(96, 96)); assertEquals("", WidgetSnapshot.versusAverage(5, 0));
     }
+
+    @Test public void placedWidgetsAskForTheReadsTheyShowOnce() {
+        assertEquals(Set.of(), WidgetSnapshot.routes(Set.of()));
+        assertEquals(List.of("tokens/quotas"), new java.util.ArrayList<>(WidgetSnapshot.routes(Set.of(WidgetSnapshot.TOKENS, WidgetSnapshot.CALENDAR, WidgetSnapshot.GOD))));
+        assertEquals(Set.of("tokens/quotas", "overview", "wechat/digest"), WidgetSnapshot.routes(Set.of(WidgetSnapshot.CALENDAR, WidgetSnapshot.STATUS, WidgetSnapshot.WECHAT)));
+        assertEquals(WidgetSnapshot.TOKENS, WidgetSnapshot.kind("tokens/quotas")); assertEquals(WidgetSnapshot.STATUS, WidgetSnapshot.kind("overview"));
+        assertEquals(WidgetSnapshot.WECHAT, WidgetSnapshot.kind("wechat/digest")); assertNull(WidgetSnapshot.kind("market"));
+    }
+    @Test public void aRouteNoticesJustReadIsNotReadAgain() {
+        assertTrue(WidgetSnapshot.justRead(NOW - 5_000L, NOW));
+        assertFalse(WidgetSnapshot.justRead(NOW - WidgetSnapshot.JUST_READ_MS, NOW));
+        assertFalse("never read", WidgetSnapshot.justRead(0, NOW));
+        assertFalse("a clock set back does not hide a due read", WidgetSnapshot.justRead(NOW + 5_000L, NOW));
+    }
 }

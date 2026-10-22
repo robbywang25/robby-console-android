@@ -1033,7 +1033,7 @@ public final class FeatureRenderer {
             LinearLayout c=theme.card(root);c.setPadding(dp(18),dp(16),dp(18),dp(14));
             LinearLayout top=new LinearLayout(context);top.setGravity(Gravity.CENTER_VERTICAL);View dot=theme.dot(tone(StatusPage.verdictTone(problems,bad,unchecked)),10);((LinearLayout.LayoutParams)dot.getLayoutParams()).rightMargin=dp(10);top.addView(dot);
             TextView v=text(StatusPage.verdict(problems,unchecked),22,true);v.setAccessibilityHeading(true);top.addView(v,new LinearLayout.LayoutParams(0,-2,1));c.addView(top);
-            TextView w=text("检测于 "+date(p,"generatedAt")+(Boolean.TRUE.equals(p.opt("cacheHit"))?" · 缓存结果":"")+" · 停留时每 60 秒自动刷新",12,false);w.setTextColor(theme.faint);w.setPadding(0,dp(6),0,0);c.addView(w);
+            TextView w=text("检测于 "+date(p,"generatedAt")+(Boolean.TRUE.equals(p.opt("cacheHit"))?" · 缓存结果":"")+" · 停留时每 "+RefreshPace.STATUS_MS/1000+" 秒自动刷新",12,false);w.setTextColor(theme.faint);w.setPadding(0,dp(6),0,0);c.addView(w);
             LinearLayout chips=new LinearLayout(context);chips.setPadding(0,dp(10),0,0);boolean partial=Boolean.TRUE.equals(p.opt("partial"));chip(chips,partial?"部分来源降级":"数据源正常",partial?theme.warning:theme.success);c.addView(chips);
             return c;
         }

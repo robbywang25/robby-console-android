@@ -7,6 +7,7 @@ import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import org.json.JSONArray;
@@ -21,6 +22,10 @@ import org.json.JSONObject;
 final class WidgetSnapshot {
     private WidgetSnapshot() {}
     static final String TOKENS = "tokens", CALENDAR = "calendar", STATUS = "status", WECHAT = "wechat";
+    /** God 小组件, which keeps its own reading (see {@link GodWidget}) but is fed by the same background read. */
+    static final String GOD = "god";
+    /** A route read by 我 → 通知 this recently is not read again for the widgets in the same check. */
+    static final long JUST_READ_MS = 60_000L;
     static final long STALE_MS = 2 * 3600_000L;
     static final int TOKEN_ROWS = 12, CALENDAR_ROWS = 5, CLOCKS = 3;
     static final double LOW = 20;
@@ -91,6 +96,19 @@ final class WidgetSnapshot {
     }
 
     /** A reading is shown as current only when taken within two hours and not in the future. */
+    /** The reads that keep these placed widget kinds current; Token 额度, 重置日历 and God 小组件 share tokens/quotas. */
+    static Set<String> routes(Set<String> kinds) {
+        Set<String> out = new LinkedHashSet<>();
+        if (kinds.contains(TOKENS) || kinds.contains(CALENDAR) || kinds.contains(GOD)) out.add("tokens/quotas");
+        if (kinds.contains(STATUS)) out.add("overview");
+        if (kinds.contains(WECHAT)) out.add("wechat/digest");
+        return out;
+    }
+    /** The kind whose reading time tells when a route was last read; null for routes no widget reads. */
+    static String kind(String route) {
+        switch (route) { case "tokens/quotas": return TOKENS; case "overview": return STATUS; case "wechat/digest": return WECHAT; default: return null; }
+    }
+    static boolean justRead(long savedAt, long now) { return savedAt > 0 && savedAt <= now && now - savedAt < JUST_READ_MS; }
     static boolean stale(long savedAt, long now) { return savedAt <= 0 || now - savedAt > STALE_MS || savedAt > now + 60_000L; }
     /** The widget header's corner: the reading's clock time, or 「待更新」 once stale (the full 「打开 God 更新」 goes to the spoken label). */
     static String meta(long savedAt, long now, ZoneId zone) { return stale(savedAt, now) ? "待更新" : HM.format(Instant.ofEpochMilli(savedAt).atZone(zone)); }

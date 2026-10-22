@@ -52,25 +52,39 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private volatile AppUpdate.Release update; private volatile String updateState="idle",updateNote; private volatile int updatePercent=-1;
     private volatile boolean updateChecking; private long updateCheckedAt;
     private boolean awaitingInstallPermission; private LinearLayout updateBox;
-    /** 运行状态 refreshes itself every 60 s while it is the visible page, like status.robby.wang; never in the background. */
     private final Handler ticker=new Handler(Looper.getMainLooper());
-    private final Runnable statusTick=()->{if(this.resumed&&"status".equals(this.selectedId)&&loggedIn()){FeatureCatalog.Feature f=find("status");if(f!=null)showFeature(f,true);}};
+    /** 运行状态 and Token 额度 refresh themselves while they are the visible page ({@link RefreshPace#page}); never in the background. */
+    private String tickPage; private long pageReadAt;
+    private final Runnable pageTick=()->{if(this.resumed&&tickPage!=null&&tickPage.equals(this.selectedId)&&loggedIn()){FeatureCatalog.Feature f=find(tickPage);if(f!=null)showFeature(f,true);}};
+    private void schedulePageTick(){ticker.removeCallbacks(pageTick);if(!resumed||tickPage==null||!tickPage.equals(selectedId)||!loggedIn())return;
+        FeatureCatalog.Feature f=find(tickPage);long every=f==null?0:RefreshPace.page(f.id,snapshots.get(f.path));if(every>0)ticker.postDelayed(pageTick,RefreshPace.wait(pageReadAt,every,SystemClock.elapsedRealtime()));}
     /**
-     * 总览's Token 额度 cards re-read themselves while 总览 is on screen, at the pace the server asks for
-     * (refreshAfterSeconds, kept within 30 s – 5 min, 60 s when absent); only those cards are refilled, in place.
+     * Every 总览 card re-reads itself while 总览 is on screen: Token 额度 and 重置日历 at the pace the server asks for,
+     * the others each minute ({@link RefreshPace#board}). Only the cards of the path that was read are refilled, in place;
+     * a failed read keeps what is shown and tries again at the same pace.
      */
-    private final Runnable tokenTick=this::refreshBoardTokens;
+    private final Runnable boardTick=this::refreshBoard;
     private Map<String,List<LinearLayout>> boardShells=new HashMap<>();
+    /** When each 总览 path last finished a read (elapsed realtime), and the paths being read right now. */
+    private final Map<String,Long> boardAt=new HashMap<>(); private final Set<String> boardBusy=new HashSet<>();
     static final String TOKENS="tokens/quotas";
-    private boolean onBoard(){return resumed&&board!=null&&selectedId==null&&"总览".equals(group)&&loggedIn()&&boardShells.containsKey(TOKENS);}
-    private void scheduleTokenTick(JSONObject data){ticker.removeCallbacks(tokenTick);if(onBoard())ticker.postDelayed(tokenTick,TokensModel.refreshMs(data));}
-    private void refreshBoardTokens(){
-        if(!onBoard())return;final LinearLayout box=board;final List<LinearLayout> targets=boardShells.get(TOKENS);final int epoch=generation;
-        boardReads.execute(()->{try{long started=SystemClock.elapsedRealtime();JSONObject data=read(TOKENS);android.util.Log.i("GodBoard","auto refresh "+TOKENS+" ms="+(SystemClock.elapsedRealtime()-started)+" next="+TokensModel.refreshMs(data)/1000+"s");
-                runOnUiThread(()->{if(epoch!=generation||board!=box||!resumed||isDestroyed())return;saveViewport();snapshots.put(TOKENS,data);GodWidget.observe(this,TOKENS,data);fillBoard(targets,data);restoreViewport();scheduleTokenTick(data);});}
-            catch(Exception e){android.util.Log.w("GodBoard","auto refresh failed "+(e instanceof MobileApi.ApiError?"http="+((MobileApi.ApiError)e).status:e.getClass().getSimpleName()));
-                // Keep what is shown and try again at the usual pace.
-                runOnUiThread(()->{if(epoch==generation&&board==box)scheduleTokenTick(snapshots.get(TOKENS));});}});
+    private boolean onBoard(){return resumed&&board!=null&&selectedId==null&&"总览".equals(group)&&loggedIn()&&!boardShells.isEmpty();}
+    private void scheduleBoardTick(){ticker.removeCallbacks(boardTick);if(!onBoard())return;long now=SystemClock.elapsedRealtime(),wait=Long.MAX_VALUE;
+        for(String path:boardShells.keySet()){Long at=boardAt.get(path);if(at==null||boardBusy.contains(path))continue;wait=Math.min(wait,RefreshPace.wait(at,RefreshPace.board(path,snapshots.get(path)),now));}
+        if(wait!=Long.MAX_VALUE)ticker.postDelayed(boardTick,wait);}
+    private void refreshBoard(){
+        if(!onBoard())return;final LinearLayout box=board;final int epoch=generation;long now=SystemClock.elapsedRealtime();
+        for(String path:new ArrayList<>(boardShells.keySet())){Long at=boardAt.get(path);
+            if(at==null||boardBusy.contains(path)||RefreshPace.wait(at,RefreshPace.board(path,snapshots.get(path)),now)>0)continue;
+            final List<LinearLayout> targets=boardShells.get(path);boardBusy.add(path);
+            boardReads.execute(()->{JSONObject data=null;long started=SystemClock.elapsedRealtime();
+                try{data=read(path);android.util.Log.i("GodBoard","auto refresh "+path+" ms="+(SystemClock.elapsedRealtime()-started));}
+                catch(Exception e){android.util.Log.w("GodBoard","auto refresh "+path+" failed "+(e instanceof MobileApi.ApiError?"http="+((MobileApi.ApiError)e).status:e.getClass().getSimpleName()));}
+                final JSONObject got=data;
+                runOnUiThread(()->{boardBusy.remove(path);if(epoch!=generation||board!=box||isDestroyed())return;boardAt.put(path,SystemClock.elapsedRealtime());
+                    if(got!=null){saveViewport();snapshots.put(path,got);GodWidget.observe(this,path,got);fillBoard(targets,got);restoreViewport();}
+                    scheduleBoardTick();});});}
+        scheduleBoardTick();
     }
     private String group="总览",selectedId=null,project=null;
     private volatile int generation=0; private boolean resumed=false;
@@ -139,8 +153,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}
         PreferenceSyncHub.attach(this);if(!PreviewMode.isBuild()){PreferenceSyncHub.foreground(this);PreferenceSyncHub.startPolling(this);}
-        // Back on 总览 after a pause (shade, dialog, another app on top): the Token cards resume refreshing themselves.
-        if(board!=null)scheduleTokenTick(snapshots.get(TOKENS));
+        // Back after a pause (shade, dialog, another app on top): 总览's cards and a self-refreshing page carry on, at once when overdue.
+        if(board!=null)scheduleBoardTick();schedulePageTick();
         // Back from the "install unknown apps" settings page: continue the update the person already started.
         if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}
         // Back from a notification or battery settings page: show what still keeps the reminder from ringing.
@@ -159,7 +173,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
-    @Override protected void onPause(){resumed=false;PreferenceSyncHub.stopPolling();ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
+    @Override protected void onPause(){resumed=false;PreferenceSyncHub.stopPolling();ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     /** A pulled account document changed settings under this page: repaint from the preference files. */
     void onPreferencesApplied(){if(isDestroyed()||!resumed)return;theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;applyStatusBar();build();askSyncedNotify();}
@@ -238,7 +252,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     }
     @Override public void onAuthError(String message){if(resumed&&!isDestroyed()){build();error("登录未完成",message);}}
     private void build() {
-        ticker.removeCallbacks(statusTick);ticker.removeCallbacks(tokenTick);boardShells=new HashMap<>();saveViewport();viewportReady=false;++generation;board=null;
+        ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);boardShells=new HashMap<>();saveViewport();viewportReady=false;++generation;board=null;
         boolean logged=loggedIn();
         if(!logged){navigation.clear();project=null;ledgerCursor=null;ledgerPages.clear();}
         DeviceAuthorization device=coordinator.deviceAuthorization();
@@ -401,7 +415,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         List<String> ids=boardCards();
         if(ids.isEmpty()){LinearLayout c=theme.card(box);c.setBackground(theme.ripple(theme.card(),24));c.setFocusable(true);c.setClickable(true);c.setOnClickListener(v->openBoardEditor());
             c.addView(text("看板是空的",15,INK,true));TextView t=text("点这里添加想在这里看到的功能卡片。",13,MUTED,false);t.setPadding(0,dp(4),0,0);c.addView(t);if(done!=null)done.run();return;}
-        final Map<String,List<LinearLayout>> shells=new HashMap<>();boardShells=shells;ticker.removeCallbacks(tokenTick);LinearLayout row=null;
+        final Map<String,List<LinearLayout>> shells=new HashMap<>();boardShells=shells;ticker.removeCallbacks(boardTick);boardAt.clear();LinearLayout row=null;
         for(String id:ids){Dashboard.Card card=Dashboard.find(id);if(card==null)continue;LinearLayout shell;
             if(card.wide){row=null;LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(10);shell=FeatureRenderer.widgetShell(this,box,card,lp);}
             else{if(row==null||row.getChildCount()>=2){row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);LinearLayout.LayoutParams rp=new LinearLayout.LayoutParams(-1,-2);rp.bottomMargin=dp(10);box.addView(row,rp);}
@@ -413,16 +427,19 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         final Runnable finished=()->{if(--reading[0]==0&&done!=null)done.run();};
         for(String path:Dashboard.paths(ids)){final List<LinearLayout> targets=shells.get(path);JSONObject cached=snapshots.get(path);
             if(cached!=null)fillBoard(targets,cached);else for(LinearLayout shell:targets)FeatureRenderer.widgetLoading(this,shell);
-            if(cached!=null&&!refresh){if(TOKENS.equals(path))scheduleTokenTick(cached);continue;}
+            if(cached!=null&&!refresh){boardAt.put(path,SystemClock.elapsedRealtime());continue;}
             reading[0]++;
             boardReads.execute(()->{if(epoch!=generation){runOnUiThread(finished);return;}long started=SystemClock.elapsedRealtime();
-                try{JSONObject data=read(path);android.util.Log.i("GodBoard",path+" ms="+(SystemClock.elapsedRealtime()-started));runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);GodWidget.observe(this,path,data);fillBoard(targets,data);restoreViewport();if(TOKENS.equals(path))scheduleTokenTick(data);}finally{finished.run();}});}
+                try{JSONObject data=read(path);android.util.Log.i("GodBoard",path+" ms="+(SystemClock.elapsedRealtime()-started));runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;saveViewport();snapshots.put(path,data);GodWidget.observe(this,path,data);fillBoard(targets,data);restoreViewport();}finally{boardRead(epoch,path);finished.run();}});}
                 catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;
                     // A refresh may have invalidated the stored session: show sign-in instead of a board that can only fail.
                     if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
-                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,boardNote(path,e));}finally{finished.run();}});}});}
+                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,boardNote(path,e));}finally{boardRead(epoch,path);finished.run();}});}});}
+        scheduleBoardTick();
         if(reading[0]==0&&done!=null)done.run();
     }
+    /** A 总览 read of this board finished, either way: its next refresh counts from now. */
+    private void boardRead(int epoch,String path){if(epoch!=generation)return;boardAt.put(path,SystemClock.elapsedRealtime());scheduleBoardTick();}
     /** Long-pressing any 看板 card opens 编辑看板; screen readers announce the long-press action by that name. */
     private void editOnLongPress(View card){
         if(!card.isClickable()){card.setBackground(theme.ripple(theme.card(),24));theme.press(card);}
@@ -696,7 +713,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         trailing.removeAllViews();
         // Every data page refreshes by pulling down; the mark keeps turning until this page's read has finished.
         if(loggedIn()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新",()->showFeature(f,true,page::finishRefresh));}
-        ticker.removeCallbacks(statusTick);if("status".equals(f.id)&&loggedIn())ticker.postDelayed(statusTick,60_000);
+        tickPage=RefreshPace.page(f.id,null)>0?f.id:null;pageReadAt=SystemClock.elapsedRealtime();schedulePageTick();
         if(!loggedIn()){LinearLayout c=card();c.addView(text(f.title,17,INK,true));TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(6),0,dp(18));c.addView(t);Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);c.addView(passkey,new LinearLayout.LayoutParams(-1,-2));LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);c.addView(button("通过已有设备授权",this::deviceLogin),d);restoreViewport();return;}
         // 心力球 reads only this phone: pulling down transcribes and summarizes what is waiting.
         if(f.local()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processNow(this,page::finishRefresh);});
@@ -823,14 +840,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         }else if(NoticePages.CHALLENGE.equals(g.id)){
             challengeSwitch(box);
         }else if(NoticePages.CHECK.equals(g.id)){
-            featureRow("检查频率","每 5 分钟一次","history",box,null);
+            featureRow("检查频率",TiboWatch.EVERY+"一次","history",box,null);
             featureRow("检查时的通知","短暂显示「God 正在检查提醒」，检查完消失","bell",box,null);
             featureRow("ColorOS 耗电管理","设置 → 应用 → God → 耗电管理，允许后台行为","info",box,preview?null:()->tiboFix("battery"));
             boolean watching=!preview&&(TiboWatch.enabled(this)||NoticeCenter.any(this));
             featureRow("检查状态",preview?"界面预览不在后台检查":watching?(TiboWatch.enabled(this)?TiboWatch.status(this):NoticeCenter.status(this)):"未开启","history",box,null);
             if(!preview)for(String[] problem:TiboWatch.problems(this))if(!"notifications".equals(problem[1]))featureRow(problem[0],"点按去设置","info",box,()->tiboFix(problem[1]));
             featureRow("发送测试通知","看看提醒在通知栏和锁屏上的样子","bell",box,()->{if(preview){error("界面预览","界面预览不发送通知。");return;}if(!notificationsAllowed()){noticePending=null;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},NOTICE_PERMISSION);return;}NoticeCenter.test(this);});
-            content.addView(theme.info(List.of("God 没有云端推送，提醒来自手机每 5 分钟一次的后台检查；手机关机或断网期间的变化会在恢复后补算。")));
+            content.addView(theme.info(List.of("God 没有云端推送，提醒来自手机"+TiboWatch.EVERY+"一次的后台检查；手机关机或断网期间的变化会在恢复后补算。")));
         }
         restoreViewport();
     }
@@ -881,9 +898,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             {"数据","应用仅连接 Robby 的 God 私有接口，没有第三方统计，不保存网页 Cookie。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。可查看原生数据，并在确认后管理账目和人员。"},
             {"头像与签名","个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。个性签名保存在你的 God 账号里，本机留一份副本用于显示。"},
             {"设置","看板、外观、功能的隐藏和排序、通知开关、提醒线和 Codex 积分点数线会保存到 God 账号，同一账号的手机保持一致。登录、灵动岛的开孔位置、提醒的检查记录、积分起点和已提醒标记只留在这台手机；未登录时设置也只在本机。"},
-            {"重置提醒","开启 Tibo 重置提醒后，应用每 5 分钟读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。检查期间会短暂显示一条通知，检查完即消失。"},
-            {"桌面小组件","Token 额度、重置日历、运行状态和微信消息小组件只显示 God 已经读到的数字：产品名、剩余百分比、重置时间、站点在线和异常数、今天的微信消息数与近 7 天日均。本机为它们保留一份这样的副本，不含邮箱、账号、站点或会话名称和消息内容；超过两小时显示「打开 God 更新」，退出登录立即清除。这四个只能放在桌面，时区时钟和 God 小组件可以放在锁屏。"},
-            {"通知","开启「我 → 通知」里的提醒后，应用每 5 分钟在后台读取 Token 额度（开启站点提醒时还有运行状态）。检查时会短暂显示「God 正在检查提醒」，检查完这条通知消失，不再常驻「已开启」。为了判断变化，本机会保存每个额度最近的剩余比例、当天累计消耗、Codex 积分起点和是否已提醒、账号状态，以及站点域名和是否在线；不保存邮箱、套餐或其他页面内容，14 天没出现的记录会自动删除，全部关闭后不再读取。这些检查记录只留在这台手机。"}};
+            {"重置提醒","开启 Tibo 重置提醒后，应用"+TiboWatch.EVERY+"读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。检查期间会短暂显示一条通知，检查完即消失。"},
+            {"桌面小组件","Token 额度、重置日历、运行状态和微信消息小组件只显示 God 已经读到的数字：产品名、剩余百分比、重置时间、站点在线和异常数、今天的微信消息数与近 7 天日均。本机为它们保留一份这样的副本，不含邮箱、账号、站点或会话名称和消息内容。桌面上放了这几个小组件时，应用"+TiboWatch.EVERY+"在后台读取一次它们用到的数据（检查时短暂显示「God 正在检查提醒」），移除后不再读取；超过两小时没读到显示「打开 God 更新」，退出登录立即清除。这四个只能放在桌面，时区时钟和 God 小组件可以放在锁屏。"},
+            {"通知","开启「我 → 通知」里的提醒后，应用"+TiboWatch.EVERY+"在后台读取 Token 额度（开启站点提醒时还有运行状态）。检查时会短暂显示「God 正在检查提醒」，检查完这条通知消失，不再常驻「已开启」。为了判断变化，本机会保存每个额度最近的剩余比例、当天累计消耗、Codex 积分起点和是否已提醒、账号状态，以及站点域名和是否在线；不保存邮箱、套餐或其他页面内容，14 天没出现的记录会自动删除，全部关闭后不再读取。这些检查记录只留在这台手机。"}};
         for(String[] part:parts){section(part[0]);LinearLayout c=card();TextView t=text(part[1],14,INK,false);t.setLineSpacing(dp(3),1);c.addView(t);}
         restoreViewport();
     }
