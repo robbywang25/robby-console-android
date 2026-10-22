@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+: placed at 2 × 2 cells by default; GodWidgets redraws for each size it is resized to. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp" android:minHeight="110dp" android:minResizeWidth="110dp" android:minResizeHeight="110dp"
+    android:targetCellWidth="2" android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical" android:updatePeriodMillis="0" android:initialLayout="@layout/widget_figure"
+    android:description="@string/widget_status_description" android:widgetCategory="home_screen" />

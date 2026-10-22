@@ -589,3 +589,18 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
 Find：0.34.0 正式包覆盖安装（保留登录），安装文件 SHA256 与 Release 附件一致（`017fabfd…84572b0`），签名为正式证书，`RECORD_AUDIO` 和 `FOREGROUND_SERVICE_MICROPHONE` 已声明，启动后没有崩溃日志。
 
 未验证：真实录音和整理需要本人在设置里填 DeepSeek 和转写服务（默认硅基流动）的 Key 后才能试，静音丢弃阈值、ColorOS / HyperOS 锁屏后长时间录音、硅基流动对 m4a 的接受度、DeepSeek 真实整理质量都还没验证。
+
+## v0.35.0：小组件新外观（2026-10-23）
+
+本人反馈「安卓上的小组件太丑了」。0.32.0 的五个小组件是白底标题加一列纯文字，God 小组件的倒计时挤在状态文字后面。这一版只改外观和排版，数据、隐私边界和刷新方式都不变。
+
+- **统一卡片**：`widget_background` 改为渐变表面加 1dp 细边（`widget_surface_top` → `widget_surface`，`widget_rim`）；`drawable-v31` 使用 `@android:dimen/system_app_widget_background_radius`。根视图 id 改为 `@android:id/background`，Android 12+ 从小组件打开 App 时有系统过渡动画。
+- **头部**：`w_icon` 是 `ConsoleTheme.widgetIcon` 画的位图，App 的线性图标白色画在类别色圆角方块上：Token 靛蓝 gauge、日历紫 calendar、时钟天蓝 globe、状态绿 pulse、微信绿 chat。`w_meta` 显示 `WidgetSnapshot.meta`：读数时间 `HH:mm`，过期时显示琥珀色「待更新」；内容描述仍是完整的 `footer`（「打开 God 更新」）。
+- **布局**：`widget_rows` / `widget_big` 换成 `widget_tokens`、`widget_calendar`、`widget_figure`、`widget_clock`（矮）、`widget_clock_hero`（高）。Token 行由名称、重置、百分比和 `ProgressBar` 组成，Android 12+ 用 `setColorStateList(…, "setProgressTintList", …)` 着色，分档见 `WidgetSnapshot.level`；日历行分为日、时间、内容三列（`WidgetSnapshot.day`、`clockTime`），同一天只写一次日期；微信显示「比日均多/少 N%」（`versusAverage`，仅宽尺寸）。
+- **尺寸自适应**：Android 12+ 用 `RemoteViews(Map<SizeF, RemoteViews>)`，宽 110/200 和高 110/150/200/260 dp 共 8 档。行数 = (高 − 24 − 头部) ÷ (行内 dp 间距 + 19sp × 字号倍数)；字号 ≥1.3 倍且窄时隐藏读数时间，宽度不足 200 × 倍数时隐藏 Token 的重置时间、矮时钟的星期，以及高时钟后两个的星期。Android 11 固定用 250×180 那一档。`xml-v31` 新增五个 provider 文件，默认尺寸为 Token 和日历 4×2，其他 2×2；`widgetCategory` 和 `xml/` 一致，`WidgetSnapshotTest.privateWidgetsAreHomeScreenOnly` 两个目录都检查。
+- **God 小组件**：图标 34dp，倒计时移到右侧，20sp 等宽数字。
+- **「我 → 小组件」**：弹窗可以滚动，按常用尺寸预览全部六个（`GodWidgets.views(c, kind, w, h)`，和桌面上用的是同一份 RemoteViews）。
+
+验证：`check.sh` 通过（242 项 JVM 测试 0 失败，新增 `rowsGetABandADayAndAComparison`、`meta` 断言，隐私测试扩展到 xml-v31；lint debug/release 0 错误，小组件布局没有新警告）。Find 上预览版截图了「我 → 小组件」的浅色、深色、1.6 倍大字体：浅色下 Token 显示 4 行，余量条红、琥珀、绿三色都对；日历 4 行，按日期分组；高时钟一大两小；运行状态红点显示「3 项异常」；微信显示「187 条 · 今日 · 日均 178」。深色下卡片、文字层级和余量条颜色都随主题切换。大字体下 Token 3 行、日历 2 行，时钟改为三行列表，都没有裁切。截图过程中修了几处：日历行高估算过大（多空一行）、窄列下时钟后两个的星期被挤到约 10dp、2×2 下「运行状态」标题被「00:07 更新」挤成「运…」、大字体下溢出。
+
+未验证：小组件真正放在 ColorOS 桌面上的样子（Find 上目前没有放 God 的小组件，需要本人添加），包括格子的实际 dp 尺寸和系统选中哪一档布局；Pixel 锁屏；Android 11 上的固定档位。改了系统字号后，要等 App 下一次读取数据时小组件才会按新字号重排。

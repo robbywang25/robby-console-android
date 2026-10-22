@@ -71,6 +71,7 @@ public final class WidgetSnapshotTest {
         assertTrue("a clock moved back", WidgetSnapshot.stale(NOW + 2 * H, NOW));
         assertEquals("打开 God 更新", WidgetSnapshot.footer(NOW - 3 * H, NOW, BEIJING));
         assertEquals("11:30 更新", WidgetSnapshot.footer(NOW - 30 * 60_000L, NOW, BEIJING));
+        assertEquals("待更新", WidgetSnapshot.meta(NOW - 3 * H, NOW, BEIJING)); assertEquals("11:30", WidgetSnapshot.meta(NOW - 30 * 60_000L, NOW, BEIJING));
         assertEquals("明天 09:00", WidgetSnapshot.when(Instant.parse("2026-10-23T01:00:00Z").toEpochMilli(), BEIJING, NOW));
         assertEquals("10/25 09:00", WidgetSnapshot.when(Instant.parse("2026-10-25T01:00:00Z").toEpochMilli(), BEIJING, NOW));
     }
@@ -82,14 +83,29 @@ public final class WidgetSnapshotTest {
         assertTrue(WidgetSnapshot.clocks("").isEmpty());
         assertEquals(Collections.emptyList(), WidgetSnapshot.clocks(""));
     }
-    /** The manifest's widgets with account figures stay off the lock screen; only the clock and God 小组件 may go there. */
+    /** The manifest's widgets with account figures stay off the lock screen; only the clock and God 小组件 may go there. Android 12+ reads xml-v31. */
     @Test public void privateWidgetsAreHomeScreenOnly() throws Exception {
-        java.io.File dir = new java.io.File("src/main/res/xml");
-        for (String name : new String[]{"token_widget_info", "calendar_widget_info", "status_widget_info", "wechat_widget_info"}) {
-            String xml = new String(java.nio.file.Files.readAllBytes(new java.io.File(dir, name + ".xml").toPath()), "UTF-8");
-            assertTrue(name, xml.contains("android:widgetCategory=\"home_screen\"")); assertTrue(name, xml.contains("android:updatePeriodMillis=\"0\""));
+        for (String folder : new String[]{"src/main/res/xml", "src/main/res/xml-v31"}) {
+            java.io.File dir = new java.io.File(folder);
+            for (String name : new String[]{"token_widget_info", "calendar_widget_info", "status_widget_info", "wechat_widget_info"}) {
+                String xml = new String(java.nio.file.Files.readAllBytes(new java.io.File(dir, name + ".xml").toPath()), "UTF-8");
+                assertTrue(folder + "/" + name, xml.contains("android:widgetCategory=\"home_screen\"")); assertTrue(name, xml.contains("android:updatePeriodMillis=\"0\""));
+            }
+            String clock = new String(java.nio.file.Files.readAllBytes(new java.io.File(dir, "clock_widget_info.xml").toPath()), "UTF-8");
+            assertTrue(clock.contains("home_screen|keyguard"));
         }
-        String clock = new String(java.nio.file.Files.readAllBytes(new java.io.File(dir, "clock_widget_info.xml").toPath()), "UTF-8");
-        assertTrue(clock.contains("home_screen|keyguard"));
+    }
+    @Test public void rowsGetABandADayAndAComparison() throws Exception {
+        assertEquals(2, WidgetSnapshot.level(new JSONObject().put("percent", 19))); assertEquals(1, WidgetSnapshot.level(new JSONObject().put("percent", 20)));
+        assertEquals(1, WidgetSnapshot.level(new JSONObject().put("percent", 49))); assertEquals(0, WidgetSnapshot.level(new JSONObject().put("percent", 50)));
+        assertEquals(-1, WidgetSnapshot.level(new JSONObject().put("percent", JSONObject.NULL)));
+        assertEquals("14:30 重置", WidgetSnapshot.resetNote(new JSONObject().put("resetAt", Instant.parse("2026-10-22T06:30:00Z").toEpochMilli()), BEIJING, NOW));
+        assertEquals("", WidgetSnapshot.resetNote(new JSONObject().put("resetAt", NOW - H), BEIJING, NOW));
+        assertEquals("今天", WidgetSnapshot.day(NOW + H, BEIJING, NOW)); assertEquals("明天", WidgetSnapshot.day(NOW + 20 * H, BEIJING, NOW));
+        assertEquals("周日", WidgetSnapshot.day(Instant.parse("2026-10-25T01:00:00Z").toEpochMilli(), BEIJING, NOW));
+        assertEquals("10/29", WidgetSnapshot.day(Instant.parse("2026-10-29T01:00:00Z").toEpochMilli(), BEIJING, NOW));
+        assertEquals("09:00", WidgetSnapshot.clockTime(Instant.parse("2026-10-23T01:00:00Z").toEpochMilli(), BEIJING));
+        assertEquals("比日均多 33%", WidgetSnapshot.versusAverage(128, 96)); assertEquals("比日均少 50%", WidgetSnapshot.versusAverage(48, 96));
+        assertEquals("与日均持平", WidgetSnapshot.versusAverage(96, 96)); assertEquals("", WidgetSnapshot.versusAverage(5, 0));
     }
 }

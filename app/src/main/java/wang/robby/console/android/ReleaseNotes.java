@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.35.0", "2026-10-23", "小组件换上新外观",
+            "6 个桌面小组件统一换成和 App 一样的卡片，顶部是彩色图标、名称和更新时间。",
+            "Token 额度每个账号多了一条余量条，充足绿色、偏少橙色、不足 20% 红色。",
+            "重置日历按「今天 / 明天 / 周几」分组，下一次重置用蓝色标出。",
+            "时区时钟放大第一个时间并显示日期和星期，另外两个并排显示。",
+            "运行状态和微信消息用大数字显示，异常时有红点。",
+            "「我 → 小组件」可以预览全部 6 个小组件；拉大小组件或调大字体会自动增减行数。"),
         new Entry("0.34.0", "2026-10-22", "心力球：全天录音整理待办",
             "「功能 → 工具」新增心力球，开启后在后台全天录音，像 OPPO 心力球一样记下一天。",
             "说话的片段自动转成文字，几乎没有声音的片段直接删除，不上传。",

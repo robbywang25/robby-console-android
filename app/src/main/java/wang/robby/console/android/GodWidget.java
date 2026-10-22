@@ -73,14 +73,14 @@ public final class GodWidget extends AppWidgetProvider {
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.god_widget);
         Intent open = new Intent(c, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         PendingIntent tap = PendingIntent.getActivity(c, 11, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        v.setOnClickPendingIntent(R.id.widget_frame, tap); v.setOnClickPendingIntent(R.id.widget_root, tap);
+        v.setOnClickPendingIntent(R.id.widget_frame, tap); v.setOnClickPendingIntent(android.R.id.background, tap);
         v.setTextViewText(R.id.widget_status, s.line);
         if (s.deadline > now) {
             v.setViewVisibility(R.id.widget_countdown, View.VISIBLE);
             v.setChronometer(R.id.widget_countdown, SystemClock.elapsedRealtime() + (s.deadline - now), null, true);
             v.setChronometerCountDown(R.id.widget_countdown, true);
         } else { v.setChronometer(R.id.widget_countdown, SystemClock.elapsedRealtime(), null, false); v.setViewVisibility(R.id.widget_countdown, View.GONE); }
-        v.setContentDescription(R.id.widget_root, "God，" + s.line + (s.deadline > now ? "，" + shortStatus(c) : "") + "，点按打开");
+        v.setContentDescription(android.R.id.background, "God，" + s.line + (s.deadline > now ? "，" + shortStatus(c) : "") + "，点按打开");
         return v;
     }
     /** Redraws every placed widget and the tile, then wakes again when the countdown ends or the reading goes stale. */

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Token 额度's remaining bar: a soft track and a rounded fill, tinted green, amber or red by the code on Android 12+. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:id="@android:id/background"><shape><solid android:color="@color/widget_track" /><corners android:radius="2dp" /></shape></item>
+    <item android:id="@android:id/progress"><clip><shape><solid android:color="@color/widget_ok" /><corners android:radius="2dp" /></shape></clip></item>
+</layer-list>

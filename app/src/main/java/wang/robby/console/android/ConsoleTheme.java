@@ -170,6 +170,12 @@ public final class ConsoleTheme {
         c.drawColor((hue(name)&0x00ffffff)|0x2e000000);c.drawColor(dark?0xff1c1f26:0xfff6f8fc,android.graphics.PorterDuff.Mode.DST_OVER);
         Symbol s=new Symbol(name,0xff0f1115);int g=dp(44);s.setBounds((px-g)/2,(px-g)/2,(px+g)/2,(px+g)/2);s.draw(c);return b;
     }
+    /** A widget's icon tile: the symbol in white on a rounded square of its hue, the same in light and dark. */
+    static android.graphics.Bitmap widgetIcon(Context context,String name,int hue,int sizeDp){
+        float d=context.getResources().getDisplayMetrics().density;int px=Math.round(sizeDp*d);android.graphics.Bitmap b=android.graphics.Bitmap.createBitmap(px,px,android.graphics.Bitmap.Config.ARGB_8888);Canvas c=new Canvas(b);
+        Paint fill=new Paint(Paint.ANTI_ALIAS_FLAG);fill.setColor(hue);c.drawRoundRect(0,0,px,px,px*.28f,px*.28f,fill);
+        Symbol s=new Symbol(name,Color.WHITE);s.p.setStrokeWidth(2.1f);int g=Math.round(px*.64f);s.setBounds((px-g)/2,(px-g)/2,(px+g)/2,(px+g)/2);s.draw(c);return b;
+    }
     public View dot(int color,float size){View v=new View(context);GradientDrawable d=new GradientDrawable();d.setShape(GradientDrawable.OVAL);d.setColor(color);v.setBackground(d);v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     /** Liquid "flex": pressed controls sink slightly and spring back. Skipped when motion is reduced. */
     public void press(View v){

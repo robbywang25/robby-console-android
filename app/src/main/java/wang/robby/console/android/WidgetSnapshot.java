@@ -83,6 +83,8 @@ final class WidgetSnapshot {
 
     /** A reading is shown as current only when taken within two hours and not in the future. */
     static boolean stale(long savedAt, long now) { return savedAt <= 0 || now - savedAt > STALE_MS || savedAt > now + 60_000L; }
+    /** The widget header's corner: the reading's clock time, or 「待更新」 once stale (the full 「打开 God 更新」 goes to the spoken label). */
+    static String meta(long savedAt, long now, ZoneId zone) { return stale(savedAt, now) ? "待更新" : HM.format(Instant.ofEpochMilli(savedAt).atZone(zone)); }
     static String footer(long savedAt, long now, ZoneId zone) { return stale(savedAt, now) ? STALE_TEXT : HM.format(Instant.ofEpochMilli(savedAt).atZone(zone)) + " 更新"; }
     /** 「Claude  72% · 14:30 重置」, the reset written as a clock time so the widget never needs to tick. */
     static String tokenLine(JSONObject row, ZoneId zone, long now) {
@@ -91,6 +93,25 @@ final class WidgetSnapshot {
         return name + "  " + pct + (reset > now ? " · " + when(reset, zone, now) + " 重置" : "");
     }
     static boolean low(JSONObject row) { return !row.isNull("percent") && row.optLong("percent") < LOW; }
+    /** The bar colour band: 2 for under 20% left, 1 for under 50%, 0 otherwise, -1 when there is no reading. */
+    static int level(JSONObject row) { if (row.isNull("percent")) return -1; long p = row.optLong("percent"); return p < LOW ? 2 : p < 50 ? 1 : 0; }
+    /** The token row's small reset note: 「14:30 重置」, 「明天 09:00 重置」, or empty when no reset is ahead. */
+    static String resetNote(JSONObject row, ZoneId zone, long now) { long reset = row.optLong("resetAt"); return reset > now ? when(reset, zone, now) + " 重置" : ""; }
+    /** 今天, 明天, 周五 within the week, else M/d: the day column of 重置日历. */
+    static String day(long at, ZoneId zone, long now) {
+        LocalDate d = Instant.ofEpochMilli(at).atZone(zone).toLocalDate(), today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
+        if (d.equals(today)) return "今天";
+        if (d.equals(today.plusDays(1))) return "明天";
+        if (d.isBefore(today.plusDays(7)) && d.isAfter(today)) return "周" + "一二三四五六日".charAt(d.getDayOfWeek().getValue() - 1);
+        return d.getMonthValue() + "/" + d.getDayOfMonth();
+    }
+    static String clockTime(long at, ZoneId zone) { return HM.format(Instant.ofEpochMilli(at).atZone(zone)); }
+    /** 微信消息's comparison: 「比日均多 33%」, 「比日均少 12%」, 「与日均持平」, or "" without an average. */
+    static String versusAverage(long today, long average) {
+        if (average <= 0) return "";
+        long pct = Math.round((today - average) * 100.0 / average);
+        return pct == 0 ? "与日均持平" : (pct > 0 ? "比日均多 " : "比日均少 ") + Math.abs(pct) + "%";
+    }
     static String calendarLine(JSONObject row, ZoneId zone, long now) { return when(row.optLong("at"), zone, now) + " · " + row.optString("text"); }
     /** Today as HH:mm, tomorrow as 明天 HH:mm, later as M/d HH:mm, in the phone's zone. */
     static String when(long at, ZoneId zone, long now) {

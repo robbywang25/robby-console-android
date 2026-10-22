@@ -995,18 +995,27 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         Class<?>[] kinds={GodWidget.class,TokenWidget.class,CalendarWidget.class,ClockWidget.class,StatusWidget.class,WechatWidget.class};
         show(new AlertDialog.Builder(this).setTitle("添加到桌面").setItems(names,(d,w)->widgets.requestPinAppWidget(new ComponentName(this,kinds[w]),null,null)).setNegativeButton("取消",null));
     }
-    /** The widget as it looks now, plus the ways to place it: home screen, Pixel lock screen and 快捷设置. */
+    /** Every widget as it looks now at its usual size, plus the ways to place them: home screen, Pixel lock screen and 快捷设置. */
     private void widgetSheet(){
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(20),dp(8),dp(20),0);
-        FrameLayout frame=new FrameLayout(this);try{frame.addView(GodWidget.views(this).apply(this,frame));}catch(RuntimeException ignored){}
-        box.addView(frame,new LinearLayout.LayoutParams(-1,dp(68)));
-        TextView how=text("桌面：点「添加到桌面」选一个，或长按桌面空白处 → 小组件 → God。还有 Token 额度、重置日历、时区时钟、运行状态和微信消息五个，只显示数字，不显示邮箱和会话名。\n\nPixel 锁屏（Android 16 QPR2 起）：设置 → 显示与触控 → 锁定屏幕 → 锁屏上的微件，打开后在锁屏上编辑并添加 God。锁屏上点按会先要求解锁。\n\n快捷设置：点「添加到快捷设置」，或下拉快捷设置 → 编辑 → 把 God 拖进来。\n\n小组件只显示 God 图标和 Tibo 的公开预告，不显示账号数据。",13,MUTED,false);
+        widgetPreview(box,null,GodWidget.views(this),-1,76);
+        widgetPreview(box,null,GodWidgets.views(this,WidgetSnapshot.TOKENS,250,200),-1,200);
+        widgetPreview(box,null,GodWidgets.views(this,WidgetSnapshot.CALENDAR,250,150),-1,150);
+        LinearLayout pair=null;String[] small={GodWidgets.CLOCK,WidgetSnapshot.STATUS,WidgetSnapshot.WECHAT,GodWidgets.CLOCK};
+        for(int i=0;i<small.length;i++){if(i%2==0){pair=new LinearLayout(this);box.addView(pair,new LinearLayout.LayoutParams(-1,-2));}widgetPreview(pair,i%2==0?null:pair,GodWidgets.views(this,small[i],110,i==3?110:160),0,i==3?110:160);}
+        TextView how=text("桌面：点「添加到桌面」选一个，或长按桌面空白处 → 小组件 → God。还有 Token 额度、重置日历、时区时钟、运行状态和微信消息五个，只显示数字，不显示邮箱和会话名。\n\nPixel 锁屏（Android 16 QPR2 起）：设置 → 显示与触控 → 锁定屏幕 → 锁屏上的微件，打开后在锁屏上编辑并添加 God。锁屏上点按会先要求解锁。\n\n快捷设置：点「添加到快捷设置」，或下拉快捷设置 → 编辑 → 把 God 拖进来。\n\nGod 小组件只显示 God 图标和 Tibo 的公开预告，不显示账号数据。",13,MUTED,false);
         how.setPadding(0,dp(14),0,0);box.addView(how);
         android.appwidget.AppWidgetManager widgets=android.appwidget.AppWidgetManager.getInstance(this);
-        AlertDialog.Builder b=new AlertDialog.Builder(this).setTitle("God 小组件").setView(box).setNegativeButton("关闭",null);
+        ScrollView scroll=new ScrollView(this);scroll.addView(box);
+        AlertDialog.Builder b=new AlertDialog.Builder(this).setTitle("小组件").setView(scroll).setNegativeButton("关闭",null);
         if(widgets!=null&&widgets.isRequestPinAppWidgetSupported())b.setPositiveButton("添加到桌面",(d,w)->pinWidget(widgets));
         if(Build.VERSION.SDK_INT>=33)b.setNeutralButton("添加到快捷设置",(d,w)->addTile());
         show(b);
+    }
+    /** One widget drawn the way the launcher draws it; a width of 0 shares a row with its neighbour. */
+    private void widgetPreview(LinearLayout parent,LinearLayout gap,RemoteViews views,int width,int heightDp){
+        FrameLayout frame=new FrameLayout(this);try{frame.addView(views.apply(this,frame));}catch(RuntimeException e){android.util.Log.w("GodWidget","preview failed",e);}
+        LinearLayout.LayoutParams lp=width==0?new LinearLayout.LayoutParams(0,dp(heightDp),1):new LinearLayout.LayoutParams(-1,dp(heightDp));lp.topMargin=dp(10);if(gap!=null)lp.leftMargin=dp(10);parent.addView(frame,lp);
     }
     private void addTile(){
         if(Build.VERSION.SDK_INT<33)return;
