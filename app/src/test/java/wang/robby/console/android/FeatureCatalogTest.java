@@ -38,8 +38,25 @@ public final class FeatureCatalogTest {
         assertTrue(ids("提示词").contains("prompts"));
         assertTrue("full-width and upper case", ids("ＣＯＤＥＸ").contains("tokens"));
         assertEquals("every term must match", java.util.List.of("wechat-login-audit"), ids("微信 审计"));
+        assertTrue(ids("微信").contains("wechat-messages"));
+        assertEquals(java.util.List.of("wechat-messages"), ids("日报"));
+        assertTrue(ids("看板").contains("wechat-messages"));
+        assertTrue(ids("wechat").contains("wechat-messages"));
         assertTrue("settings entries are searchable too", ids("凭证").contains("secrets"));
         assertTrue(ids("没有这个功能xyz").isEmpty());
+    }
+    @Test public void wechatMessagesSitsInInsights() {
+        FeatureCatalog.Feature f = FeatureCatalog.find("wechat-messages");
+        assertNotNull(f);
+        assertEquals("微信消息", f.title);
+        assertEquals("汇总、日报与看板", f.subtitle);
+        assertEquals("洞察", f.group);
+        assertEquals("wechat/digest", f.path);
+        assertEquals("god.mobile.wechat.read", f.scope);
+        java.util.List<FeatureCatalog.Feature> all = FeatureCatalog.all();
+        int tibo = -1, wechat = -1;
+        for (int i = 0; i < all.size(); i++) { if (all.get(i).id.equals("tibo")) tibo = i; if (all.get(i).id.equals("wechat-messages")) wechat = i; }
+        assertEquals(tibo + 1, wechat);
     }
     @Test public void blankSearchListsEveryFeatureButTheInternalWorkbench() {
         assertEquals(FeatureCatalog.all().size() - 1, FeatureCatalog.search("  ").size());

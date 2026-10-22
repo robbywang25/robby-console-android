@@ -135,7 +135,7 @@ public final class ConsoleTheme {
         case "资产","domains"->"globe";case "tokens"->"gauge";case "quota-calendar"->"calendar";case "tibo"->"bell";case "工具"->"tools";case "功能"->"features";case "设置"->"me";
         case "travel-ledger"->"ledger";case "clipboard"->"clipboard";case "infrastructure"->"server";
         case "status","site-maintenance"->"pulse";case "market","okx"->"trend";
-        case "engineering"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog"->"chat";
+        case "engineering"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog","wechat-messages"->"chat";
         case "prompts","visit-insight-reports"->"document";case "deepseek"->"chip";case "secrets","wechat-login-audit"->"shield";default->"grid";};}
     /** Visible tab names. "设置" stays the internal identity so saved navigation keeps working. */
     public static String tabLabel(String group){return "设置".equals(group)?"我":group;}

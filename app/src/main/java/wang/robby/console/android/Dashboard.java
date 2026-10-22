@@ -31,6 +31,7 @@ final class Dashboard {
         new Card("market", "关注行情", "关注列表的前几项报价", "trend", "market", "market", true),
         new Card("tokens", "Token 额度", "各账号最紧张的额度与重置倒计时", "gauge", "tokens/quotas", "tokens", true),
         new Card("calendar", "重置日历", "接下来的几次额度重置", "calendar", "tokens/quotas", "quota-calendar", true),
+        new Card("wechat", "微信消息", "今天的消息、近 7 天日均与最活跃会话", "chat", "wechat/digest", "wechat-messages", false),
         // No read: the clocks are drawn on the phone from the zones chosen in 编辑看板.
         new Card("clocks", "时区时钟", "Tibo、北京等时区的当前时间", "history", null, null, true)
     );

@@ -77,6 +77,19 @@ public final class DashboardTest {
         assertNull("Pacific local time and other zones get no extra line", Dashboard.zoneTitle("America/Los_Angeles"));
         assertEquals("PST", Dashboard.clocks(Dashboard.serializeClocks(List.of(new Dashboard.Clock("PST", "Etc/GMT+8")))).get(0).name);
     }
+    @Test public void wechatCardIsOptionalAndOffTheDefaultBoard() {
+        assertFalse(Dashboard.DEFAULT.contains("wechat"));
+        Dashboard.Card card = null; for (Dashboard.Card c : Dashboard.ALL) if ("wechat".equals(c.id)) card = c;
+        assertNotNull(card);
+        assertEquals("微信消息", card.title);
+        assertEquals("wechat/digest", card.path);
+        assertEquals("wechat-messages", card.target);
+        assertEquals("chat", card.symbol);
+        assertFalse(card.wide);
+        assertEquals(List.of("services", "wechat"), Dashboard.toggle(List.of("services"), "wechat"));
+        assertEquals(List.of("wechat/digest"), Dashboard.paths(List.of("wechat")));
+        assertEquals(List.of("overview", "tokens/quotas"), Dashboard.paths(Dashboard.DEFAULT));
+    }
     @Test public void clockCardNeedsNoRead() {
         assertEquals(List.of("tokens/quotas"), Dashboard.paths(List.of("clocks", "tokens", "calendar")));
     }

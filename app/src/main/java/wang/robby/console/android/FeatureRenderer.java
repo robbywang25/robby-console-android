@@ -41,7 +41,8 @@ public final class FeatureRenderer {
         // 总览 carries its snapshot time inside the summary card instead of a separate row.
         // 28 天挑战 shows its own sync line; the quota pages count a reading older than two minutes as stale.
         // DeepSeek 模型 states when the official list was fetched inside its own summary card.
-        if (!feature.id.equals("overview") && !feature.id.equals("tibo") && !feature.id.equals("deepseek")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.path.equals("tokens/quotas") ? 120 : 600);
+        // 微信消息 has its own 数据截至 line, including when the digest is more than two hours old.
+        if (!feature.id.equals("overview") && !feature.id.equals("tibo") && !feature.id.equals("deepseek") && !feature.id.equals("wechat-messages")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.path.equals("tokens/quotas") ? 120 : 600);
         switch (feature.id) {
             case "overview": overview(ui, payload); break;
             case "infrastructure": infrastructure(ui, obj(payload, "infrastructure")); break;
@@ -69,6 +70,7 @@ public final class FeatureRenderer {
             case "quota-calendar": TokensPages.calendar(context, container, payload); break;
             case "tibo": TokensPages.challenge(context, container, payload); break;
             case "deepseek": deepseek(ui, payload); break;
+            case "wechat-messages": WechatPages.render(context, container, payload); break;
             default: ui.message("暂未接入", "此功能尚无原生数据视图。");
         }
         if (!ui.explanations.isEmpty()) container.addView(ui.theme.info(ui.explanations));
@@ -203,6 +205,7 @@ public final class FeatureRenderer {
                 String footer = Dashboard.calendarRange(days) + "共 " + next.size() + " 次" + (next.size() > rows ? "，还有 " + (next.size() - rows) + " 次在重置日历里" : "");
                 TextView more = u.text(footer, 12, false); more.setTextColor(u.theme.faint); more.setPadding(0, u.dp(6), 0, 0); shell.addView(more);
                 break; }
+            case "wechat": WechatPages.card(context, shell, p); break;
             case "market": {
                 JSONArray list = arr(p, "watchlist"); if (list.length() == 0) { widgetMessage(context, shell, "关注列表为空"); break; }
                 for (int i = 0; i < Math.min(4, list.length()); i++) { JSONObject n = list.optJSONObject(i); if (n == null) continue;
@@ -262,6 +265,8 @@ public final class FeatureRenderer {
             case "image-workshop": return version(p, 1) && p.optJSONObject("inventory") != null;
             case "visit-insight-reports": return version(p, 1) && p.optJSONArray("reports") != null;
             case "deepseek": return version(p, 1) && p.optJSONArray("models") != null && p.optJSONObject("response") != null;
+            // A bad digest is shown as 格式不对, not the generic version error. 503 is explained by the caller.
+            case "wechat-messages": return true;
             default: return false;
         }
     }

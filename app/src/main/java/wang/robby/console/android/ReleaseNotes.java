@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.32.0", "2026-10-22", "微信消息汇总与看板",
+            "「功能 → 洞察」新增微信消息，可看汇总、日报和近 30 天看板。",
+            "汇总分今天、近 7 天、近 30 天，显示消息数、发出和收到、会话数。",
+            "看板有每日柱状图、24 小时分布、类型占比、活跃会话和链接域名。",
+            "总览可以添加微信消息卡片，默认不放在看板上。",
+            "还没有汇总或格式不对时会说明原因，不会显示猜出来的数字。"),
         new Entry("0.31.2", "2026-10-22", "Claude 显示 5 小时重置",
             "总览 Token 卡片的 Claude 小字先写 5 小时额度多久后重置，再写每周额度。",
             "读数不是最新时也照常倒计时；5 小时窗口已过会写「5 小时额度已重置」。"),

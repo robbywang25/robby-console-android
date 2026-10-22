@@ -406,7 +406,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
                 catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||!resumed||isDestroyed())return;
                     // A refresh may have invalidated the stored session: show sign-in instead of a board that can only fail.
                     if(!loggedIn()){navigation.clear();viewportReady=false;selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();snapshots.clear();if(ledger!=null)ledger.close();group="总览";build();error("请重新登录",safeError(e));return;}
-                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,"暂不可读："+explain(path,e));}finally{finished.run();}});}});}
+                    if(snapshots.get(path)==null)for(LinearLayout shell:targets)FeatureRenderer.widgetMessage(this,shell,boardNote(path,e));}finally{finished.run();}});}});}
         if(reading[0]==0&&done!=null)done.run();
     }
     /** Long-pressing any 看板 card opens 编辑看板; screen readers announce the long-press action by that name. */
@@ -696,7 +696,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!resumed){if(done!=null)done.run();return;}
         int epoch=++generation;
         worker.execute(()->{if(epoch!=generation){if(done!=null)runOnUiThread(done);return;}try{JSONObject data=read(key);runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);GodWidget.observe(this,key,data);result.removeAllViews();session.setText(idleSession());render(f,result,data);restoreViewport();}finally{if(done!=null)done.run();}});}
-        catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);TextView warning=text(explain(f.path,e),15,theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();}finally{if(done!=null)done.run();}});}});
+        catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);String why=explain(f.path,e);TextView warning=text(why,15,WechatDigest.UNAVAILABLE.equals(why)?MUTED:theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();}finally{if(done!=null)done.run();}});}});
     }
     private void render(FeatureCatalog.Feature f,LinearLayout result,JSONObject data) {
         try{
@@ -1420,8 +1420,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
      * check and sign in again, so a 403 here means the grant on the server side is missing; say how to recover.
      */
     private String explain(String path,Exception e){
+        if("wechat/digest".equals(path)&&e instanceof MobileApi.ApiError){String why=WechatDigest.failure(((MobileApi.ApiError)e).status,((MobileApi.ApiError)e).code);if(why!=null)return why;}
         if("tokens/quotas".equals(path)&&e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==403)return "这次登录没有 Token 额度读取权限，请在「我」里退出后重新登录。";
         return safeError(e);
+    }
+    /** 微信汇总的 503 文案已经说明原因，不再加「暂不可读」前缀。 */
+    private String boardNote(String path,Exception e){
+        if("wechat/digest".equals(path)&&e instanceof MobileApi.ApiError&&WechatDigest.failure(((MobileApi.ApiError)e).status,((MobileApi.ApiError)e).code)!=null)return explain(path,e);
+        return "暂不可读："+explain(path,e);
     }
     private String safeError(Exception e){String m=e.getMessage();return m!=null&&m.matches("[\\p{IsHan}，。、；：！？ ·…A-Za-z0-9-]{1,100}")?m:"连接未完成，请检查网络后重试";}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
