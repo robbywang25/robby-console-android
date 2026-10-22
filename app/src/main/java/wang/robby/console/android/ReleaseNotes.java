@@ -15,6 +15,8 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.36.1", "2026-10-23", "心力球的 Key 同步更及时",
+            "打开 God 时如果服务器正忙，几秒后会自动再同步一次，不用等下一轮。"),
         new Entry("0.36.0", "2026-10-23", "心力球的 Key 多台手机同步",
             "心力球的两个 API Key 和转写、整理设置会加密保存到你的 God 账号。",
             "在一台手机上填好，登录同一账号的其他安卓手机打开 God 就会自动用上。",

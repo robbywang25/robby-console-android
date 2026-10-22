@@ -632,4 +632,15 @@ Find：0.34.1 那次装好后，用 uiautomator 读心力球页面的文字，�
 
 服务端（2026-10-23 部署）：site-admin `c8a6d40` 用 `activate-app-secrets.py` 部署到 God 主机，回执是 `deploy/mobile-account/APP-SECRETS-ACCEPTED-20261023.json`（`10e77c8`）。部署前确认过线上的 `mobile-account.js` 和 `account/server.py` 与分支基准逐字节一致。匿名 GET/POST 返回 401，HTTP 明文返回 404，其他账号路由不变；密钥文件为 root 0600，复制到运行目录后归 god-mobile-api、权限 0400，没有打印过。部署后重启 Find 上的 God：「多台手机同步」显示「已同步到账号」（账号里还没有保存过，GET 返回 200，`secrets` 为 null），录音自动恢复。
 
-未验证：账号里还没有存过 Key，所以加密写入、Flip 拉取、清空 Key 后其他手机跟着清空，都还没在真机上跑过。Flip 目前是 0.33.0，要升到 0.36.0 才能同步。
+发布与真机跨手机同步（2026-10-23）：`9c59714` 快进合入 `robbywang/god-android`，发了 v0.36.0 Pre-release。附件 APK 的 SHA256 `6f479c77…40c0ec` 与 Find 上安装的一致，下载后校验 SHA256SUMS 通过。本人在另一台 Pixel 上填过两个 Key，用 App 内更新升到 0.36.0 后，00:48 服务端出现一条 `app_secrets` 记录：keyId `cc04607e64a7d651` 与服务器密钥一致，nonce 16 个字符，密文 234 个字符，密文里查不到 `sk-` 或 `https`（只查了元数据，没有解密）。Find 打开 God 后自动拉到 Key，「DeepSeek API Key」显示「已填写」；当天转写了 2 段共 8 分钟，DeepSeek 在 00:48 整理出时间线摘要。可见转写服务和 DeepSeek 都调用成功了。
+
+发现的问题：Find 第一次打开页面时同步收到 429。打开 God 时，偏好同步、账号状态和 Key 同步同时发出，而账号网关同一时间最多处理 2 个请求，所以 Key 同步要等下一轮才成功（0.36.1 已修）。
+
+未验证：清空 Key 后其他手机跟着清空；Flip 从 0.33.0 升级后拉取 Key（等本人在 Flip 上做 App 内更新）。
+
+## v0.36.1：Key 同步遇到 429 自动重试（2026-10-23）
+
+- `MindBallSync.run` 收到 429 时，等 3 秒在同一个工作线程上重试一次（`retryDelay`）。只重试 429，其他状态码照旧显示原因，等下一轮再同步。网关和服务端都没改。
+- 其他行为不变。
+
+验证：`check.sh` 通过（250 项 JVM 测试 0 失败，新增 `onlyABusyGatewayIsRetriedAndOnlyOnce`；lint debug/release 0 错误），Release 为正式证书签名。Find：覆盖安装 0.36.1（versionCode 60，保留登录），安装文件 SHA256 `4b5ae482…5aa2330` 与构建产物一致；回到桌面再打开 God，这次同步没有收到 429，也没有崩溃。心力球设置里两个 Key 都显示「已填写」，「多台手机同步」显示「已同步到账号」。

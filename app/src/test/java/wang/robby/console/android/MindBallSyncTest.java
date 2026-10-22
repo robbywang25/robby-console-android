@@ -41,6 +41,11 @@ public final class MindBallSyncTest {
         assertFalse(MindBallSync.hasAny(empty));
         assertTrue(MindBallSync.hasAny(empty.put("model", "deepseek-v4-pro")));
     }
+    @Test public void onlyABusyGatewayIsRetriedAndOnlyOnce() {
+        assertEquals(3_000L, MindBallSync.retryDelay(429, 0));
+        assertEquals(-1L, MindBallSync.retryDelay(429, 1));
+        for (int status : new int[] {401, 403, 404, 500, 503}) assertEquals(-1L, MindBallSync.retryDelay(status, 0));
+    }
     @Test public void theRouteIsRegisteredForReadingAndSaving() {
         assertTrue(AccountCenter.readRoute(AccountCenter.APP_SECRETS));
         assertTrue(AccountCenter.writeRoute(AccountCenter.APP_SECRETS));

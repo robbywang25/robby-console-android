@@ -68,17 +68,11 @@ final class MindBallSync {
         catch (RuntimeException e) { state(p, "仅本机：登录后可在多台手机间同步"); return; }
         if (!auth.hasScope(AuthSession.PROFILE_WRITE)) { state(p, "仅本机：重新登录一次后可在多台手机间同步"); return; }
         try {
-            MobileApi api = new MobileApi(auth);
-            JSONObject remote = api.get(AccountCenter.APP_SECRETS), local = local(c);
-            boolean remoteHas = !remote.isNull("secrets");
-            Step step = decide(p.getBoolean(DIRTY, false), hasAny(local), p.getString(SYNCED_AT, null), remote.isNull("updatedAt") ? null : remote.optString("updatedAt", null), remoteHas);
-            if (step == Step.UPLOAD) {
-                JSONObject saved = api.post(AccountCenter.APP_SECRETS, local);
-                p.edit().putString(SYNCED_AT, saved.optString("updatedAt", "")).putBoolean(DIRTY, false).apply();
-            } else if (step == Step.APPLY) {
-                apply(c, checked(remote.getJSONObject("secrets")));
-                p.edit().putString(SYNCED_AT, remote.getString("updatedAt")).apply();
-                MindBall.notifyChanged();
+            try { once(c, p, new MobileApi(auth)); }
+            catch (MobileApi.ApiError e) {
+                long wait = retryDelay(e.status, 0); if (wait < 0) throw e;
+                // Opening God sends the account's other reads at the same moment and the gateway takes two at a time.
+                Thread.sleep(wait); once(c, p, new MobileApi(auth));
             }
             state(p, "已同步到账号");
         } catch (MobileApi.ApiError e) {
@@ -89,6 +83,22 @@ final class MindBallSync {
             state(p, p.getBoolean(DIRTY, false) ? "待同步：网络不可用，稍后自动重试" : "同步失败：网络不可用，稍后自动重试");
         }
     }
+    /** One read, then the upload or apply it calls for. */
+    private static void once(Context c, SharedPreferences p, MobileApi api) throws Exception {
+        JSONObject remote = api.get(AccountCenter.APP_SECRETS), local = local(c);
+        boolean remoteHas = !remote.isNull("secrets");
+        Step step = decide(p.getBoolean(DIRTY, false), hasAny(local), p.getString(SYNCED_AT, null), remote.isNull("updatedAt") ? null : remote.optString("updatedAt", null), remoteHas);
+        if (step == Step.UPLOAD) {
+            JSONObject saved = api.post(AccountCenter.APP_SECRETS, local);
+            p.edit().putString(SYNCED_AT, saved.optString("updatedAt", "")).putBoolean(DIRTY, false).apply();
+        } else if (step == Step.APPLY) {
+            apply(c, checked(remote.getJSONObject("secrets")));
+            p.edit().putString(SYNCED_AT, remote.getString("updatedAt")).apply();
+            MindBall.notifyChanged();
+        }
+    }
+    /** Milliseconds to wait before the one retry: only a busy gateway (429) is retried, a few seconds later. -1: give up. */
+    static long retryDelay(int status, int attempt) { return status == 429 && attempt == 0 ? 3_000L : -1; }
     static String reason(int status) {
         return switch (status) { case 401 -> "登录已失效，请重新登录"; case 403 -> "需要重新登录一次"; case 404 -> "服务器还没有开通同步"; case 429 -> "请求较多，稍后自动重试"; default -> status >= 500 ? "服务暂不可用" : "请求被拒绝（HTTP " + status + "）"; };
     }
