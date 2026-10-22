@@ -630,4 +630,6 @@ Find：0.34.1 那次装好后，用 uiautomator 读心力球页面的文字，�
 
 验证：`check.sh` 通过（249 项 JVM 测试 0 失败，新增 6 项 `MindBallSyncTest`：上传、覆盖、什么都不做的判断，账号文档的校验，路由登记；lint debug/release 0 错误），Release 为正式证书签名。Find：覆盖安装 0.36.0（versionCode 59，保留登录），安装文件 SHA256 `6f479c77…40c0ec` 与构建产物一致，没有崩溃日志。用 uiautomator 读心力球页面：服务端还没部署，接口返回 404，「多台手机同步」显示「同步失败」，下一行是「服务器还没有开通同步」；录音中的进度行显示正常（本人已经打开录音），缺 Key 的提示不再重复。
 
-未验证：服务端还没部署，所以真正跨手机同步（Find 上传、Flip 拉取）、上传后服务端返回的 `updatedAt`、以及清空 Key 后其他手机跟着清空，都还没在真机上跑过。Flip 目前是 0.33.0，要升到 0.36.0 才能同步。
+服务端（2026-10-23 部署）：site-admin `c8a6d40` 用 `activate-app-secrets.py` 部署到 God 主机，回执是 `deploy/mobile-account/APP-SECRETS-ACCEPTED-20261023.json`（`10e77c8`）。部署前确认过线上的 `mobile-account.js` 和 `account/server.py` 与分支基准逐字节一致。匿名 GET/POST 返回 401，HTTP 明文返回 404，其他账号路由不变；密钥文件为 root 0600，复制到运行目录后归 god-mobile-api、权限 0400，没有打印过。部署后重启 Find 上的 God：「多台手机同步」显示「已同步到账号」（账号里还没有保存过，GET 返回 200，`secrets` 为 null），录音自动恢复。
+
+未验证：账号里还没有存过 Key，所以加密写入、Flip 拉取、清空 Key 后其他手机跟着清空，都还没在真机上跑过。Flip 目前是 0.33.0，要升到 0.36.0 才能同步。
