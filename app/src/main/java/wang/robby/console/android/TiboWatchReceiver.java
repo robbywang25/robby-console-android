@@ -23,7 +23,7 @@ public final class TiboWatchReceiver extends BroadcastReceiver {
                     if (!TiboWatch.checkAsync(context, result::finish)) result.finish();
                 }
                 break; }
-            case Intent.ACTION_BOOT_COMPLETED: case Intent.ACTION_MY_PACKAGE_REPLACED: NoticeCenter.resume(context); TiboWatch.start(context, true); break;
+            case Intent.ACTION_BOOT_COMPLETED: case Intent.ACTION_MY_PACKAGE_REPLACED: NoticeCenter.resume(context); TiboWatch.start(context, true); MindBall.afterRestart(context); break;
             default: break;
         }
     }

@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.34.0", "2026-10-22", "心力球：全天录音整理待办",
+            "「功能 → 工具」新增心力球，开启后在后台全天录音，像 OPPO 心力球一样记下一天。",
+            "说话的片段自动转成文字，几乎没有声音的片段直接删除，不上传。",
+            "DeepSeek 每小时把当天的录音整理成关键事项和待办的时间线，下拉可立即整理。",
+            "待办可以勾选完成，可以按天查看最近 30 天，点开原文看当时说了什么。",
+            "录音和记录只存在这台手机上；DeepSeek 和转写服务的 Key 加密保存在本机。",
+            "录音时状态栏有麦克风标志，通知栏可一键停止录音。"),
         new Entry("0.33.1", "2026-10-22", "多台手机设置及时同步",
             "在一台手机上改了看板、时钟或外观，另一台开着 God 时一分钟内跟上。",
             "总览下拉刷新时也会拉取账号里的最新设置。",

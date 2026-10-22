@@ -18,6 +18,8 @@ public final class FeatureCatalog {
         public Feature(String id, String title, String subtitle, String group, String path, String scope) {
             this(id, title, subtitle, group, path, "", scope);
         }
+        /** Works on the phone alone: no God read, no path and no scope. */
+        public boolean local() { return path.isEmpty(); }
     }
     private static Feature f(String id, String title, String subtitle, String group, String path, String scope) {
         return new Feature(id, title, subtitle, group, path, scope);
@@ -48,6 +50,7 @@ public final class FeatureCatalog {
         f("miniprogram-catalog", "小程序目录", "目录内容与同步状态", "工具", "miniprogram/catalog-sync/status", "god.mobile.wechat.read"),
         f("prompts", "Prompt 配置", "模型、来源与版本", "工具", "prompts/asset-daily-briefing", "god.mobile.prompts.read"),
         f("deepseek", "DeepSeek 模型", "官方模型列表、上下文、价格与能力", "工具", "deepseek/models", "god.mobile.read"),
+        f("mindball", "心力球", "全天录音，DeepSeek 整理关键事项与待办", "工具", "", ""),
         f("wechat-login-audit", "微信登录审计", "绑定状态与脱敏登录事件", "设置", "wechat/audit", "god.mobile.wechat.read"),
         f("secrets", "凭据配置", "服务配置状态", "设置", "secrets/status", "god.mobile.read")
     ));
@@ -58,6 +61,8 @@ public final class FeatureCatalog {
      * device read check of 2026-10-19: umami/overview answers 503, and every PostHog source reports notConfigured.
      * The person can show them again; an entry leaves this list once its source works.
      */
+    /** Features that never call God; each is listed here so a missing path cannot slip in unnoticed. */
+    public static final java.util.Set<String> LOCAL = java.util.Set.of("mindball");
     public static final Map<String, String> DEFAULT_HIDDEN_REASONS = Map.of(
         "umami", "暂未接通 · 接口暂不可用",
         "posthog", "暂未接通 · 数据源未配置");
@@ -91,6 +96,7 @@ public final class FeatureCatalog {
         Map.entry("miniprogram-catalog", "小程序 mini program"),
         Map.entry("prompts", "提示词 prompt"),
         Map.entry("deepseek", "深度求索 模型 价格 上下文 定价 API model pricing context deepseek.robby.wang"),
+        Map.entry("mindball", "录音 记录 转写 待办 时间线 备忘 会议 纪要 OPPO 心力球 recorder memo todo timeline"),
         Map.entry("wechat-login-audit", "微信 登录 审计 wechat login"),
         Map.entry("secrets", "密钥 凭证 credential"));
 

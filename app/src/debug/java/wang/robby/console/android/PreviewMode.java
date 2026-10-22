@@ -14,6 +14,20 @@ final class PreviewMode {
  static String realUpdateAs(){return realUpdate?"0.3.0":null;}
  /** Synthetic newer release so the update card can be checked without contacting GitHub. */
  static AppUpdate.Release update(){return new AppUpdate.Release("9.9.9","界面预览更新","合成的新版本，只用于检查更新卡片和系统安装流程。","2026-10-16","robby-console-android-9.9.9.apk","",245760,"");}
+ /** Synthetic 心力球 day: a morning of transcript and its timeline; no audio, no request. */
+ static JSONObject mindBall(){
+  try{java.time.ZonedDateTime d=java.time.LocalDate.now().atTime(9,0).atZone(java.time.ZoneId.systemDefault());java.util.function.LongUnaryOperator at=m->d.plusMinutes(m).toInstant().toEpochMilli();
+   org.json.JSONArray segs=new org.json.JSONArray();String[] text={"早上和产品组过了一遍 0.31 的范围，定了周五前把录音功能提测。","小李说报价单他下午三点前发给王总，我答应明天上午把合同条款再看一遍。","中午和妈妈打电话，周六晚上回家吃饭，记得带上体检报告。"};
+   for(int i=0;i<text.length;i++)segs.put(new JSONObject().put("start",at.applyAsLong(i*90)).put("end",at.applyAsLong(i*90+10)).put("text",text[i]));
+   String tomorrow=java.time.LocalDate.now().plusDays(1).toString();
+   return new JSONObject().put("segments",segs).put("summarizedAt",at.applyAsLong(200)).put("summarizedThrough",at.applyAsLong(190)).put("done",new JSONObject())
+    .put("timeline",MindBall.parseTimeline(new JSONObject().put("summary","上午确定了 0.31 的范围和提测时间，下午有两件合同相关的事要跟进。").put("items",new org.json.JSONArray()
+     .put(new JSONObject().put("time","09:00").put("kind","event").put("title","确定 0.31 范围，周五前录音功能提测").put("detail","产品组晨会"))
+     .put(new JSONObject().put("time","10:30").put("kind","todo").put("title","审阅合同条款").put("due",tomorrow+" 12:00"))
+     .put(new JSONObject().put("time","10:30").put("kind","event").put("title","小李下午三点前把报价单发给王总"))
+     .put(new JSONObject().put("time","12:00").put("kind","todo").put("title","周六回家吃饭，带上体检报告").put("detail","和妈妈通话时约定"))).toString()).put("model","deepseek-flash"));
+  }catch(Exception e){throw new IllegalStateException(e);}
+ }
  /** Synthetic 运行状态 round covering every label the page can show; example.com hosts only. */
  private static JSONObject status(String time)throws Exception{return new JSONObject("""
   {"schemaVersion":2,"generatedAt":"NOW","cacheSeconds":60,"cacheHit":true,"partial":false,

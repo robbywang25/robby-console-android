@@ -12,6 +12,8 @@ public final class FeatureCatalogTest {
         for (FeatureCatalog.Feature f : FeatureCatalog.all()) {
             assertTrue("Duplicate navigation identity: " + f.id, ids.add(f.id));
             assertSame(f, FeatureCatalog.find(f.id));
+            if (f.local()) { assertTrue("Unlisted local feature " + f.id, FeatureCatalog.LOCAL.contains(f.id)); assertEquals("", f.scope); continue; }
+            assertFalse(FeatureCatalog.LOCAL.contains(f.id));
             assertTrue(f.path.matches("[a-z0-9]+(?:[-/][a-z0-9]+)*"));
             assertFalse(f.path.contains("/actions/"));
             assertFalse(f.path.contains("/reveal"));
@@ -44,6 +46,8 @@ public final class FeatureCatalogTest {
         assertTrue(ids("wechat").contains("wechat-messages"));
         assertTrue("settings entries are searchable too", ids("凭证").contains("secrets"));
         assertTrue(ids("没有这个功能xyz").isEmpty());
+        assertTrue(ids("录音").contains("mindball"));
+        assertTrue(ids("待办").contains("mindball"));
     }
     @Test public void wechatMessagesSitsInInsights() {
         FeatureCatalog.Feature f = FeatureCatalog.find("wechat-messages");

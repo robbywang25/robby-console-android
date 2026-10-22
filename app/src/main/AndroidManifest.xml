@@ -15,6 +15,10 @@
  <uses-permission android:name="android.permission.WAKE_LOCK" />
  <uses-permission android:name="android.permission.VIBRATE" />
  <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+ <!-- 心力球: the owner switches on all-day recording; a microphone foreground service keeps it going with the system
+      microphone indicator and an ongoing notification. Audio and text stay in the app's private storage. -->
+ <uses-permission android:name="android.permission.RECORD_AUDIO" />
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
  <application android:label="God" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
   <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
@@ -59,6 +63,7 @@
   <service android:name=".GodTileService" android:exported="true" android:label="God" android:icon="@drawable/tab_home_solid" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
    <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
   </service>
+  <service android:name=".MindBallService" android:exported="false" android:foregroundServiceType="microphone" />
   <receiver android:name=".TiboWatchReceiver" android:exported="false">
    <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter>
   </receiver>

@@ -49,7 +49,7 @@ public final class LiveReadAcceptance extends Instrumentation {
             try{auth.accessToken(true);out.putBoolean("refresh_succeeded",true);}catch(Exception ignored){out.putBoolean("refresh_succeeded",false);}
             if(allFeatures){
                 for(FeatureCatalog.Feature f:FeatureCatalog.all()){
-                    if(!featureFilter.isEmpty()&&!java.util.Arrays.asList(featureFilter.split(",")).contains(f.id))continue;
+                    if(f.local()||!featureFilter.isEmpty()&&!java.util.Arrays.asList(featureFilter.split(",")).contains(f.id))continue;
                     android.os.SystemClock.sleep(2200);
                     try { JSONObject data=api.get(f.path);boolean compatible=FeatureRenderer.isCompatible(f,data);out.putBoolean("read_"+f.id,compatible);
                         if(sourceStates){java.util.Map<String,Integer> seen=new java.util.TreeMap<>();states(data,0,seen);StringBuilder s=new StringBuilder();for(java.util.Map.Entry<String,Integer> e:seen.entrySet())s.append(s.length()==0?"":",").append(e.getKey()).append('x').append(e.getValue());out.putString("states_"+f.id,s.toString());}

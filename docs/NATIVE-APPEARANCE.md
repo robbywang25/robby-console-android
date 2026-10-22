@@ -572,3 +572,14 @@ Tab触控高度48dp，上下留白各2dp，底栏主体52dp，比v0.3.4减少20d
   - App 在前台时每 60 秒拉一次（`PreferenceSync.Poller`，onPause 停）；总览下拉刷新也拉一次。
 - 修改时间存在本机 `prefSyncEdited`，属于本机同步状态，不会被当作设置上传。
 
+## v0.34.0：心力球（2026-10-22）
+
+- 新增本机功能 `mindball`（`FeatureCatalog.LOCAL`，没有 God 路径和权限范围，`LiveReadAcceptance` 跳过它）。`MindBallService` 是 `microphone` 类型的前台服务：用 MediaRecorder 录 16 kHz 单声道 32 kbps AAC，每 10 分钟一段，每秒采一次峰值，峰值 ≥1800 的秒数不到 8 秒就删除这一段。`MindBall` 负责转写（multipart POST `{base}/audio/transcriptions`）、整理（POST `api.deepseek.com/chat/completions`，`thinking.type=disabled`，`response_format=json_object`）、按天存储的 JSON（`noBackupFilesDir/mindball`）、Keystore AES-GCM 加密的两个 Key，以及 30 天清理。`MindBallPage` 负责页面。
+- 只能在前台启动麦克风：打开 God 时（`onResume`）自动恢复录音；开机、更新后和系统粘性重启时不在后台假装录音，而是发一条「点按打开 God 继续录音」的通知。
+- **边界变化（需要知道）**：(1) 第一次有业务数据落盘：录音、原文和时间线存在本机，此前只有页面元数据会落盘；(2) App 第一次持有第三方 API Key（DeepSeek、转写服务），并直接请求 God 以外的服务；(3) 新增 `RECORD_AUDIO`、`FOREGROUND_SERVICE_MICROPHONE` 两项权限。认证、God 接口合同和 `FLAG_SECURE` 不变；心力球页面同样要求先登录。
+
+- 合入记录：原在 0.31.2 之上开发（当时编号 0.32.0 / 51），因为 0.32.0 到 0.33.1 已先发布，变基后改为 0.34.0（versionCode 56）。主干期间新增的「开启提醒」通知权限请求码也是 44，和心力球的麦克风权限撞号，授权结果会被送进提醒的分支、麦克风授权后录音开不起来，所以心力球改用 46。大字体下时间线的时间折成两行，已改为单行。
+
+验证：`check.sh` 通过（241 项 JVM 测试，其中 9 项 `MindBallTest`：时间线解析与排序、超长回复截断、原文按天拼接与截断、待办标记稳定、multipart 头、错误文案；`FeatureCatalogTest` 覆盖本机功能），Debug/Release lint 0 错误，Release 签名证书一致。合入前的 0.32.0 编号版本在 Flip 上做过：正式包覆盖安装后哈希和签名一致、启动无崩溃；预览版浅色、深色、1.6 倍大字体三种模式截图，页面依次是开关、时间线、录音原文、设置。
+
+未验证：真实录音和整理需要本人在设置里填 DeepSeek 和转写服务（默认硅基流动）的 Key 后才能试，静音丢弃阈值、ColorOS / HyperOS 锁屏后长时间录音、硅基流动对 m4a 的接受度、DeepSeek 真实整理质量都还没验证。

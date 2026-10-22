@@ -9,4 +9,5 @@ final class PreviewMode {
  static JSONObject data(String ignored){throw new IllegalStateException();}
  static AppUpdate.Release update(){return null;}
  static String realUpdateAs(){return null;}
+ static JSONObject mindBall(){throw new IllegalStateException();}
 }

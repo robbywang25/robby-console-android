@@ -18,7 +18,7 @@ import wang.robby.console.android.auth.DeviceAuthorization;
 import wang.robby.console.android.auth.NativePasskeyFlow;
 
 /** Native client. No embedded web content, demo balances, or service credentials. */
-public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host {
+public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host, MindBallPage.Host {
     private int INK, MUTED, ACCENT, BG; private ConsoleTheme theme;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     /** 看板 reads run side by side (overview, Token 额度, …) instead of queueing behind one another. */
@@ -150,6 +150,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!PreviewMode.isBuild()&&TiboWatch.active(this))TiboWatch.start(this,TiboWatch.checkDue(this));
         // A pull that landed while the app was in the background may have switched on a reminder.
         askSyncedNotify();
+        // The microphone may only start while God is in front: opening the app resumes 心力球 after a reboot or update.
+        if(!PreviewMode.isBuild()&&MindBall.enabled(this))MindBall.start(this);
+        MindBallPage.refresh();
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
         // A change waiting for a session that may now write (after signing in again) goes at once.
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
@@ -694,6 +697,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(loggedIn()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新",()->showFeature(f,true,page::finishRefresh));}
         ticker.removeCallbacks(statusTick);if("status".equals(f.id)&&loggedIn())ticker.postDelayed(statusTick,60_000);
         if(!loggedIn()){LinearLayout c=card();c.addView(text(f.title,17,INK,true));TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(6),0,dp(18));c.addView(t);Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);c.addView(passkey,new LinearLayout.LayoutParams(-1,-2));LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);c.addView(button("通过已有设备授权",this::deviceLogin),d);restoreViewport();return;}
+        // 心力球 reads only this phone: pulling down transcribes and summarizes what is waiting.
+        if(f.local()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processAsync(this,true,page::finishRefresh);});
+            LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);MindBallPage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
         String key=path; JSONObject cached=key.startsWith("travel-ledger/")?null:snapshots.get(key);
@@ -1450,6 +1456,17 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private String safeError(Exception e){String m=e.getMessage();return m!=null&&m.matches("[\\p{IsHan}，。、；：！？ ·…A-Za-z0-9-]{1,100}")?m:"连接未完成，请检查网络后重试";}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
     private static final int TIBO_PERMISSION=43;private boolean tiboTestPending;
+    private static final int MINDBALL_PERMISSION=46;
+    @Override public void mindBallSwitch(boolean on){
+        if(PreviewMode.isBuild())return;
+        if(!on){MindBall.disable(this);return;}
+        List<String> need=new ArrayList<>();
+        if(!MindBall.micAllowed(this))need.add(android.Manifest.permission.RECORD_AUDIO);
+        if(!notificationsAllowed())need.add(android.Manifest.permission.POST_NOTIFICATIONS);
+        if(!need.isEmpty()){requestPermissions(need.toArray(new String[0]),MINDBALL_PERMISSION);return;}
+        MindBall.enable(this);
+        if(!getSystemService(PowerManager.class).isIgnoringBatteryOptimizations(getPackageName()))tiboFix("battery");
+    }
     @Override public void tiboSwitch(boolean on){
         if(PreviewMode.isBuild())return;
         if(!on){TiboWatch.disable(this);return;}
@@ -1468,6 +1485,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             if(!granted)error("没有通知权限","提醒已从账号同步到这台手机，但 God 没有通知权限，提醒不会送达。可以在系统设置里为 God 开启通知。");
             else if(TiboWatch.active(this))TiboWatch.start(this,true);
             TokensPages.refreshReminder();build();return;}
+        if(request==MINDBALL_PERMISSION){
+            if(MindBall.micAllowed(this))mindBallSwitch(true);
+            else{MindBallPage.refresh();error("没有麦克风权限","心力球需要麦克风权限才能录音。可以在系统设置里为 God 允许麦克风后再试。");}
+            return;}
         if(request!=TIBO_PERMISSION)return;
         if(results.length>0&&results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED){if(tiboTestPending)TiboWatch.test(this);else tiboSwitch(true);}
         else error("没有通知权限","重置提醒需要通知权限才能响铃。可以在系统设置里为 God 开启通知后再试。");
