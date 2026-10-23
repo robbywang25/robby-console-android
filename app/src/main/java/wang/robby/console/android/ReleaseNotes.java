@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.39.1", "2026-10-23", "小组件账号标注更准确",
+            "同一产品两个账号的邮箱前缀相同时，Token 额度小组件会编号区分。",
+            "重置日历小组件只用账号邮箱标注，不会把带 @ 的账号名当成邮箱显示。",
+            "隐私说明补充了小组件在本机保留的那份副本。"),
         new Entry("0.39.0", "2026-10-23", "小组件标出账号",
             "Token 额度小组件在产品名后标出账号邮箱 @ 前面的部分，例如 Codex · robby。",
             "重置日历小组件的每一项也标出是哪个账号，例如 Claude · robby 每周。",

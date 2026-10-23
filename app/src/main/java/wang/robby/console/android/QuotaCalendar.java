@@ -21,8 +21,11 @@ final class QuotaCalendar {
 
     static final class Event {
         final String account, platform, label, product, status; final long at; final LocalDate day;
-        Event(String account, String platform, String label, String product, String status, long at, LocalDate day) {
-            this.account = account; this.platform = platform; this.label = label; this.product = product; this.status = status; this.at = at; this.day = day;
+        /** The account's own email, or null; {@link #account} may be a name instead, so widgets read this one. */
+        final String email;
+        Event(String account, String platform, String label, String product, String status, long at, LocalDate day) { this(account, null, platform, label, product, status, at, day); }
+        Event(String account, String email, String platform, String label, String product, String status, long at, LocalDate day) {
+            this.account = account; this.email = email; this.platform = platform; this.label = label; this.product = product; this.status = status; this.at = at; this.day = day;
         }
         /** The window label without the 默认额度 prefix, as the web's inline cell text. */
         String shortLabel() { String s = label.replaceFirst("^默认额度[ ·]*", ""); return s.isEmpty() ? label : s; }
@@ -59,7 +62,7 @@ final class QuotaCalendar {
                 if (at <= 0) { missingWindows++; continue; }
                 String groupName = GROUPS.getOrDefault(group, "");
                 String full = groupName.isEmpty() || groupName.equals(label) ? label : label.isEmpty() ? groupName : groupName + " " + label;
-                events.add(new Event(TokensModel.displayName(a), TokensModel.productName(a), full.isEmpty() ? "额度" : full, a.optString("product"),
+                events.add(new Event(TokensModel.displayName(a), TokensModel.boardEmail(a), TokensModel.productName(a), full.isEmpty() ? "额度" : full, a.optString("product"),
                     at <= now ? EXPIRED : current ? SCHEDULED : STALE, at, Instant.ofEpochMilli(at).atZone(zone).toLocalDate()));
             }
         }

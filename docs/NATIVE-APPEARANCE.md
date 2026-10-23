@@ -686,3 +686,13 @@ Find：0.34.1 那次装好后，用 uiautomator 读心力球页面的文字，�
 验证：JVM 测试 256 项 0 失败（`WidgetSnapshotTest` 改成断言前缀会出现、完整邮箱和域名不会出现，没有邮箱的账号仍然编号），lintDebug 0 错误，assembleDebug 通过。
 
 未验证：真机上的桌面显示效果，包括长前缀在两列模式下怎么截断。
+
+## v0.39.1：小组件账号标注更准确（2026-10-23）
+
+根据 PR #4 的 Codex 审查意见修了三处：
+
+- **重置日历的前缀只从邮箱取**：0.39.0 是从 `QuotaCalendar.Event.account` 里截取前缀的，而这个字段是 `TokensModel.displayName`，没有邮箱时会退回账号名。账号名里如果带 @（例如 `alice@work`），就会被当成邮箱前缀显示出来。现在 `Event` 增加了 `email` 字段（`TokensModel.boardEmail`），小组件只读这个字段。
+- **同产品、同前缀的账号编号**：比如 `robby@gmail.com` 和 `robby@work…` 两个 Codex 账号，以前都显示成「Codex · robby」，现在显示为「Codex 1 · robby」「Codex 2 · robby」，同样不显示域名。编号按「产品 + 前缀」计数，没有邮箱的账号前缀为空，所以仍然编号成 Codex 1、Codex 2。
+- **PRIVACY.md**：新增「桌面小组件例外」一段，说明小组件的精简副本保存在应用私有存储里，进入后台也不清除，里面含邮箱前缀，退出登录时删除。
+
+验证：JVM 测试新增 `accountsSharingProductAndPrefixAreNumberedWithoutTheirDomains` 和 `calendarTakesThePrefixFromTheEmailNotTheDisplayName`。

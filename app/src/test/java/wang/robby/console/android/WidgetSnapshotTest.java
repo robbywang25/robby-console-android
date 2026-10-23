@@ -54,6 +54,19 @@ public final class WidgetSnapshotTest {
         assertEquals("openai", WidgetSnapshot.family("OpenAI")); assertEquals("claude", WidgetSnapshot.family("claude")); assertEquals("green", WidgetSnapshot.family("today-cn"));
         assertTrue("0.35 snapshots have no flag and count as current", WidgetSnapshot.fresh(new JSONObject().put("percent", 5)));
     }
+    @Test public void accountsSharingProductAndPrefixAreNumberedWithoutTheirDomains() throws Exception {
+        JSONArray accounts = new JSONArray().put(account("a", "codex", 40, NOW + H)).put(account("b", "codex", 10, NOW + H)).put(account("c", "claude", 70, NOW + H));
+        accounts.getJSONObject(0).put("profile", new JSONObject().put("email", "robby@gmail.com")); accounts.getJSONObject(1).put("profile", new JSONObject().put("email", "robby@work.example"));
+        JSONArray rows = WidgetSnapshot.tokens(new JSONObject().put("accounts", accounts), Set.of()).getJSONArray("rows");
+        assertEquals("Codex 1 · robby", WidgetSnapshot.label(rows.getJSONObject(0), false)); assertEquals("Codex 2 · robby", WidgetSnapshot.label(rows.getJSONObject(1), false));
+        assertEquals("Claude · c", WidgetSnapshot.label(rows.getJSONObject(2), false));
+        assertFalse(rows.toString().contains("gmail") || rows.toString().contains("work"));
+    }
+    @Test public void calendarTakesThePrefixFromTheEmailNotTheDisplayName() throws Exception {
+        JSONObject a = account("x", "codex", 50, NOW + H); a.put("profile", new JSONObject().put("name", "alice@work"));
+        JSONArray rows = WidgetSnapshot.calendar(new JSONObject().put("accounts", new JSONArray().put(a)), BEIJING, NOW).getJSONArray("rows");
+        assertEquals(1, rows.length()); assertFalse(rows.getJSONObject(0).has("account")); assertEquals("Codex 每周", rows.getJSONObject(0).getString("text"));
+    }
     @Test public void calendarListsTheNextFiveWithEmailPrefixes() throws Exception {
         JSONArray rows = WidgetSnapshot.calendar(quotas(), BEIJING, NOW).getJSONArray("rows");
         assertEquals(5, rows.length());
