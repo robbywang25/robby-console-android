@@ -25,6 +25,13 @@ public final class AlwaysOnTest {
         assertEquals("", AlwaysOn.summary(false, 600));
         assertEquals(" · 常亮，10 分钟后屏保", AlwaysOn.summary(true, 600));
     }
+    @Test public void aScreenReadersClicksAndFocusMovesCountAsActivity() {
+        assertTrue(AlwaysOn.byPerson(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED));
+        assertTrue(AlwaysOn.byPerson(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_LONG_CLICKED));
+        assertTrue(AlwaysOn.byPerson(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED));
+        assertFalse("a card refilled by its timer", AlwaysOn.byPerson(android.view.accessibility.AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED));
+        assertFalse("a refresh keeping the reading position", AlwaysOn.byPerson(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_SCROLLED));
+    }
     @Test public void theSettingNeverReachesTheAccount() {
         assertFalse(PreferenceSync.KEYS.contains(AlwaysOn.KEY));
         assertFalse(PreferenceSync.KEYS.contains(AlwaysOn.SAVER));

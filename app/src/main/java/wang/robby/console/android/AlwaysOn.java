@@ -6,7 +6,8 @@ import java.util.List;
  * 我 → 外观 → 常亮展示: while God is in front the screen does not go dark, so a board or page can stay up on a stand.
  * After the chosen time without a touch the page gives way to pure black at the lowest brightness, which leaves an
  * OLED panel's pixels off so nothing static burns in; a touch brings the page back. Pure Java for JVM tests: the
- * saved choice and its words. The setting belongs to this phone and is never written into the account document.
+ * saved choice, its words and which screen-reader events count as activity (Android's constants are inlined).
+ * The setting belongs to this phone and is never written into the account document.
  */
 final class AlwaysOn {
     private AlwaysOn() {}
@@ -24,6 +25,14 @@ final class AlwaysOn {
     }
     static String detail(boolean on) { return on ? "God 在前台时屏幕不熄灭" : "关闭 · 按系统设置自动熄屏"; }
     static String saverDetail(int seconds) { return "无操作 " + saverLabel(seconds) + "后显示纯黑画面，轻触恢复"; }
+    /**
+     * Accessibility events a person causes with a screen reader: a click, a long press, moving the reader's focus.
+     * Content refreshes send others (content changed, scrolled), and those must not keep the black screen away.
+     */
+    static boolean byPerson(int eventType) {
+        return (eventType & (android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_LONG_CLICKED
+            | android.view.accessibility.AccessibilityEvent.TYPE_VIEW_ACCESSIBILITY_FOCUSED)) != 0;
+    }
     /** The line under 外观 on 我; empty while it is off. */
     static String summary(boolean on, int seconds) { return on ? " · 常亮，" + saverLabel(seconds) + "后屏保" : ""; }
 }

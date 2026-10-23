@@ -175,7 +175,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
-    @Override protected void onPause(){resumed=false;PreferenceSyncHub.stopPolling();ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);ticker.removeCallbacks(saverDue);if(coordinator!=null)coordinator.detach(this);super.onPause();}
+    @Override protected void onPause(){resumed=false;PreferenceSyncHub.stopPolling();ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);
+        // A translucent page on top (a permission prompt) pauses God but leaves it visible: the system timeout applies again.
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);wake();if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     /** A pulled account document changed settings under this page: repaint from the preference files. */
     void onPreferencesApplied(){if(isDestroyed()||!resumed)return;theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;applyStatusBar();build();askSyncedNotify();}
@@ -259,7 +261,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!logged){navigation.clear();project=null;ledgerCursor=null;ledgerPages.clear();}
         DeviceAuthorization device=coordinator.deviceAuthorization();
         if(!PreviewMode.isBuild()&&(logged||device!=null||coordinator.busy())) getWindow().addFlags(WindowManager.LayoutParams.FLAG_SECURE); else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
-        root=new FrameLayout(this);setContentView(root);
+        root=new FrameLayout(this);root.setAccessibilityDelegate(readerActivity);setContentView(root);
         getWindow().setStatusBarColor(Color.TRANSPARENT);getWindow().setNavigationBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarContrastEnforced(false);
         WindowInsetsController insetController=getWindow().getInsetsController();
@@ -380,7 +382,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     // Dialogs and other windows can bring the status bar back; hide it again whenever the page regains focus.
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused){applyStatusBar();idle();}}
     /**
-     * 我 → 外观 → 常亮展示: on, the window keeps the screen on while God is in front and the idle count starts again;
+     * 我 → 外观 → 常亮展示: on, the window keeps the screen on while God is resumed and the idle count starts again;
      * off, the system's own screen timeout applies. Either way a black screen still up goes away.
      */
     private void applyAlwaysOn(){
@@ -388,32 +390,50 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(keepOn)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         wake();
     }
-    // Every touch and key on the page starts the idle count again.
+    // Every touch and key on the page starts the idle count again; so do a screen reader's clicks and focus moves,
+    // which reach the page as accessibility actions rather than touches (readerActivity, on the page root).
     @Override public void onUserInteraction(){super.onUserInteraction();idle();}
-    private void idle(){ticker.removeCallbacks(saverDue);if(keepOn&&resumed&&saver==null)ticker.postDelayed(saverDue,saverAfter);}
-    /**
-     * Pure black over everything, dialogs included, at the lowest brightness and without system bars, so an OLED panel
-     * lights nothing that could burn in. The screen stays on (the cover keeps it on too, since it hides the page's
-     * window); 总览's cards and self-refreshing pages stop reading until it goes. A touch or back takes it away, and
-     * that touch does not reach the page.
-     */
+    private final View.AccessibilityDelegate readerActivity=new View.AccessibilityDelegate(){
+        @Override public boolean onRequestSendAccessibilityEvent(ViewGroup host,View child,android.view.accessibility.AccessibilityEvent e){if(AlwaysOn.byPerson(e.getEventType()))idle();return super.onRequestSendAccessibilityEvent(host,child,e);}};
+    /** The focused field's text when the count started: typing on the soft keyboard reaches the page without a touch. */
+    private String typedAtIdle;
+    private String typed(){View f=getCurrentFocus();return f instanceof EditText?((EditText)f).getText().toString():null;}
+    private void idle(){ticker.removeCallbacks(saverDue);typedAtIdle=typed();if(keepOn&&resumed&&saver==null)ticker.postDelayed(saverDue,saverAfter);}
     private void showSaver(){
         if(!keepOn||!resumed||saver!=null||isFinishing())return;
+        // Text that changed since the count started means someone is still typing.
+        String now=typed();if(now!=null&&!now.equals(typedAtIdle)){idle();return;}
+        cover(theme.effects);
+    }
+    /**
+     * Pure black over everything, dialogs and the keyboard included, at the lowest brightness and without system bars,
+     * so an OLED panel lights nothing that could burn in. The screen stays on (the cover keeps it on too, since it hides
+     * the page's window); 总览's cards and self-refreshing pages stop reading until it goes. A touch or back takes it
+     * away, and that touch does not reach the page.
+     */
+    private void cover(boolean fade){
         View black=new View(this);black.setBackgroundColor(Color.BLACK);black.setContentDescription("屏幕保护，轻触恢复");black.setFocusable(true);black.setClickable(true);black.setSoundEffectsEnabled(false);
         black.setOnClickListener(v->wake());black.setOnTouchListener((v,e)->{if(e.getActionMasked()==MotionEvent.ACTION_DOWN)v.performClick();return true;});
         Dialog d=new Dialog(this,android.R.style.Theme_Material_NoActionBar_Fullscreen);d.setContentView(black);d.setOnDismissListener(x->{if(saver==x)wake();});
         Window w=d.getWindow();
         if(w!=null){
             // The page fades out under a clear window when animations are on; otherwise the black is there at once.
-            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(theme.effects?Color.TRANSPARENT:Color.BLACK));w.setWindowAnimations(0);
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(fade?Color.TRANSPARENT:Color.BLACK));w.setWindowAnimations(0);
             w.setLayout(-1,-1);w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);w.setDecorFitsSystemWindows(false);
+            w.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
             WindowManager.LayoutParams a=w.getAttributes();a.screenBrightness=WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF;a.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;w.setAttributes(a);
         }
+        // The keyboard sits above every app window, so put it away first.
+        WindowInsetsController page=getWindow().getInsetsController();if(page!=null)page.hide(WindowInsets.Type.ime());
         saver=d;ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);d.show();
         WindowInsetsController bars=w==null?null:w.getInsetsController();
         if(bars!=null){bars.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);bars.hide(WindowInsets.Type.systemBars());}
-        if(theme.effects){black.setAlpha(0f);black.animate().alpha(1f).setDuration(1200).withEndAction(()->{if(saver==d&&d.getWindow()!=null)d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.BLACK));});}
+        // A dialog opened after the cover (a late error, a synced reminder's prompt) takes the focus above it: lift the cover back on top.
+        black.getViewTreeObserver().addOnWindowFocusChangeListener(focused->{if(!focused)ticker.post(()->lift(d));});
+        if(fade){black.setAlpha(0f);black.animate().alpha(1f).setDuration(1200).withEndAction(()->{if(saver==d&&d.getWindow()!=null)d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.BLACK));});}
     }
+    /** A fresh cover above whatever opened over {@code d}, then {@code d} goes; no fade, so the page never shows through. */
+    private void lift(Dialog d){if(saver!=d||!keepOn||!resumed||isFinishing())return;saver=null;d.setOnDismissListener(null);cover(false);d.dismiss();}
     /** Takes the black screen away and starts the idle count again; 总览 and a self-refreshing page read at once when overdue. */
     private void wake(){
         Dialog d=saver;saver=null;
