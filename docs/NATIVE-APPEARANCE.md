@@ -696,3 +696,19 @@ Find：0.34.1 那次装好后，用 uiautomator 读心力球页面的文字，�
 - **PRIVACY.md**：新增「桌面小组件例外」一段，说明小组件的精简副本保存在应用私有存储里，进入后台也不清除，里面含邮箱前缀，退出登录时删除。
 
 验证：JVM 测试新增 `accountsSharingProductAndPrefixAreNumberedWithoutTheirDomains` 和 `calendarTakesThePrefixFromTheEmailNotTheDisplayName`。
+
+## v0.40.0：常亮展示与防烧屏屏保（2026-10-23）
+
+本人要求「安卓 App 支持 OLED 屏幕常亮展示模式；为避免烧屏，经过一个超时时间后展示纯黑画面做屏幕保护；超时时间可配置」。
+
+- **设置**（我 → 外观 → 常亮展示，`AlwaysOn`）：「屏幕常亮」开关存在本机 `alwaysOn`；打开后出现「屏保 · 5 分钟」一行，可选 30 秒、1、2、5、10、15、30 分钟和 1 小时（`alwaysOnSaver`，单位秒，默认 300），没有「从不」，所以常亮时一定会进屏保。两项都列进 `PreferenceSync.LOCAL_ONLY`，不写入账号文档：支架上的旧手机常亮，不该连带口袋里的手机。「我」顶层的外观一行在开启时加上「常亮，5 分钟后屏保」。
+- **常亮**：`applyAlwaysOn` 在 `onResume` 和改设置时给窗口加或去掉 `FLAG_KEEP_SCREEN_ON`，只在 God 位于前台时生效，退到后台或按电源键照常熄屏锁屏。
+- **屏保**：`onUserInteraction`（页面上每次按下和按键）和窗口重新获得焦点时重新计时（`idle`）。到时间后 `showSaver` 弹出一个全屏 `Dialog`（`Theme.Material.NoActionBar.Fullscreen`）：纯黑 `#000`，`screenBrightness = BRIGHTNESS_OVERRIDE_OFF`，`LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS` 盖住开孔区域，`hide(systemBars())` 隐藏状态栏和导航条（行为为下滑临时显示）。用独立窗口而不是页面里的一层 View，是因为 `build()` 每次 `setContentView` 会重建页面，而且这样也能盖住已经打开的弹窗。全屏不透明的窗口会让下面页面的 `FLAG_KEEP_SCREEN_ON` 不再算数，所以屏保窗口自己也带这个标志。动画开启时黑色在 1.2 秒内淡入（窗口先透明，淡入结束后换成不透明黑底）；关闭动画、省电或高对比度时直接变黑。
+- **恢复**：按下屏保的那一刻就关掉它（`performClick` → `wake`），这次触摸不会传到页面；返回键、读屏双击同样恢复。回到前台（`onResume`）时如果屏保还在，也一并关掉。
+- **省流量**：屏保期间 `onBoard()`、`pageTick` 和 `schedulePageTick` 都视为不在前台，总览卡片和运行状态、Token 额度页暂停自动读取；`wake` 之后按各自的节奏重新排，已经到期的马上读。
+- **已知边界**：系统弹窗或 App 内对话框里的触摸不经过 `Activity.onUserInteraction`，所以在弹窗里停留超过屏保时间也会进屏保（盖在弹窗上面，轻触即回到弹窗）。这是有意的：弹窗一直开着也不该烧屏。
+- 隐私说明、PRIVACY.md、README 和 PRODUCT-STYLE 写明：常亮时系统不会自动锁屏，屏保轻触即恢复、不需要解锁，离开时要自己按电源键。认证、接口、FLAG_SECURE 和后台清除都没有改。
+
+验证：本环境（无 KVM，不能跑模拟器，也没有连真机）只做了构建层面的检查。JVM 测试 262 项 0 失败（新增 `AlwaysOnTest` 4 项：默认值与不再提供的值回落到 5 分钟、各档文案、开关文案、两个键只留在本机）；lintDebug、lintRelease 只有与 0.39.1 相同的 3 条旧警告（Gradle 版本、`LedgerActions` 两处 `SetTextI18n`），0 错误；assembleDebug、assembleRelease（未签名）通过。
+
+未验证：真机上的常亮、屏保出现时间、淡入、最低亮度、开孔和导航条区域是否全黑、轻触恢复、屏保期间暂停刷新；ColorOS 是否额外限制 `BRIGHTNESS_OVERRIDE_OFF`。

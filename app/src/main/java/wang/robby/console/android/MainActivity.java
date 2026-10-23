@@ -53,10 +53,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private volatile boolean updateChecking; private long updateCheckedAt;
     private boolean awaitingInstallPermission; private LinearLayout updateBox;
     private final Handler ticker=new Handler(Looper.getMainLooper());
+    /** 我 → 外观 → 常亮展示: the black screen in front of the page and any dialog after the chosen idle time; null while the page shows. */
+    private Dialog saver; private boolean keepOn; private long saverAfter; private final Runnable saverDue=this::showSaver;
     /** 运行状态 and Token 额度 refresh themselves while they are the visible page ({@link RefreshPace#page}); never in the background. */
     private String tickPage; private long pageReadAt;
-    private final Runnable pageTick=()->{if(this.resumed&&tickPage!=null&&tickPage.equals(this.selectedId)&&loggedIn()){FeatureCatalog.Feature f=find(tickPage);if(f!=null)showFeature(f,true);}};
-    private void schedulePageTick(){ticker.removeCallbacks(pageTick);if(!resumed||tickPage==null||!tickPage.equals(selectedId)||!loggedIn())return;
+    private final Runnable pageTick=()->{if(this.resumed&&saver==null&&tickPage!=null&&tickPage.equals(this.selectedId)&&loggedIn()){FeatureCatalog.Feature f=find(tickPage);if(f!=null)showFeature(f,true);}};
+    private void schedulePageTick(){ticker.removeCallbacks(pageTick);if(!resumed||saver!=null||tickPage==null||!tickPage.equals(selectedId)||!loggedIn())return;
         FeatureCatalog.Feature f=find(tickPage);long every=f==null?0:RefreshPace.page(f.id,snapshots.get(f.path));if(every>0)ticker.postDelayed(pageTick,RefreshPace.wait(pageReadAt,every,SystemClock.elapsedRealtime()));}
     /**
      * Every 总览 card re-reads itself while 总览 is on screen: Token 额度 and 重置日历 at the pace the server asks for,
@@ -68,7 +70,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     /** When each 总览 path last finished a read (elapsed realtime), and the paths being read right now. */
     private final Map<String,Long> boardAt=new HashMap<>(); private final Set<String> boardBusy=new HashSet<>();
     static final String TOKENS="tokens/quotas";
-    private boolean onBoard(){return resumed&&board!=null&&selectedId==null&&"总览".equals(group)&&loggedIn()&&!boardShells.isEmpty();}
+    private boolean onBoard(){return resumed&&saver==null&&board!=null&&selectedId==null&&"总览".equals(group)&&loggedIn()&&!boardShells.isEmpty();}
     private void scheduleBoardTick(){ticker.removeCallbacks(boardTick);if(!onBoard())return;long now=SystemClock.elapsedRealtime(),wait=Long.MAX_VALUE;
         for(String path:boardShells.keySet()){Long at=boardAt.get(path);if(at==null||boardBusy.contains(path))continue;wait=Math.min(wait,RefreshPace.wait(at,RefreshPace.board(path,snapshots.get(path)),now));}
         if(wait!=Long.MAX_VALUE)ticker.postDelayed(boardTick,wait);}
@@ -151,7 +153,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         Uri uri=intent.getData(); if(uri==null)return;
         intent.setData(null); coordinator.callback(uri);
     }
-    @Override protected void onResume(){super.onResume();resumed=true;if(coordinator!=null){coordinator.attach(this);}
+    @Override protected void onResume(){super.onResume();resumed=true;applyAlwaysOn();if(coordinator!=null){coordinator.attach(this);}
         PreferenceSyncHub.attach(this);if(!PreviewMode.isBuild()){PreferenceSyncHub.foreground(this);PreferenceSyncHub.startPolling(this);}
         // Back after a pause (shade, dialog, another app on top): 总览's cards and a self-refreshing page carry on, at once when overdue.
         if(board!=null)scheduleBoardTick();schedulePageTick();
@@ -173,7 +175,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
-    @Override protected void onPause(){resumed=false;PreferenceSyncHub.stopPolling();ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);if(coordinator!=null)coordinator.detach(this);super.onPause();}
+    @Override protected void onPause(){resumed=false;PreferenceSyncHub.stopPolling();ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);ticker.removeCallbacks(saverDue);if(coordinator!=null)coordinator.detach(this);super.onPause();}
     @Override public void onAuthChanged(){avatarCheckedAt=0;if(!resumed||isDestroyed())return;if(!PreviewMode.isBuild())PreferenceSyncHub.foreground(this);if(loggedIn())syncAvatar(false);++generation;snapshots.clear();if(!loggedIn()){navigation.clear();selectedId=null;project=null;ledgerCursor=null;ledgerPages.clear();viewportReady=false;}build();}
     /** A pulled account document changed settings under this page: repaint from the preference files. */
     void onPreferencesApplied(){if(isDestroyed()||!resumed)return;theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;applyStatusBar();build();askSyncedNotify();}
@@ -376,7 +378,48 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         else c.show(WindowInsets.Type.statusBars());
     }
     // Dialogs and other windows can bring the status bar back; hide it again whenever the page regains focus.
-    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)applyStatusBar();}
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused){applyStatusBar();idle();}}
+    /**
+     * 我 → 外观 → 常亮展示: on, the window keeps the screen on while God is in front and the idle count starts again;
+     * off, the system's own screen timeout applies. Either way a black screen still up goes away.
+     */
+    private void applyAlwaysOn(){
+        keepOn=prefs().getBoolean(AlwaysOn.KEY,false);saverAfter=AlwaysOn.saverMillis(prefs().getInt(AlwaysOn.SAVER,0));
+        if(keepOn)getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        wake();
+    }
+    // Every touch and key on the page starts the idle count again.
+    @Override public void onUserInteraction(){super.onUserInteraction();idle();}
+    private void idle(){ticker.removeCallbacks(saverDue);if(keepOn&&resumed&&saver==null)ticker.postDelayed(saverDue,saverAfter);}
+    /**
+     * Pure black over everything, dialogs included, at the lowest brightness and without system bars, so an OLED panel
+     * lights nothing that could burn in. The screen stays on (the cover keeps it on too, since it hides the page's
+     * window); 总览's cards and self-refreshing pages stop reading until it goes. A touch or back takes it away, and
+     * that touch does not reach the page.
+     */
+    private void showSaver(){
+        if(!keepOn||!resumed||saver!=null||isFinishing())return;
+        View black=new View(this);black.setBackgroundColor(Color.BLACK);black.setContentDescription("屏幕保护，轻触恢复");black.setFocusable(true);black.setClickable(true);black.setSoundEffectsEnabled(false);
+        black.setOnClickListener(v->wake());black.setOnTouchListener((v,e)->{if(e.getActionMasked()==MotionEvent.ACTION_DOWN)v.performClick();return true;});
+        Dialog d=new Dialog(this,android.R.style.Theme_Material_NoActionBar_Fullscreen);d.setContentView(black);d.setOnDismissListener(x->{if(saver==x)wake();});
+        Window w=d.getWindow();
+        if(w!=null){
+            // The page fades out under a clear window when animations are on; otherwise the black is there at once.
+            w.setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(theme.effects?Color.TRANSPARENT:Color.BLACK));w.setWindowAnimations(0);
+            w.setLayout(-1,-1);w.clearFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);w.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);w.setDecorFitsSystemWindows(false);
+            WindowManager.LayoutParams a=w.getAttributes();a.screenBrightness=WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_OFF;a.layoutInDisplayCutoutMode=WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS;w.setAttributes(a);
+        }
+        saver=d;ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);d.show();
+        WindowInsetsController bars=w==null?null:w.getInsetsController();
+        if(bars!=null){bars.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);bars.hide(WindowInsets.Type.systemBars());}
+        if(theme.effects){black.setAlpha(0f);black.animate().alpha(1f).setDuration(1200).withEndAction(()->{if(saver==d&&d.getWindow()!=null)d.getWindow().setBackgroundDrawable(new android.graphics.drawable.ColorDrawable(Color.BLACK));});}
+    }
+    /** Takes the black screen away and starts the idle count again; 总览 and a self-refreshing page read at once when overdue. */
+    private void wake(){
+        Dialog d=saver;saver=null;
+        if(d!=null){d.dismiss();if(board!=null)scheduleBoardTick();schedulePageTick();}
+        idle();
+    }
     /** What the status line says when nothing is in progress: only the preview build's label. */
     private static String idleSession(){return PreviewMode.isBuild()?"界面预览 · 合成数据":"";}
     /** Round glass header control (e.g. 记一笔); refreshing is pull-to-refresh on every page, never a header button. */
@@ -798,7 +841,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void openPage(String id){saveViewport();++generation;selectedId=id;project=null;ledgerCursor=null;ledgerPages.clear();enterFrom=1;build();}
     /** A second-level page of 我: centred title and the round back control. */
     private void subPage(String title){heading.setText(title);leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));}
-    private String appearanceSummary(){String style=statusStyle();return (theme.contrast?"不透明表面":theme.glassOn?"Liquid Glass":"Liquid Glass 已关闭")+" · 状态栏"+StatusBarStyle.label(style);}
+    private String appearanceSummary(){String style=statusStyle();return (theme.contrast?"不透明表面":theme.glassOn?"Liquid Glass":"Liquid Glass 已关闭")+" · 状态栏"+StatusBarStyle.label(style)+AlwaysOn.summary(prefs().getBoolean(AlwaysOn.KEY,false),prefs().getInt(AlwaysOn.SAVER,0));}
     /**
      * 我 → 通知, after iOS Settings: the first page is the system permission and five groups. A group is only drawn;
      * opening it does not write a preference, so the first-read latch stays as it was.
@@ -897,7 +940,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             {"登录","Android 14 及以上在应用内用系统通行密钥登录，应用只转交一次性的签名结果，不接触密码或 Passkey 私钥；更早的系统在浏览器登录。会话使用 Android Keystore 加密且不参加备份，退出会清除本机令牌。"},
             {"数据","应用仅连接 Robby 的 God 私有接口，没有第三方统计，不保存网页 Cookie。业务数据仅在内存中展示，进入后台即清除；登录后禁止截屏与最近任务预览。可查看原生数据，并在确认后管理账目和人员。"},
             {"头像与签名","个人头像裁剪成 512 像素的 JPEG 后保存在本机和 God 服务器，不含拍摄位置等元数据。个性签名保存在你的 God 账号里，本机留一份副本用于显示。"},
-            {"设置","看板、外观、功能的隐藏和排序、通知开关、提醒线和 Codex 积分点数线会保存到 God 账号，同一账号的手机保持一致。登录、灵动岛的开孔位置、提醒的检查记录、积分起点和已提醒标记只留在这台手机；未登录时设置也只在本机。"},
+            {"设置","看板、外观、功能的隐藏和排序、通知开关、提醒线和 Codex 积分点数线会保存到 God 账号，同一账号的手机保持一致。登录、灵动岛的开孔位置、常亮展示、提醒的检查记录、积分起点和已提醒标记只留在这台手机；未登录时设置也只在本机。"},
             {"重置提醒","开启 Tibo 重置提醒后，应用"+TiboWatch.EVERY+"读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。检查期间会短暂显示一条通知，检查完即消失。"},
             {"桌面小组件","Token 额度、重置日历、运行状态和微信消息小组件只显示 God 已经读到的数字：产品名、账号邮箱 @ 前面的部分、剩余百分比、重置时间、站点在线和异常数、今天的微信消息数与近 7 天日均。本机为它们保留一份这样的副本，不含完整邮箱、账号 ID、站点或会话名称和消息内容。桌面上放了这几个小组件时，应用"+TiboWatch.EVERY+"在后台读取一次它们用到的数据（检查时短暂显示「God 正在检查提醒」），移除后不再读取；超过两小时没读到显示「打开 God 更新」，退出登录立即清除。这四个只能放在桌面，时区时钟和 God 小组件可以放在锁屏。"},
             {"通知","开启「我 → 通知」里的提醒后，应用"+TiboWatch.EVERY+"在后台读取 Token 额度（开启站点提醒时还有运行状态）。检查时会短暂显示「God 正在检查提醒」，检查完这条通知消失，不再常驻「已开启」。为了判断变化，本机会保存每个额度最近的剩余比例、当天累计消耗、Codex 积分起点和是否已提醒、账号状态，以及站点域名和是否在线；不保存邮箱、套餐或其他页面内容，14 天没出现的记录会自动删除，全部关闭后不再读取。这些检查记录只留在这台手机。"}};
@@ -932,6 +975,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             featureRow("灵动岛左侧 · "+StatusBarStyle.itemLabel(islandItem(true)),"摄像头左边显示的内容","info",look,()->islandItemMenu(true));
             featureRow("灵动岛右侧 · "+StatusBarStyle.itemLabel(islandItem(false)),"摄像头右边显示的内容","info",look,()->islandItemMenu(false));
         }
+        section("常亮展示");look=groupCard();boolean keep=prefs().getBoolean(AlwaysOn.KEY,false);int idleFor=AlwaysOn.saver(prefs().getInt(AlwaysOn.SAVER,0));
+        LinearLayout keepRow=featureRow("屏幕常亮",AlwaysOn.detail(keep),"phone",look,null);
+        Switch keepToggle=new Switch(this);keepToggle.setChecked(keep);keepToggle.setContentDescription("屏幕常亮");keepToggle.setMinimumHeight(dp(48));
+        keepToggle.setOnCheckedChangeListener((b,on)->{prefs().edit().putBoolean(AlwaysOn.KEY,on).apply();applyAlwaysOn();b.post(this::build);});
+        keepRow.addView(keepToggle);
+        if(keep)featureRow("屏保 · "+AlwaysOn.saverLabel(idleFor),AlwaysOn.saverDetail(idleFor),"history",look,this::saverMenu);
+        content.addView(theme.info(List.of("屏保是纯黑画面，亮度降到最低、状态栏和导航条也隐藏；OLED 屏幕上黑色像素不发光，长时间停在同一页也不会烧屏。",
+            "屏保期间看板和页面暂停自动刷新，轻触恢复后马上补读；第一下轻触只用来恢复，不会点到页面。","常亮时手机不会自动锁屏，离开时请按电源键锁屏。","这两项只保存在这台手机，不同步到账号。")));
         section("账号");LinearLayout syncLine=groupCard();
         boolean onAccount=loggedIn()&&!PreviewMode.isBuild(),canSync=onAccount&&PreferenceSyncHub.canWrite(this);
         featureRow(PreferenceSync.statusLine(onAccount,canSync,PreferenceSyncHub.updatedAt(this),System.currentTimeMillis()),PreferenceSync.statusDetail(onAccount,canSync,onAccount&&federatedSession()),"refresh",syncLine,null);
@@ -943,6 +994,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             @Override public void onStopTrackingTouch(SeekBar s){dragging[0]=false;saveGlassLevel(s,s.getProgress());}
         });
         restoreViewport();
+    }
+    /** 常亮展示's idle time before the black screen; the choice applies at once and the count starts again. */
+    private void saverMenu(){
+        List<Integer> choices=AlwaysOn.SAVER_CHOICES;String[] names=new String[choices.size()];for(int i=0;i<names.length;i++)names[i]=AlwaysOn.saverLabel(choices.get(i));
+        show(new AlertDialog.Builder(this).setTitle("无操作多久后屏保").setSingleChoiceItems(names,choices.indexOf(AlwaysOn.saver(prefs().getInt(AlwaysOn.SAVER,0))),(d,w)->{
+            prefs().edit().putInt(AlwaysOn.SAVER,choices.get(w)).apply();d.dismiss();applyAlwaysOn();build();}).setNegativeButton("取消",null));
     }
     /** 不隐藏 / 只隐藏 / 隐藏并上移 / 灵动岛, each with what it does; the choice applies at once. */
     private void statusStyleMenu(){
@@ -1456,7 +1513,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}
     @Override protected void onStop(){saveViewport();viewportReady=false;super.onStop();board=null;accountStatus=null;accountDevices=null;accountNameRead=false;if(ledger!=null)ledger.close();++generation;snapshots.clear();if(auth!=null&&loggedIn()&&content!=null){content.removeAllViews();content.addView(text("God",24,INK,true));}}
-    @Override protected void onDestroy(){++generation;nativeLogin.dispose();if(ledger!=null)ledger.dispose();worker.shutdownNow();updateCancel.set(true);updater.shutdownNow();if(UpdateReceiver.listener==updateListener)UpdateReceiver.listener=null;super.onDestroy();}
+    @Override protected void onDestroy(){++generation;ticker.removeCallbacks(saverDue);if(saver!=null){Dialog d=saver;saver=null;d.dismiss();}nativeLogin.dispose();if(ledger!=null)ledger.dispose();worker.shutdownNow();updateCancel.set(true);updater.shutdownNow();if(UpdateReceiver.listener==updateListener)UpdateReceiver.listener=null;super.onDestroy();}
     private FeatureCatalog.Feature find(String id){return FeatureCatalog.all().stream().filter(f->f.id.equals(id)).findFirst().orElse(null);}
     private void section(String title){TextView t=text(title,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));content.addView(t);}
     private LinearLayout card(){return theme.card(content);}
