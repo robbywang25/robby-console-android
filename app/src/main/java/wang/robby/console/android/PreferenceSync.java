@@ -38,7 +38,7 @@ final class PreferenceSync {
         "noticeKinds", "dailyLine", "lowLine", "creditsLine", "enhancedNotice", "persistentNotice", "tiboNotice");
     /**
      * Stored on the phone, never uploaded. Listed so a test can hand every one of them in and watch the document
-     * stay clear of them: session, cutout geometry, read caches, reminder runtime, signature and avatar.
+     * stay clear of them: session, cutout geometry, 常亮展示, read caches, reminder runtime, signature and avatar.
      */
     static final List<String> LOCAL_ONLY = List.of(
         "accessToken", "refreshToken", "idToken", "session", "deviceCode",
@@ -47,7 +47,7 @@ final class PreferenceSync {
         "cutoutLeft", "cutoutTop", "cutoutRight", "cutoutBottom",
         "holeLeft", "holeTop", "holeRight", "holeBottom",
         "islandLeftPx", "islandTopPx", "islandRightPx", "islandBottomPx",
-        "screenWidth", "statusHeight",
+        "screenWidth", "statusHeight", "alwaysOn", "alwaysOnSaver",
         "state", "pending", "seen", "lastCheckAt", "lastError", "primed",
         "creditBase", "creditFired",
         "enabledAt", "round", "pendingTest", "more",

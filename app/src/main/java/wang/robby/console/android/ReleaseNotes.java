@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.40.0", "2026-10-23", "常亮展示与防烧屏屏保",
+            "「我 → 外观」新增常亮展示：打开后，God 在前台时屏幕不会自动熄灭。",
+            "一段时间没有操作就显示纯黑屏保，亮度降到最低，OLED 屏幕不会烧屏。",
+            "屏保时间可选 30 秒到 1 小时，默认 5 分钟；轻触屏幕或按返回键恢复。",
+            "屏保期间看板和页面暂停自动刷新，恢复后马上补读。",
+            "常亮时手机不会自动锁屏，离开时请按电源键；这个设置只保存在这台手机。"),
         new Entry("0.39.1", "2026-10-23", "小组件账号标注更准确",
             "同一产品两个账号的邮箱前缀相同时，Token 额度小组件会编号区分。",
             "重置日历小组件只用账号邮箱标注，不会把带 @ 的账号名当成邮箱显示。",
