@@ -88,15 +88,18 @@ final class GodWidgets {
     static void watch(Context c) { if (!PreviewMode.isBuild() && placed(c)) TiboWatch.start(c, TiboWatch.checkDue(c)); }
     /**
      * The background check's reads for the placed widgets, on its thread. A route 我 → 通知 has just read in the same check
-     * is skipped. Each read goes through {@link GodWidget#observe}, so God 小组件 and these widgets redraw from it.
+     * is skipped. Each read goes through {@link GodWidget#observe}, so God 小组件 and these widgets redraw from it. When a
+     * route was skipped or failed they are redrawn anyway: after God is updated ColorOS shows a placed widget's initialLayout until the next
+     * update, so every check puts the drawn widget back within a couple of minutes.
      */
     static void read(Context c, MobileApi api, long now) {
-        SharedPreferences p = prefs(c);
+        SharedPreferences p = prefs(c); boolean drawn = true;
         for (String route : routes(c)) {
-            if (WidgetSnapshot.justRead(p.getLong(WidgetSnapshot.kind(route) + "At", 0), now)) continue;
+            if (WidgetSnapshot.justRead(p.getLong(WidgetSnapshot.kind(route) + "At", 0), now)) { drawn = false; continue; }
             try { GodWidget.observe(c, route, api.get(route)); Log.i("GodWidgets", "read " + route); }
-            catch (Exception e) { Log.w("GodWidgets", "read " + route + " failed " + (e instanceof MobileApi.ApiError ? "http=" + ((MobileApi.ApiError) e).status : e.getClass().getSimpleName())); }
+            catch (Exception e) { drawn = false; Log.w("GodWidgets", "read " + route + " failed " + (e instanceof MobileApi.ApiError ? "http=" + ((MobileApi.ApiError) e).status : e.getClass().getSimpleName())); }
         }
+        if (!drawn) { refreshAll(c); GodWidget.refresh(c); }
     }
     /** Redraws every placed widget of these five kinds and books the redraw for when a reading turns stale. */
     static void refreshAll(Context context) {
