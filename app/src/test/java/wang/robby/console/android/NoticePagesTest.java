@@ -8,12 +8,13 @@ import java.util.Map;
 import java.util.Set;
 import org.junit.Test;
 
-/** 我 → 通知 is five groups. Opening one never clears the first-read latch. */
+/** 我 → 通知 is six groups. Opening one never clears the first-read latch. */
 public final class NoticePagesTest {
-    @Test public void fiveGroupsListTheirSwitchesAndSummarize() {
-        assertEquals(5, NoticePages.GROUPS.size());
+    @Test public void sixGroupsListTheirSwitchesAndSummarize() {
+        assertEquals(6, NoticePages.GROUPS.size());
         assertEquals(List.of("daily", "credits", "low", "reset", "account", "card"), NoticePages.find(NoticePages.QUOTA).keys);
         assertEquals(List.of("sites"), NoticePages.find(NoticePages.SITES).keys);
+        assertEquals(List.of("market"), NoticePages.find(NoticePages.MARKET).keys);
         assertEquals(List.of("enhanced", "persistent"), NoticePages.find(NoticePages.MODE).keys);
         assertEquals(List.of("tibo"), NoticePages.find(NoticePages.CHALLENGE).keys);
         assertTrue(NoticePages.find(NoticePages.CHECK).keys.isEmpty());
@@ -54,6 +55,8 @@ public final class NoticePagesTest {
         assertEquals(40, s.daily);
         assertEquals(5, s.low);
         assertEquals(50, s.creditsLine);
+        assertEquals(3, s.marketDays);
+        assertEquals(5, s.marketLine);
         assertTrue(s.enhanced);
         assertFalse(s.persistent);
         assertTrue(s.tibo);
@@ -68,7 +71,7 @@ public final class NoticePagesTest {
         notices.put("enhanced", true);
         notices.put("primed", true);
         NoticePages.Snapshot s = NoticePages.read(notices, Map.of("enabled", false));
-        for (String id : List.of(NoticePages.ROOT, NoticePages.QUOTA, NoticePages.SITES, NoticePages.MODE, NoticePages.CHALLENGE, NoticePages.CHECK)) {
+        for (String id : List.of(NoticePages.ROOT, NoticePages.QUOTA, NoticePages.SITES, NoticePages.MARKET, NoticePages.MODE, NoticePages.CHALLENGE, NoticePages.CHECK)) {
             NoticePages.Snapshot seen = NoticePages.browse(s, id);
             assertTrue(id, seen.primed);
             assertEquals(s.on, seen.on);
@@ -83,6 +86,13 @@ public final class NoticePagesTest {
         assertFalse(off.on.contains("daily"));
         assertFalse(NoticePages.line(s, "creditsLine", 100).primed);
         assertEquals(100, NoticePages.line(s, "creditsLine", 100).creditsLine);
+        assertTrue(NoticePages.line(s, "marketDays", 3).primed);
+        NoticePages.Snapshot week = NoticePages.line(s, "marketDays", 7);
+        assertFalse(week.primed);
+        assertEquals(7, week.marketDays);
+        assertEquals(s.marketLine, week.marketLine);
+        assertEquals(s.creditsLine, week.creditsLine);
+        assertEquals(10, NoticePages.line(s, "marketLine", 10).marketLine);
         assertTrue(NoticePages.toggle(s, "enhanced", true).primed);
         assertFalse(NoticePages.toggle(s, "enhanced", false).primed);
     }

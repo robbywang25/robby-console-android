@@ -731,3 +731,17 @@ PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明
 验证：变基到 0.40.0 之上后 `check.sh` 通过（267 项 JVM 测试 0 失败，新增 `aPastDaysTailIsSummarizedOnTheNextRound`、`onlyTodayWaitsForTheHourlySummary`、`onlyAStatusAboutTheFileSkipsIt`、`theAccountIsAskedOnlyNowAndThen`；lint debug/release 0 错误，3 条警告是原有的 Gradle 版本和 `LedgerActions` 字符串拼接），Release 为正式证书签名，APK SHA256 `ec754217…d68746`。用 adb 覆盖安装到 Find（versionCode 66，安装文件与 APK 的 SHA256 一致，签名为正式证书），启动后主页面在前台，没有崩溃日志。
 
 未验证：安装时 Find 上心力球没有开启（前台服务没有运行），所以跨天补整理、残留录音清理和同步频率都还没在真机上看到。唤醒锁这次没动：录音时 audioserver 自己就持有唤醒锁，God 的 `God:MindBall` 可能是多余的，但要先在 Find 上用 `dumpsys power` 确认。心力球卡片在预览版里会提前返回，这次页面上的改动在预览版里看不到，所以没有截图。
+
+## v0.41.0：行情波动提醒，心力球录音通知可隐藏（2026-10-24）
+
+本人要求：「市场看板，可以设置通知，设置的 7 天以内，3 天内有超过阈值波动会发送通知」；「心力球运行时会持续有个通知，这个可以隐藏吗」。「7 天以内」按市场接口 `history` 只带 7 天每日收盘来理解：天数可选 1–7，默认 3。
+
+- **行情波动提醒**（`Notices.MARKET`，`Notices.market`）：每个 `history.series` 里的资产（跳过 `unavailableSymbols`），取本地日期在最近 N 天内的每日收盘，加上 `watchlist` 里同代码的现价（没有现价时用最新一笔收盘），算现价相对区间最低价的涨幅和相对最高价的跌幅。任一方向达到提醒线（2/3/5/8/10/15/20%，默认 5%）就提醒；两个方向都达到时只说较大的一个，两边都记为已提醒。同一方向再提醒的条件是：先回到提醒线一半以内重新计算，或者比上次提醒时再多一个提醒线（5% → 10% → 15%）。通知 key 为 `market:<代码>:up|down`，新的一条替换同资产同方向的旧通知；点开进入市场看板。
+- **读取节奏**：随每 2 分钟的后台检查进行，但 `market` 最多每 10 分钟读一次（`marketReadAt`，只在本机）。开启后第一次检查（`primed` 为 false）一定读取，只记录当前行情，不提醒，和其他提醒一样不会一开就刷屏。
+- **通知**：新类别「行情波动提醒」（`god-market-v1`，默认重要性）；增强提醒开启时走 `god-alert-v1`，持续提醒同样适用。锁屏只显示「God · 行情波动提醒」。
+- **设置位置**：「我 → 通知」新增第 6 组「市场」；市场看板页底部（免责声明之上）是同一个开关和两行设置（波动区间、波动提醒线）。`marketDays`、`marketLine` 和 `noticeKinds` 里的 `market` 随账号同步（服务端偏好接口只校验形状）。本机 `god-notices` 的 state 新增 `market` 段：资产代码、已提醒的涨跌幅和最近一次见到的时间，14 天未出现自动删除；隐私页已写明。
+- **心力球录音通知**：Android 要求麦克风前台服务一直带一条通知，App 不能自己去掉。证据是 Find 上 `god-check-v1` 创建时是 MIN（`mOriginalImp=1`），第一次用于前台服务后被系统提到 LOW（`mImportance=2`）。所以这一版做了三件事：录音通知搬到单独的类别「心力球录音中」（`mindball-recording-v1`），原来的 `mindball-v1` 改名「心力球提醒」，只发「已暂停」，本人在系统里关掉前者不会错过暂停提醒；心力球页设置卡片新增「录音通知」一行，显示「显示 / 已隐藏」，点按直达这个类别的系统设置；通知带 `deleteIntent`，在通知栏划掉后（Android 14 起前台服务通知可以划掉），`refreshNotification` 不再每段录音把它弹回来，直到下次开始录音。
+
+验证：`check.sh` 通过（274 项 JVM 测试 0 失败，新增 `MarketNoticeTest` 7 项，并扩充了 `NoticePagesTest`、`PreferenceSyncTest`；lint debug/release 0 错误，3 条警告为原有的 Gradle 版本和 `LedgerActions` 字符串拼接）。Release 为正式证书签名，APK SHA256 `2e138537…5c3634`；用 adb 覆盖安装到 Find（versionCode 67，安装文件 SHA256 一致，签名 `83d624e0…3da569`），安装后没有崩溃日志，下一次后台检查正常完成（`check kinds=2 due=0 primed=true`）。预览版同时更新到 0.41.0（SHA256 `a1d59513…03b92c8`）。
+
+未验证：Find 一直处于锁屏，预览版的市场看板卡片、「我 → 通知 → 市场」和心力球「录音通知」一行都还没有截图。真实行情下的提醒要本人开启开关后才会触发，目前只有单元测试覆盖。关掉「心力球录音中」类别后录音是否照常进行、ColorOS 是否另外显示「正在后台运行」的提示，以及 ColorOS 是否允许划掉麦克风前台服务的通知，都要在本人开着心力球时确认。

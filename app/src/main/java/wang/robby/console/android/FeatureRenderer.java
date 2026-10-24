@@ -73,8 +73,10 @@ public final class FeatureRenderer {
             case "wechat-messages": WechatPages.render(context, container, payload); break;
             default: ui.message("暂未接入", "此功能尚无原生数据视图。");
         }
-        if (!ui.explanations.isEmpty()) container.addView(ui.theme.info(ui.explanations));
+        if (!ui.explanations.isEmpty()) { View notes = ui.theme.info(ui.explanations); notes.setTag(EXPLANATIONS); container.addView(notes); }
     }
+    /** Tag of the closing notes block, so the host can place its own rows above it. */
+    static final String EXPLANATIONS = "feature-explanations";
 
     /** Feature whose contract a dashboard read must satisfy; several 总览 cards share the overview read. */
     static FeatureCatalog.Feature byPath(String path) {

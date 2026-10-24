@@ -3,11 +3,12 @@ package wang.robby.console.android;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.*;
 
 /**
- * God's own notifications, decided from what the five-minute background read sees (tokens/quotas, overview). Pure
+ * God's own notifications, decided from what the five-minute background read sees (tokens/quotas, overview, market). Pure
  * rules: the caller keeps {@link State} between reads and posts what comes back. Each notice fires once per thing it is
  * about (a day, a quota period, a status change, a card, an outage), never on every read.
  *
@@ -18,17 +19,26 @@ import java.util.*;
  */
 final class Notices {
     private Notices() {}
-    static final String DAILY = "daily", CREDITS = "credits", LOW = "low", RESET = "reset", ACCOUNT = "account", CARD = "card", SITES = "sites";
-    static final List<String> KINDS = List.of(DAILY, CREDITS, LOW, RESET, ACCOUNT, CARD, SITES);
+    static final String DAILY = "daily", CREDITS = "credits", LOW = "low", RESET = "reset", ACCOUNT = "account", CARD = "card", SITES = "sites", MARKET = "market";
+    static final List<String> KINDS = List.of(DAILY, CREDITS, LOW, RESET, ACCOUNT, CARD, SITES, MARKET);
+    /** The kinds that read tokens/quotas. */
+    static final Set<String> QUOTA_KINDS = Set.of(DAILY, CREDITS, LOW, RESET, ACCOUNT, CARD);
     static final int[] DAILY_CHOICES = {10, 20, 30, 40, 50, 70}, LOW_CHOICES = {5, 10, 20, 30}, CREDIT_CHOICES = {20, 50, 100, 200, 500};
-    static final int CREDIT_DEFAULT = 50;
+    /** 行情波动: how many days back (the market read carries seven days of closes) and how far a move must go, in percent. */
+    static final int[] MARKET_DAY_CHOICES = {1, 2, 3, 4, 5, 6, 7}, MARKET_LINE_CHOICES = {2, 3, 5, 8, 10, 15, 20};
+    static final int CREDIT_DEFAULT = 50, MARKET_DAYS_DEFAULT = 3, MARKET_LINE_DEFAULT = 5;
 
     static final class Settings {
-        final Set<String> on; final int daily, low, credits;
+        final Set<String> on; final int daily, low, credits, marketDays, marketLine;
         Settings(Set<String> on, int daily, int low) { this(on, daily, low, CREDIT_DEFAULT); }
-        Settings(Set<String> on, int daily, int low, int credits) { this.on = on; this.daily = daily; this.low = low; this.credits = credits; }
+        Settings(Set<String> on, int daily, int low, int credits) { this(on, daily, low, credits, MARKET_DAYS_DEFAULT, MARKET_LINE_DEFAULT); }
+        Settings(Set<String> on, int daily, int low, int credits, int marketDays, int marketLine) {
+            this.on = on; this.daily = daily; this.low = low; this.credits = credits; this.marketDays = marketDays; this.marketLine = marketLine;
+        }
         boolean has(String kind) { return on.contains(kind); }
     }
+    /** {@code v} when it is one of {@code choices}, otherwise {@code fallback}. */
+    static int choice(int v, int[] choices, int fallback) { for (int c : choices) if (c == v) return v; return fallback; }
     static final class Notice {
         final String key, kind, title, text, open;
         Notice(String key, String kind, String title, String text, String open) { this.key = key; this.kind = kind; this.title = title; this.text = text; this.open = open; }
@@ -172,10 +182,68 @@ final class Notices {
         return out;
     }
 
+    /**
+     * 行情波动 for each 关注行情 asset: the quote now against the highest and lowest price of the last {@code marketDays}
+     * days (history's daily closes from that many local days back, plus the quote). A rise from the low or a fall from
+     * the high that reaches the line notifies once. The same direction notifies again only after the move has eased
+     * below half the line, or grown by another full line. When both directions reach it, the larger one is said.
+     */
+    static List<Notice> market(JSONObject market, State state, Settings s, long now, ZoneId zone) {
+        List<Notice> out = new ArrayList<>(); if (!s.has(MARKET)) return out;
+        JSONObject history = market.optJSONObject("history"); JSONArray series = history == null ? null : history.optJSONArray("series"); if (series == null) return out;
+        Map<String, JSONObject> quotes = new HashMap<>(); JSONArray list = market.optJSONArray("watchlist");
+        if (list != null) for (int i = 0; i < list.length() && i < 60; i++) { JSONObject q = list.optJSONObject(i); if (q != null) quotes.put(q.optString("symbol", ""), q); }
+        Set<String> missing = new HashSet<>(); JSONArray gone = history.optJSONArray("unavailableSymbols"); if (gone != null) for (int i = 0; i < gone.length(); i++) missing.add(gone.optString(i));
+        int days = s.marketDays, line = s.marketLine; LocalDate from = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().minusDays(days);
+        JSONObject seen = state.section("market");
+        for (int i = 0; i < series.length() && i < 40; i++) {
+            JSONObject x = series.optJSONObject(i); if (x == null) continue;
+            String symbol = x.optString("symbol", ""); if (!symbol.matches("[A-Za-z0-9._:^=-]{1,40}") || missing.contains(symbol)) continue;
+            JSONArray points = x.optJSONArray("points"); if (points == null) continue;
+            double low = Double.MAX_VALUE, high = 0, last = 0; long lastAt = -1; int inWindow = 0;
+            for (int j = 0; j < points.length() && j < 400; j++) {
+                JSONObject p = points.optJSONObject(j); long t = p == null ? -1 : at(p.opt("timestamp")); double v = p == null ? 0 : price(p.opt("price"));
+                if (t < 0 || v <= 0) continue;
+                if (t > lastAt) { lastAt = t; last = v; }
+                if (Instant.ofEpochMilli(t).atZone(zone).toLocalDate().isBefore(from)) continue;
+                low = Math.min(low, v); high = Math.max(high, v); inWindow++;
+            }
+            // The quote is newer than the last close; without one the last close stands for now.
+            JSONObject quote = quotes.get(symbol); double current = quote == null ? 0 : price(quote.opt("price")); if (current <= 0) current = last;
+            if (inWindow == 0 || current <= 0) continue;
+            low = Math.min(low, current); high = Math.max(high, current);
+            double rise = (current - low) * 100 / low, fall = (high - current) * 100 / high;
+            JSONObject e = state.entry("market", symbol); put(e, "seenAt", now);
+            boolean up = due(e, "up", rise, line), down = due(e, "down", fall, line);
+            if (!up && !down) continue;
+            JSONObject named = quote != null ? quote : x;
+            String label = named.optString("label", "").trim(); if (label.isEmpty() || label.length() > 40) label = symbol;
+            String unit = named.optString("currency", "").trim(); unit = unit.matches("[A-Z]{3,5}") ? " " + unit : "";
+            String span = days + " 天内", tail = "，超过你设的 " + line + "% 提醒线。";
+            if (up && (!down || rise >= fall)) out.add(new Notice("market:" + symbol + ":up", MARKET, label + " " + span + "上涨 " + pct(rise) + "%", "从 " + span + "低点 " + money(low) + " 涨到 " + money(current) + unit + tail, "market"));
+            else out.add(new Notice("market:" + symbol + ":down", MARKET, label + " " + span + "下跌 " + pct(fall) + "%", "从 " + span + "高点 " + money(high) + " 跌到 " + money(current) + unit + tail, "market"));
+            if (up) put(e, "up", rise);
+            if (down) put(e, "down", fall);
+        }
+        for (Iterator<String> it = seen.keys(); it.hasNext(); ) { JSONObject e = seen.optJSONObject(it.next()); if (e == null || e.optLong("seenAt", now) < now - 14 * 86_400_000L) it.remove(); }
+        return out;
+    }
+    /** Whether a move in one direction notifies now; one that eased below half the line is re-armed. */
+    private static boolean due(JSONObject e, String direction, double move, int line) {
+        double fired = e.optDouble(direction, Double.NaN);
+        if (!Double.isNaN(fired) && move < line / 2.0) { e.remove(direction); return false; }
+        return move >= line && (Double.isNaN(fired) || move >= fired + line);
+    }
+    private static double price(Object v) { double d = v instanceof Number ? ((Number) v).doubleValue() : 0; return Double.isFinite(d) && d > 0 ? d : 0; }
+    static String pct(double v) { return String.format(Locale.ROOT, "%.1f", v); }
+    /** 84,830.5 · 128.4 · 0.0123: grouped, at most two decimals, four below one. */
+    static String money(double v) { java.text.NumberFormat f = java.text.NumberFormat.getNumberInstance(Locale.US); f.setMaximumFractionDigits(v < 1 ? 4 : 2); return f.format(v); }
+
     static String label(String kind) {
         switch (kind) {
             case DAILY: return "当天消耗超过提醒线"; case CREDITS: return "Codex 积分消耗"; case LOW: return "额度即将用完";
             case RESET: return "每周额度已重置"; case ACCOUNT: return "账号需要处理"; case CARD: return "重置卡即将过期";
+            case MARKET: return "行情波动提醒";
             default: return "站点离线与恢复";
         }
     }
@@ -187,6 +255,7 @@ final class Notices {
             case RESET: return "每周等长周期额度被重置时提醒";
             case ACCOUNT: return "账号需要重新授权或读不到时提醒";
             case CARD: return "可用的重置卡 24 小时内过期时提醒";
+            case MARKET: return "任一关注资产 " + s.marketDays + " 天内涨跌超过 " + s.marketLine + "% 时提醒";
             default: return "监测中的站点连续两次无响应、以及恢复时提醒";
         }
     }

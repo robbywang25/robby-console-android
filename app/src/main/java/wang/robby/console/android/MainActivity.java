@@ -161,6 +161,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(awaitingInstallPermission){awaitingInstallPermission=false;if(getPackageManager().canRequestPackageInstalls())startUpdate();}
         // Back from a notification or battery settings page: show what still keeps the reminder from ringing.
         TokensPages.refreshReminder();
+        // Back from 心力球录音中's channel settings: its row says whether the notice is now hidden.
+        MindBallPage.refresh();
         if(accountBrowserPending){accountBrowserPending=false;if(ACCOUNT_PAGE.equals(selectedId)&&loggedIn()){accountStatus=null;accountDevices=null;build();}}
         // ColorOS may stop the reminder or refuse to restart it after an update; opening the app brings it back.
         if(!PreviewMode.isBuild()&&TiboWatch.active(this))TiboWatch.start(this,TiboWatch.checkDue(this));
@@ -808,6 +810,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
                 if(projects.length()==0)result.addView(text("暂无可访问的账本",15,MUTED,false));return;
             }
             FeatureRenderer.render(this,result,f,data);
+            // 市场看板 carries its own 行情波动提醒 switch, above the closing disclaimer.
+            if(f.id.equals("market")&&FeatureRenderer.isCompatible(f,data)){View notes=result.findViewWithTag(FeatureRenderer.EXPLANATIONS);if(notes!=null)result.removeView(notes);
+                marketNotice(groupCard(result),NoticeCenter.settings(this));if(notes!=null)result.addView(notes);}
             if(f.path.equals("travel-ledger/current/projects")&&project!=null) {
                 JSONObject page=data.optJSONObject("page");
                 LinearLayout pager=new LinearLayout(this);pager.setOrientation(LinearLayout.HORIZONTAL);
@@ -865,7 +870,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void subPage(String title){heading.setText(title);leading.removeAllViews();leading.addView(theme.circle("back","返回",this::goBack),new FrameLayout.LayoutParams(dp(48),dp(48),Gravity.START|Gravity.CENTER_VERTICAL));}
     private String appearanceSummary(){String style=statusStyle();return (theme.contrast?"不透明表面":theme.glassOn?"Liquid Glass":"Liquid Glass 已关闭")+" · 状态栏"+StatusBarStyle.label(style)+AlwaysOn.summary(prefs().getBoolean(AlwaysOn.KEY,false),prefs().getInt(AlwaysOn.SAVER,0));}
     /**
-     * 我 → 通知, after iOS Settings: the first page is the system permission and five groups. A group is only drawn;
+     * 我 → 通知, after iOS Settings: the first page is the system permission and six groups. A group is only drawn;
      * opening it does not write a preference, so the first-read latch stays as it was.
      */
     private void noticesPage(){
@@ -897,6 +902,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             content.addView(theme.info(List.of("锁屏上只显示「God · 额度提醒」，解锁后才显示账号和数字。","当天消耗和 Codex 积分都按每次检查的下降累计，从当地零点算起。余额上升视为充值，不计入当天消耗。")));
         }else if(NoticePages.SITES.equals(g.id)){
             noticeSwitch(box,Notices.SITES,"pulse",s);
+        }else if(NoticePages.MARKET.equals(g.id)){
+            marketNotice(box,s);
+            content.addView(theme.info(List.of("比较现价和所选天数内每日收盘价的最高、最低价：从低点涨过提醒线，或从高点跌过提醒线时提醒。","同一资产同一方向只提醒一次；涨跌回到提醒线的一半以内后重新计算，或再多涨跌一个提醒线时再提醒一次。","开启后第一次检查只记下当前行情；行情每 10 分钟读取一次。锁屏上只显示「God · 行情波动提醒」。","公开行情，仅供信息参考，不构成投资建议。")));
         }else if(NoticePages.MODE.equals(g.id)){
             boolean loud=NoticeCenter.enhanced(this);
             modeSwitch(box,"enhanced","增强提醒",loud?"横幅弹出，带声音和震动":"关闭时为普通通知，只在通知栏出现","bell",loud);
@@ -941,6 +949,13 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             enableNotice(kind,on);});
         row.addView(toggle);
     }
+    /** 行情波动提醒 and, while it is on, its range and line; the same rows sit on 市场看板 and in 我 → 通知 → 市场. */
+    private void marketNotice(LinearLayout box,Notices.Settings s){
+        noticeSwitch(box,Notices.MARKET,"trend",s);
+        if(!s.has(Notices.MARKET))return;
+        featureRow("波动区间 · "+s.marketDays+" 天","和这几天里的最高价、最低价比较","calendar",box,()->thresholdMenu("marketDays","波动区间",Notices.MARKET_DAY_CHOICES,s.marketDays,"%d 天内"));
+        featureRow("波动提醒线 · "+s.marketLine+"%","涨跌达到这个幅度时提醒，同一方向不重复","edit",box,()->thresholdMenu("marketLine","波动提醒线",Notices.MARKET_LINE_CHOICES,s.marketLine,"涨跌超过 %d%% 时提醒"));
+    }
     private void modeSwitch(LinearLayout parent,String which,String title,String detail,String symbol,boolean value){
         LinearLayout row=featureRow(title,detail,symbol,parent,null);
         Switch toggle=new Switch(this);toggle.setChecked(value);toggle.setContentDescription(title);toggle.setMinimumHeight(dp(48));
@@ -965,7 +980,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             {"设置","看板、外观、功能的隐藏和排序、通知开关、提醒线和 Codex 积分点数线会保存到 God 账号，同一账号的手机保持一致。登录、灵动岛的开孔位置、常亮展示、提醒的检查记录、积分起点和已提醒标记只留在这台手机；未登录时设置也只在本机。"},
             {"重置提醒","开启 Tibo 重置提醒后，应用"+TiboWatch.EVERY+"读取一次 Tibo 的公开预告，本机只记下已提醒过的帖子编号。检查期间会短暂显示一条通知，检查完即消失。"},
             {"桌面小组件","Token 额度、重置日历、运行状态和微信消息小组件只显示 God 已经读到的数字：产品名、账号邮箱 @ 前面的部分、剩余百分比、重置时间、站点在线和异常数、今天的微信消息数与近 7 天日均。本机为它们保留一份这样的副本，不含完整邮箱、账号 ID、站点或会话名称和消息内容。桌面上放了这几个小组件时，应用"+TiboWatch.EVERY+"在后台读取一次它们用到的数据（检查时短暂显示「God 正在检查提醒」），移除后不再读取；超过两小时没读到显示「打开 God 更新」，退出登录立即清除。这四个只能放在桌面，时区时钟和 God 小组件可以放在锁屏。"},
-            {"通知","开启「我 → 通知」里的提醒后，应用"+TiboWatch.EVERY+"在后台读取 Token 额度（开启站点提醒时还有运行状态）。检查时会短暂显示「God 正在检查提醒」，检查完这条通知消失，不再常驻「已开启」。为了判断变化，本机会保存每个额度最近的剩余比例、当天累计消耗、Codex 积分起点和是否已提醒、账号状态，以及站点域名和是否在线；不保存邮箱、套餐或其他页面内容，14 天没出现的记录会自动删除，全部关闭后不再读取。这些检查记录只留在这台手机。"}};
+            {"通知","开启「我 → 通知」里的提醒后，应用"+TiboWatch.EVERY+"在后台读取 Token 额度（开启站点提醒时还有运行状态，开启行情波动提醒时每 10 分钟读一次市场看板）。检查时会短暂显示「God 正在检查提醒」，检查完这条通知消失，不再常驻「已开启」。为了判断变化，本机会保存每个额度最近的剩余比例、当天累计消耗、Codex 积分起点和是否已提醒、账号状态、站点域名和是否在线，以及关注资产的代码和已提醒过的涨跌幅；不保存邮箱、套餐或其他页面内容，14 天没出现的记录会自动删除，全部关闭后不再读取。这些检查记录只留在这台手机。"}};
         for(String[] part:parts){section(part[0]);LinearLayout c=card();TextView t=text(part[1],14,INK,false);t.setLineSpacing(dp(3),1);c.addView(t);}
         restoreViewport();
     }
@@ -1606,6 +1621,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         String pkg=getPackageName();Uri app=Uri.parse("package:"+pkg);Intent intent=switch(what){
             case "notifications"->new Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,pkg);
             case "channel"->new Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,pkg).putExtra(android.provider.Settings.EXTRA_CHANNEL_ID,TiboWatch.CH_ALARM);
+            case "mindball"->new Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,pkg).putExtra(android.provider.Settings.EXTRA_CHANNEL_ID,MindBall.CHANNEL_RECORDING);
             case "fullscreen"->Build.VERSION.SDK_INT>=34?new Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,app):new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,app);
             case "battery"->new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,app);
             case "exact"->Build.VERSION.SDK_INT>=31?new Intent(android.provider.Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,app):new Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,app);

@@ -14,7 +14,7 @@ import java.io.File;
 
 /**
  * Records 心力球 while it is switched on, as a microphone foreground service: the system shows its own microphone
- * indicator and the ongoing notification can stop it. Segments of {@link MindBall#SEGMENT} are 16 kHz mono AAC; the
+ * indicator and the ongoing notification can stop it. Swiped away, that notification stays away until the next start. Segments of {@link MindBall#SEGMENT} are 16 kHz mono AAC; the
  * loudest level is sampled every second and a segment with fewer than {@link MindBall#MIN_VOICED_SECONDS} loud
  * seconds is deleted without leaving the phone. Kept segments are handed to {@link MindBall#processAsync}.
  */
@@ -39,6 +39,8 @@ public final class MindBallService extends Service {
         // A system restart after ColorOS stopped the process comes from the background, where Android 14+ hands the
         // microphone only silence: rather than record nothing while claiming to record, ask for God to be opened.
         if (intent == null && recorder == null) { MindBall.stopped(this); stopSelf(); return START_NOT_STICKY; }
+        // A new recording shows its notification again, even if the last one was swiped away.
+        if (recorder == null) MindBall.noticeDismissed = false;
         try {
             startForeground(MindBall.ID_RECORDING, MindBall.recordingNotification(this), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
         } catch (RuntimeException refused) {

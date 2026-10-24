@@ -26,7 +26,7 @@ import java.util.*;
  */
 final class MindBallPage {
     private MindBallPage() {}
-    interface Host { void mindBallSwitch(boolean on); }
+    interface Host { void mindBallSwitch(boolean on); void tiboFix(String what); }
     /** The day being read; process memory only, back to today on a new launch. */
     private static String selected;
     private static final Set<String> OPEN = new HashSet<>();
@@ -47,7 +47,7 @@ final class MindBallPage {
         transcript(ctx, t, container, day);
         settings(ctx, t, container, preview);
         container.addView(t.info(List.of(
-            "录音只在「心力球」开启时进行：系统状态栏会显示麦克风标志，通知栏常驻一条「心力球正在录音」，点「停止录音」即可关掉。",
+            "录音只在「心力球」开启时进行：系统状态栏会显示麦克风标志，通知栏有一条「心力球正在录音」，点「停止录音」即可关掉。不想看到这条通知，可以在上方「录音通知」里隐藏，或直接在通知栏划掉。",
             "每 10 分钟一段；几乎没有说话声的片段直接删除，不上传。有说话的片段发给你设置的转写服务转成文字，转写成功后删除音频。",
             "文字最多每小时交给 DeepSeek 整理一次，生成当天的关键事项和待办；停止录音或下拉页面时立即整理。",
             "录音、文字和时间线只存在这台手机上 God 的私有目录里，保留 " + MindBall.KEEP_DAYS + " 天，不经过 God 服务器，也不随系统备份。两个 API Key 用 Android Keystore 加密保存。",
@@ -184,6 +184,11 @@ final class MindBallPage {
         setting(ctx, t, c, "整理模型", preview ? MindBall.DEFAULT_MODEL : MindBall.model(ctx), preview ? null : () -> serviceDialog(ctx, t));
         setting(ctx, t, c, "转写服务", preview ? "api.siliconflow.cn" : host(MindBall.asrUrl(ctx)) + " · " + shortModel(MindBall.asrModel(ctx)), preview ? null : () -> serviceDialog(ctx, t));
         setting(ctx, t, c, "转写服务 API Key", preview ? "预览" : MindBall.hasSecret(ctx, MindBall.KEY_ASR) ? "已填写" : "未填写", preview ? null : () -> keyDialog(ctx, t, "转写服务 API Key", MindBall.KEY_ASR, "默认是硅基流动（cloud.siliconflow.cn）的 Key；可改用任何兼容 OpenAI /audio/transcriptions 的服务"));
+        // Android requires the recording notification; only the person can switch its channel off, in system settings.
+        Host host = ctx instanceof Host ? (Host) ctx : null;
+        setting(ctx, t, c, "录音通知", preview ? "显示" : MindBall.noticeHidden(ctx) ? "已隐藏" : "显示", preview || host == null ? null : () -> { MindBall.channel(ctx); host.tiboFix("mindball"); });
+        TextView hide = t.text("在系统设置里关掉「心力球录音中」即可隐藏，录音照常进行，状态栏仍有麦克风标志。也可以在通知栏划掉，本次录音不再弹出。", 12, false);
+        hide.setTextColor(t.faint); hide.setPadding(0, t.dp(2), 0, t.dp(6)); c.addView(hide);
         if (preview) return;
         // The row says where things stand in a word or two; the line under it says why.
         String sync = MindBallSync.state(ctx); int cut = sync.indexOf('：');
