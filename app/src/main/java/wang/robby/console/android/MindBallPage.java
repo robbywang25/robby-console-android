@@ -21,30 +21,46 @@ import java.time.ZoneId;
 import java.util.*;
 
 /**
- * The 心力球 page: the recording switch and its state, then one day's timeline of 关键事项 and 待办 as DeepSeek
- * arranged it, the transcript it came from, and the two keys. Everything shown is read from this phone.
+ * The 心力球 page, in two views. 看板: the recording switch and its state, today at a glance, the 待办 still open this
+ * week and a week of recording. 记录: one day's timeline of 关键事项 and 待办 as DeepSeek arranged it and the
+ * transcript it came from. The keys and services are on their own page behind the header's gear. Everything shown
+ * is read from this phone.
  */
 final class MindBallPage {
     private MindBallPage() {}
     interface Host { void mindBallSwitch(boolean on); void tiboFix(String what); }
-    /** The day being read; process memory only, back to today on a new launch. */
+    /** The sub-route of 心力球设置, kept where the ledger keeps its project. */
+    static final String SETTINGS = "settings";
+    /** The day being read and the view shown; process memory only, back to today's 看板 on a new launch. */
     private static String selected;
+    private static boolean board = true;
     private static final Set<String> OPEN = new HashSet<>();
     private static WeakReference<LinearLayout> shown = new WeakReference<>(null);
 
-    static void render(Context ctx, LinearLayout container) {
+    /** Redraws whichever page is in view when a recording, a transcript or a sync lands. */
+    private static void listen(LinearLayout container, boolean settings) {
         shown = new WeakReference<>(container);
-        MindBall.listener = () -> { LinearLayout c = shown.get(); if (c != null && c.isAttachedToWindow()) render(c.getContext(), c); };
+        MindBall.listener = () -> { LinearLayout c = shown.get(); if (c == null || !c.isAttachedToWindow()) return; if (settings) renderSettings(c.getContext(), c); else render(c.getContext(), c); };
+    }
+
+    static void render(Context ctx, LinearLayout container) {
+        listen(container, false);
         container.removeAllViews();
         ConsoleTheme t = new ConsoleTheme(ctx); boolean preview = PreviewMode.isBuild();
+        views(ctx, t, container);
+        if (board) { board(ctx, t, container, preview); return; }
         List<String> days = preview ? List.of(MindBall.today()) : MindBall.days(ctx);
         if (selected == null || !days.contains(selected)) selected = MindBall.today();
         JSONObject day = preview ? PreviewMode.mindBall() : MindBall.day(ctx, selected);
-        // The status line counts today: the day file is read once when today is the day shown.
-        control(ctx, t, container, preview, selected.equals(MindBall.today()) ? day : null);
         if (days.size() > 1) dayChips(ctx, t, container, days);
         timeline(ctx, t, container, day);
         transcript(ctx, t, container, day);
+    }
+    /** 心力球设置: the keys, services, notice and sync, then how recording works and the clear-all. */
+    static void renderSettings(Context ctx, LinearLayout container) {
+        listen(container, true);
+        container.removeAllViews();
+        ConsoleTheme t = new ConsoleTheme(ctx); boolean preview = PreviewMode.isBuild();
         settings(ctx, t, container, preview);
         container.addView(t.info(List.of(
             "录音只在「心力球」开启时进行：系统状态栏会显示麦克风标志，通知栏有一条「心力球正在录音」，点「停止录音」即可关掉。不想看到这条通知，可以在上方「录音通知」里隐藏，或直接在通知栏划掉。",
@@ -53,8 +69,94 @@ final class MindBallPage {
             "录音、文字和时间线只存在这台手机上 God 的私有目录里，保留 " + MindBall.KEEP_DAYS + " 天，不经过 God 服务器，也不随系统备份。两个 API Key 用 Android Keystore 加密保存。",
             "录音会录到身边其他人的声音。请事先告知对方，并遵守当地关于录音的法律。",
             "OPPO / ColorOS 需在 设置 → 应用 → God → 耗电管理 中允许后台行为；手机重启或 God 更新后，需要打开一次 God 才能继续录音。")));
+        if (!preview) clearAll(ctx, t, container);
     }
     static void refresh() { Runnable r = MindBall.listener; if (r != null) r.run(); }
+
+    /** 看板 | 记录, a two-part switch at the top of the page. */
+    private static void views(Context ctx, ConsoleTheme t, LinearLayout parent) {
+        LinearLayout bar = new LinearLayout(ctx); bar.setBackground(t.shape(t.soft, 99)); bar.setPadding(t.dp(3), t.dp(3), t.dp(3), t.dp(3));
+        for (String label : List.of("看板", "记录")) {
+            boolean on = label.equals("看板") == board; TextView seg = t.text(label, 14, on);
+            seg.setTextColor(on ? t.ink : t.muted); seg.setGravity(Gravity.CENTER); seg.setMinHeight(t.dp(36));
+            seg.setBackground(t.ripple(t.shape(on ? t.surface : android.graphics.Color.TRANSPARENT, 99), 99)); seg.setFocusable(true); seg.setClickable(true);
+            seg.setSelected(on); seg.setContentDescription(label + (on ? "，已选中" : ""));
+            seg.setOnClickListener(v -> { if (board == label.equals("看板")) return; board = !board; refresh(); });
+            bar.addView(seg, new LinearLayout.LayoutParams(0, -2, 1));
+        }
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = t.dp(10); parent.addView(bar, lp);
+    }
+
+    private static void board(Context ctx, ConsoleTheme t, LinearLayout parent, boolean preview) {
+        Map<String, JSONObject> byDay = new HashMap<>(); String today = MindBall.today();
+        if (preview) byDay.putAll(PreviewMode.mindBallWeek());
+        else { String oldest = LocalDate.now(ZoneId.systemDefault()).minusDays(MindBallBoard.DAYS - 1).toString();
+            for (String d : MindBall.days(ctx)) if (d.compareTo(oldest) >= 0) byDay.put(d, MindBall.day(ctx, d)); }
+        JSONObject day = byDay.containsKey(today) ? byDay.get(today) : new JSONObject();
+        control(ctx, t, parent, preview, day);
+        todayCard(ctx, t, parent, day);
+        MindBallBoard.Week week = MindBallBoard.week(byDay, LocalDate.now(ZoneId.systemDefault()));
+        openTodos(ctx, t, parent, week);
+        weekCard(ctx, t, parent, week);
+    }
+    private static void todayCard(Context ctx, ConsoleTheme t, LinearLayout parent, JSONObject day) {
+        JSONObject tl = day.optJSONObject("timeline"); JSONArray segs = day.optJSONArray("segments"); JSONArray items = tl == null ? null : tl.optJSONArray("items");
+        JSONObject marks = day.optJSONObject("done"); if (marks == null) marks = new JSONObject();
+        LinearLayout c = t.card(parent); TextView h = t.text("今天", 15, true); h.setAccessibilityHeading(true); c.addView(h);
+        int events = 0, open = 0;
+        if (items != null) for (int i = 0; i < items.length(); i++) { JSONObject it = items.optJSONObject(i); if (!"todo".equals(it.optString("kind"))) events++; else if (!marks.has(MindBall.todoKey(it))) open++; }
+        LinearLayout figures = new LinearLayout(ctx); figures.setPadding(0, t.dp(10), 0, t.dp(4));
+        figure(t, figures, "录音", MindBall.minutes(segs) + " 分钟"); figure(t, figures, "关键事项", tl == null ? "—" : String.valueOf(events)); figure(t, figures, "待办未完成", tl == null ? "—" : String.valueOf(open));
+        c.addView(figures);
+        String summary = tl == null ? "" : tl.optString("summary");
+        if (!summary.isEmpty()) { TextView s = t.text(summary, 14, false); s.setTextColor(t.ink); s.setPadding(0, t.dp(6), 0, t.dp(2)); c.addView(s); }
+        else { TextView e = t.text(segs == null || segs.length() == 0 ? "今天还没有转写好的录音。" : "已有 " + segs.length() + " 段录音，等待整理。", 14, false); e.setPadding(0, t.dp(6), 0, t.dp(2)); c.addView(e); }
+        List<JSONObject> latest = MindBallBoard.latestEvents(day, 3);
+        if (!latest.isEmpty()) { TextView sub = t.text("最近的关键事项", 12, false); sub.setTextColor(t.faint); sub.setPadding(0, t.dp(10), 0, 0); c.addView(sub); }
+        for (JSONObject it : latest) {
+            LinearLayout r = new LinearLayout(ctx); r.setGravity(Gravity.TOP); r.setPadding(0, t.dp(6), 0, 0);
+            TextView time = t.text(it.optString("time").isEmpty() ? "—" : it.optString("time"), 13, false); time.setTextColor(t.muted); time.setSingleLine(true); time.setMinWidth(t.dp(48)); time.setPadding(0, 0, t.dp(6), 0); r.addView(time, new LinearLayout.LayoutParams(-2, -2));
+            TextView title = t.text(it.optString("title"), 14, false); title.setTextColor(t.ink); r.addView(title, new LinearLayout.LayoutParams(0, -2, 1)); c.addView(r);
+        }
+        if (segs != null && segs.length() > 0) {
+            TextView more = t.text("查看今天的完整时间线", 14, false); more.setTextColor(t.accent); more.setGravity(Gravity.CENTER_VERTICAL); more.setMinHeight(t.dp(44)); more.setPadding(0, t.dp(6), 0, 0);
+            more.setBackground(t.ripple(t.shape(android.graphics.Color.TRANSPARENT, 12), 12)); more.setFocusable(true); more.setClickable(true);
+            more.setOnClickListener(v -> { selected = MindBall.today(); board = false; refresh(); }); c.addView(more);
+        }
+    }
+    private static void openTodos(Context ctx, ConsoleTheme t, LinearLayout parent, MindBallBoard.Week week) {
+        LinearLayout c = t.card(parent); TextView h = t.text("未完成的待办" + (week.open.isEmpty() ? "" : " · " + week.open.size()), 15, true); h.setAccessibilityHeading(true); c.addView(h);
+        TextView sub = t.text("近 " + MindBallBoard.DAYS + " 天 DeepSeek 整理出的待办，勾选后在当天的时间线里同样划掉", 12, false); sub.setTextColor(t.faint); sub.setPadding(0, t.dp(2), 0, t.dp(2)); c.addView(sub);
+        if (week.open.isEmpty()) { TextView e = t.text(week.todos == 0 ? "还没有整理出待办。" : "都完成了。", 14, false); e.setPadding(0, t.dp(10), 0, t.dp(4)); c.addView(e); return; }
+        int shown = Math.min(week.open.size(), 8);
+        for (MindBallBoard.Todo todo : week.open.subList(0, shown)) {
+            LinearLayout r = new LinearLayout(ctx); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, t.dp(8), 0, 0); r.setMinimumHeight(t.dp(48));
+            LinearLayout body = new LinearLayout(ctx); body.setOrientation(LinearLayout.VERTICAL);
+            TextView title = t.text(todo.title, 15, false); title.setTextColor(t.ink); body.addView(title);
+            List<String> meta = new ArrayList<>(); meta.add(dayLabel(todo.day) + (todo.time.isEmpty() ? "" : " " + todo.time)); if (!todo.due.isEmpty()) meta.add("截止 " + todo.due);
+            TextView m = t.text(String.join(" · ", meta), 12, false); m.setTextColor(todo.due.isEmpty() ? t.faint : t.accent); m.setPadding(0, t.dp(2), 0, 0); body.addView(m);
+            r.addView(body, new LinearLayout.LayoutParams(0, -2, 1));
+            CheckBox box = new CheckBox(ctx); box.setContentDescription("完成：" + todo.title); box.setEnabled(!PreviewMode.isBuild());
+            box.setOnCheckedChangeListener((v, checked) -> { MindBall.setDone(ctx, todo.day, todo.key, checked); v.post(MindBallPage::refresh); });
+            r.addView(box); c.addView(r);
+        }
+        if (week.open.size() > shown) { TextView more = t.text("还有 " + (week.open.size() - shown) + " 项，在「记录」里按天查看", 12, false); more.setTextColor(t.faint); more.setPadding(0, t.dp(8), 0, 0); c.addView(more); }
+    }
+    private static void weekCard(Context ctx, ConsoleTheme t, LinearLayout parent, MindBallBoard.Week week) {
+        LinearLayout c = t.card(parent); TextView h = t.text("近 " + MindBallBoard.DAYS + " 天", 15, true); h.setAccessibilityHeading(true); c.addView(h);
+        LinearLayout figures = new LinearLayout(ctx); figures.setPadding(0, t.dp(10), 0, t.dp(4));
+        figure(t, figures, "录音", MindBallBoard.duration(week.totalMinutes())); figure(t, figures, "有录音的天数", week.recordedDays() + " / " + MindBallBoard.DAYS);
+        figure(t, figures, "待办完成", week.done + " / " + week.todos); c.addView(figures);
+        int peak = WechatDigestText.peakIndex(week.minutes); long most = peak < 0 ? 0 : week.minutes[peak];
+        String description = "近 " + MindBallBoard.DAYS + " 天每日录音，最多 " + most + " 分钟，今天 " + week.minutes[MindBallBoard.DAYS - 1] + " 分钟";
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-1, t.dp(72)); cp.topMargin = t.dp(8);
+        c.addView(new WechatBars(ctx, WechatDigestText.normalize(week.minutes), t.accent, t.line, MindBallBoard.DAYS - 1, description), cp);
+        LinearLayout axis = new LinearLayout(ctx); axis.setPadding(0, t.dp(4), 0, 0);
+        String[] labels = { dayLabel(week.days.get(0)), most > 0 ? "最多 " + most + " 分钟" : "", "今天" };
+        for (int i = 0; i < 3; i++) { TextView a = t.text(labels[i], 11, false); a.setTextColor(t.faint); a.setGravity(i == 0 ? Gravity.START : i == 1 ? Gravity.CENTER : Gravity.END); axis.addView(a, new LinearLayout.LayoutParams(0, -2, 1)); }
+        axis.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS); c.addView(axis);
+        TextView foot = t.text("关键事项 " + week.events + " 条 · 共 " + week.segments + " 段录音 · 录音和记录保留 " + MindBall.KEEP_DAYS + " 天", 12, false); foot.setTextColor(t.faint); foot.setPadding(0, t.dp(8), 0, 0); c.addView(foot);
+    }
 
     private static void control(Context ctx, ConsoleTheme t, LinearLayout parent, boolean preview, JSONObject today) {
         boolean on = !preview && MindBall.enabled(ctx), live = on && MindBall.recording; Host host = ctx instanceof Host ? (Host) ctx : null;
@@ -179,13 +281,14 @@ final class MindBallPage {
     }
 
     private static void settings(Context ctx, ConsoleTheme t, LinearLayout parent, boolean preview) {
-        LinearLayout c = t.card(parent); TextView h = t.text("设置", 15, true); h.setAccessibilityHeading(true); c.addView(h);
+        LinearLayout c = t.card(parent); TextView h = t.text("整理与转写", 15, true); h.setAccessibilityHeading(true); c.addView(h);
         setting(ctx, t, c, "DeepSeek API Key", preview ? "预览" : MindBall.hasSecret(ctx, MindBall.KEY_DEEPSEEK) ? "已填写" : "未填写", preview ? null : () -> keyDialog(ctx, t, "DeepSeek API Key", MindBall.KEY_DEEPSEEK, "在 platform.deepseek.com 创建，以 sk- 开头"));
         setting(ctx, t, c, "整理模型", preview ? MindBall.DEFAULT_MODEL : MindBall.model(ctx), preview ? null : () -> serviceDialog(ctx, t));
         setting(ctx, t, c, "转写服务", preview ? "api.siliconflow.cn" : host(MindBall.asrUrl(ctx)) + " · " + shortModel(MindBall.asrModel(ctx)), preview ? null : () -> serviceDialog(ctx, t));
         setting(ctx, t, c, "转写服务 API Key", preview ? "预览" : MindBall.hasSecret(ctx, MindBall.KEY_ASR) ? "已填写" : "未填写", preview ? null : () -> keyDialog(ctx, t, "转写服务 API Key", MindBall.KEY_ASR, "默认是硅基流动（cloud.siliconflow.cn）的 Key；可改用任何兼容 OpenAI /audio/transcriptions 的服务"));
         // Android requires the recording notification; only the person can switch its channel off, in system settings.
         Host host = ctx instanceof Host ? (Host) ctx : null;
+        c = t.card(parent); h = t.text("通知与同步", 15, true); h.setAccessibilityHeading(true); c.addView(h);
         setting(ctx, t, c, "录音通知", preview ? "显示" : MindBall.noticeHidden(ctx) ? "已隐藏" : "显示", preview || host == null ? null : () -> { MindBall.channel(ctx); host.tiboFix("mindball"); });
         TextView hide = t.text("在系统设置里关掉「心力球录音中」即可隐藏，录音照常进行，状态栏仍有麦克风标志。也可以在通知栏划掉，本次录音不再弹出。", 12, false);
         hide.setTextColor(t.faint); hide.setPadding(0, t.dp(2), 0, t.dp(6)); c.addView(hide);
@@ -195,6 +298,9 @@ final class MindBallPage {
         setting(ctx, t, c, "多台手机同步", sync.isEmpty() ? "检查中…" : cut < 0 ? sync : sync.substring(0, cut), () -> MindBall.syncAsync(ctx));
         TextView note = t.text(cut >= 0 ? sync.substring(cut + 1) : "两个 Key 和上面的服务设置会加密保存到你的 God 账号，登录同一账号的其他安卓手机会自动用上。", 12, false);
         note.setTextColor(t.faint); note.setPadding(0, t.dp(2), 0, t.dp(6)); c.addView(note);
+    }
+    private static void clearAll(Context ctx, ConsoleTheme t, LinearLayout parent) {
+        LinearLayout c = t.card(parent);
         TextView clear = t.text("清除全部录音与记录", 15, false); clear.setTextColor(t.danger); clear.setGravity(Gravity.CENTER_VERTICAL); clear.setMinHeight(t.dp(48));
         clear.setBackground(t.ripple(t.shape(android.graphics.Color.TRANSPARENT, 12), 12)); clear.setFocusable(true); clear.setClickable(true);
         clear.setOnClickListener(v -> show(t, new AlertDialog.Builder(ctx).setTitle("清除全部录音与记录？").setMessage("会删除这台手机上心力球的全部音频、原文和时间线，无法恢复。开关和 API Key 保留。")

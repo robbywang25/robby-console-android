@@ -50,6 +50,15 @@ final class FeatureUsage {
         out.sort((a, b) -> Long.compare(usage.containsKey(b) ? usage.get(b).last : 0, usage.containsKey(a) ? usage.get(a).last : 0));
         return out;
     }
+    /**
+     * The sections of 功能 by their most recently opened feature, latest first (LRU, as {@link #recent} does for rows);
+     * sections with nothing opened keep their given order after them. {@code bySection} maps each section to its ids.
+     */
+    static List<String> recentSections(Map<String, Entry> usage, Map<String, List<String>> bySection) {
+        Map<String, Long> latest = new HashMap<>();
+        for (Map.Entry<String, List<String>> s : bySection.entrySet()) { long last = 0; for (String id : s.getValue()) if (usage.containsKey(id)) last = Math.max(last, usage.get(id).last); latest.put(s.getKey(), last); }
+        List<String> out = new ArrayList<>(bySection.keySet()); out.sort((a, b) -> Long.compare(latest.get(b), latest.get(a))); return out;
+    }
     /** The {@code n} strongest known features, strongest first; ties go to the more recent; gaps are filled from {@link #DEFAULT}. */
     static List<String> top(Map<String, Entry> usage, long now, int n, Predicate<String> known) {
         List<String> ids = new ArrayList<>(); for (String id : usage.keySet()) if (known.test(id)) ids.add(id);

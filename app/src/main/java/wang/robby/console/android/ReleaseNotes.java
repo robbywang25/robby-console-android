@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.42.0", "2026-10-24", "心力球看板，功能分区按最近使用",
+            "心力球新增「看板」：录音开关、今天的概况和最近的关键事项一眼看到。",
+            "看板汇总近 7 天未完成的待办，可以直接勾选完成。",
+            "看板还有近 7 天每天的录音时长、有录音的天数和待办完成情况。",
+            "原来的时间线和录音原文放在「记录」里，按天切换。",
+            "心力球的 Key、服务和通知设置收进右上角的齿轮。",
+            "「功能」里洞察、资产、工具三个分区也按最近打开排序。"),
         new Entry("0.41.0", "2026-10-24", "行情波动提醒，录音通知可隐藏",
             "市场看板新增行情波动提醒：关注资产几天内涨跌超过提醒线时通知你。",
             "天数可选 1 到 7 天，默认 3 天；提醒线 2% 到 20%，默认 5%。",

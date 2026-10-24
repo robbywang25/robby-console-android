@@ -682,7 +682,10 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void featureList(LinearLayout list){
         list.removeAllViews();String q=featureQuery.trim();Set<String> hidden=hiddenFeatures();Map<String,FeatureUsage.Entry> usage=FeatureUsage.parse(prefs().getString("featureUsage",null));
         if(q.isEmpty()){
-            for(String section:FeatureCatalog.SECTIONS){List<FeatureCatalog.Feature> shown=new ArrayList<>();for(FeatureCatalog.Feature f:FeatureCatalog.all())if(f.group.equals(section)&&!hidden.contains(f.id))shown.add(f);
+            // The sections follow the same rule as the rows in them: the one holding the latest open comes first.
+            Map<String,List<String>> bySection=new LinkedHashMap<>();for(String section:FeatureCatalog.SECTIONS)bySection.put(section,new ArrayList<>());
+            for(FeatureCatalog.Feature f:FeatureCatalog.all())if(bySection.containsKey(f.group)&&!hidden.contains(f.id))bySection.get(f.group).add(f.id);
+            for(String section:FeatureUsage.recentSections(usage,bySection)){List<FeatureCatalog.Feature> shown=new ArrayList<>();for(String id:bySection.get(section))shown.add(find(id));
                 if(shown.isEmpty())continue;shown=lru(usage,shown);
                 TextView t=text(section,15,INK,true);t.setAccessibilityHeading(true);t.setPadding(dp(6),dp(12),0,dp(8));list.addView(t);
                 LinearLayout g=groupCard(list);for(FeatureCatalog.Feature f:shown)featureRow(f,g);}
@@ -781,9 +784,12 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(loggedIn()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"刷新",()->showFeature(f,true,page::finishRefresh));}
         tickPage=RefreshPace.page(f.id,null)>0?f.id:null;pageReadAt=SystemClock.elapsedRealtime();schedulePageTick();
         if(!loggedIn()){LinearLayout c=card();c.addView(text(f.title,17,INK,true));TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(6),0,dp(18));c.addView(t);Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);c.addView(passkey,new LinearLayout.LayoutParams(-1,-2));LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);c.addView(button("通过已有设备授权",this::deviceLogin),d);restoreViewport();return;}
-        // 心力球 reads only this phone: pulling down transcribes and summarizes what is waiting.
-        if(f.local()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processNow(this,page::finishRefresh);});
-            LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);MindBallPage.render(this,local);restoreViewport();
+        // 心力球 reads only this phone: pulling down transcribes and summarizes what is waiting. Its settings are a page behind the gear.
+        if(f.local()){final PullScrollView page=scroll;LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);
+            if(MindBallPage.SETTINGS.equals(project)){heading.setText("心力球设置");page.setRefresh(pullMark,pullGlyph,"同步设置",()->{if(!PreviewMode.isBuild())MindBall.syncAsync(this);page.finishRefresh();});MindBallPage.renderSettings(this,local);}
+            else{trailing.addView(circle("gear","心力球设置",()->{saveViewport();++generation;project=MindBallPage.SETTINGS;enterFrom=1;build();}));
+                page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processNow(this,page::finishRefresh);});MindBallPage.render(this,local);}
+            restoreViewport();
             if(!PreviewMode.isBuild())MindBall.syncAsync(this,MindBallSync.PAGE_AGE);if(done!=null)done.run();return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
@@ -1545,7 +1551,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void googleLogin(){if(PreviewMode.isBuild()){error("界面预览","此预览不连接真实账号。");return;}if(coordinator.busy()||nativeLogin.running())return;session.setText(GOOGLE_PREPARING);coordinator.login("google");}
     private static final String GOOGLE_PREPARING="正在准备 Google 登录…";
     private void account(){if(PreviewMode.isBuild()){error("界面预览","仅包含合成展示数据，不连接账号或服务。");return;}if(!loggedIn()){show(new AlertDialog.Builder(this).setTitle("登录 God").setItems(new String[]{"通过已登录设备授权","使用 Passkey 登录","使用 Google 登录（只读）"},(d,w)->{if(w==0)deviceLogin();else if(w==1)login();else googleLogin();}).setNegativeButton("取消",null));return;}show(new AlertDialog.Builder(this).setTitle("God 账号").setMessage("会话保存在此设备的加密存储中。").setNegativeButton("取消",null).setPositiveButton("退出登录",(d,w)->signOut()));}
-    private void goBack(){if(coordinator==null){finish();return;}if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){saveViewport();++generation;if(project!=null){project=null;ledgerCursor=null;ledgerPages.clear();showFeature(find(selectedId),true);}else{selectedId=NoticePages.parent(selectedId);enterFrom=-1;build();}}else if(!group.equals("总览")){switchTab("总览");}else moveTaskToBack(true);}
+    private void goBack(){if(coordinator==null){finish();return;}if(coordinator.deviceAuthorization()!=null){coordinator.cancelDeviceLogin();build();return;}if(selectedId!=null){saveViewport();++generation;if(project!=null){project=null;ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature back=find(selectedId);if(back!=null&&back.local()){enterFrom=-1;build();}else showFeature(back,true);}else{selectedId=NoticePages.parent(selectedId);enterFrom=-1;build();}}else if(!group.equals("总览")){switchTab("总览");}else moveTaskToBack(true);}
     // API 33+ uses the registered OnBackInvokedDispatcher; this is the API 30-32 fallback.
     @android.annotation.SuppressLint("GestureBackNavigation")
     @Override public void onBackPressed(){goBack();}

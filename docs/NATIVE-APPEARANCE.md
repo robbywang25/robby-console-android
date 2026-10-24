@@ -745,3 +745,14 @@ PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明
 验证：`check.sh` 通过（274 项 JVM 测试 0 失败，新增 `MarketNoticeTest` 7 项，并扩充了 `NoticePagesTest`、`PreferenceSyncTest`；lint debug/release 0 错误，3 条警告为原有的 Gradle 版本和 `LedgerActions` 字符串拼接）。Release 为正式证书签名，APK SHA256 `2e138537…5c3634`；用 adb 覆盖安装到 Find（versionCode 67，安装文件 SHA256 一致，签名 `83d624e0…3da569`），安装后没有崩溃日志，下一次后台检查正常完成（`check kinds=2 due=0 primed=true`）。预览版同时更新到 0.41.0（SHA256 `a1d59513…03b92c8`）。
 
 未验证：Find 一直处于锁屏，预览版的市场看板卡片、「我 → 通知 → 市场」和心力球「录音通知」一行都还没有截图。真实行情下的提醒要本人开启开关后才会触发，目前只有单元测试覆盖。关掉「心力球录音中」类别后录音是否照常进行、ColorOS 是否另外显示「正在后台运行」的提示，以及 ColorOS 是否允许划掉麦克风前台服务的通知，都要在本人开着心力球时确认。
+
+## v0.42.0：心力球看板，功能分区按最近使用（2026-10-24）
+
+- 心力球页顶部加「看板 / 记录」切换，默认看板。看板：开关与状态、今天（录音分钟、关键事项、未完成待办、摘要、最近 3 条关键事项和「查看今天的完整时间线」）、近 7 天未完成的待办（可勾选，最多 8 条）、近 7 天（录音时长、有录音的天数、待办完成数、每日录音柱状图，复用 `WechatBars`）。记录：按天切换、时间线、录音原文，和原来一样。统计在 `MindBallBoard`（纯 Java），只读本机最近 7 天的日文件。
+- 设置从页面底部移到标题栏右上角齿轮，打开「心力球设置」子页（路由沿用 `project = "settings"`，返回回到心力球）：整理与转写、通知与同步、说明、清除全部录音与记录。下拉在子页上是「同步设置」。
+- 「功能」的洞察、资产、工具分区按各自最近打开的功能排序（`FeatureUsage.recentSections`），区内顺序不变。
+- 没有改动：录音、转写、整理流程，Key 的存储与同步，数据只在本机的边界。
+
+验证：`check.sh` 通过（279 项 JVM 测试 0 失败，新增 `MindBallBoardTest` 4 项和 `FeatureUsageTest.sectionsFollowTheirLatestOpen`；lint debug/release 0 错误，3 条警告为原有的 Gradle 版本和 `LedgerActions` 字符串拼接）。Release 为正式证书签名（`83d624e0…3da569`），APK SHA256 `4c78d932…bddae0da`。
+
+未验证：Find 当时不在线（Tailscale 显示离线 6 小时，无线调试也找不到），本机没有模拟器，所以预览版的浅色、深色、大字体截图和正式版覆盖安装都没做，等 Find 上线后补。
