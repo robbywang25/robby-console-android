@@ -715,3 +715,19 @@ Find：0.34.1 那次装好后，用 uiautomator 读心力球页面的文字，�
 PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明页面盖住时仍然常亮；屏保之后弹出的对话框会盖在屏保上面；软键盘会亮在屏保上面；读屏操作不重新计时。
 
 未验证：真机上的常亮、屏保出现时间、淡入、最低亮度、开孔和导航条区域是否全黑、轻触恢复、屏保期间暂停刷新、弹窗出现后屏保重新盖上、TalkBack 操作；ColorOS 是否额外限制 `BRIGHTNESS_OVERRIDE_OFF`。
+
+## v0.40.1：心力球更可靠，后台少连网（2026-10-24）
+
+本人要求「看下心力球是否存在可以修复的 bug，提升性能、降低电量消耗」。读 `MindBall`、`MindBallService`、`MindBallSync`、`MindBallPage` 后修了下面几处，录音参数（16 kHz、32 kbps AAC、10 分钟一段、静音阈值）和唤醒锁都没动。原定为 0.39.2，主线先发了 0.40.0（versionCode 65），变基到它之上后改为 0.40.1（versionCode 66）。
+
+- **前一天的尾巴永远不整理**：整理只看「今天」和这一轮刚转写进去的日子。前一天最后一次整点整理之后录的几段，第二天没有任何一轮会再看那天，页面一直显示「N 段新录音尚未整理」，下拉也补不上。现在每轮按新到旧检查今天、刚转写进去的日子和最近有记录的 3 天（`MindBall.summaryDays`），过去的日子有新原文就立即整理（`summaryDue`）。整理遇到网络或账号类错误（`IOException`）时不再逐天重试，留到下一轮。
+- **被杀进程留下的半段录音**：进程在录音中被结束（更新 God、重启、ColorOS 停止）时，`recording-<start>.m4a` 没有索引，既不会转写也不会被删除，「清除全部录音与记录」也删不掉，属于本机残留的录音。`MindBallService.writing` 记录正在写的文件名（在文件创建之前设置），`purge` 每轮删除其他 `recording-*`。
+- **清除全部**：先结束并删除正在录的这一段（`MindBallService.discard`），再删除 audio 目录下的所有文件。`epoch` 在锁内加 1，正在转写或整理的那一轮不会再把原文或时间线写回来。
+- **一段被拒卡住整个队列**：转写按时间顺序进行，任何错误都会停下。某一段被服务拒绝（400/413/415/422，`fileRefused`）时，后面所有录音都要等两天后这段被清理才能继续，而且每轮都会重新上传这一段（约 2.4 MB）。现在被拒的段会先跳过，后面一段用同样的设置转写成功，就删除被拒的段，并提示「有 N 段录音转写服务无法处理，已删除」。如果连续两段被拒，就判断是设置有问题，停下来，不删除任何录音。
+- **Key 同步节流**：以前每次 `onResume`（不管是否在用心力球）和每一轮转写之前都会请求一次 `account/app-secrets`。立即整理一次会请求两次，开 App 时还会和其他读取一起挤满网关。现在用 `MindBallSync.runIfDue` 控制：转写轮次最多每 30 分钟一次；`onResume` 只在心力球开启时同步，最多每 10 分钟一次；打开心力球页面时去重 1 分钟。本机有未上传的改动、保存 Key 或服务设置、点「多台手机同步」时，都会立即同步。同步没有实际执行时不重画页面。
+- **停止后残留「正在录音」通知**：工作线程上的 `refreshNotification` 可能在服务停止之后才 `notify`，留下一条常驻通知。现在改为把 `notify` 放回主线程执行，执行前再检查 `recording`。
+- **页面**：看今天时，状态行复用已经读过的当天 JSON，每次重画少解析一次当天文件。
+
+验证：变基到 0.40.0 之上后 `check.sh` 通过（267 项 JVM 测试 0 失败，新增 `aPastDaysTailIsSummarizedOnTheNextRound`、`onlyTodayWaitsForTheHourlySummary`、`onlyAStatusAboutTheFileSkipsIt`、`theAccountIsAskedOnlyNowAndThen`；lint debug/release 0 错误，3 条警告是原有的 Gradle 版本和 `LedgerActions` 字符串拼接），Release 为正式证书签名，APK SHA256 `ec754217…d68746`。用 adb 覆盖安装到 Find（versionCode 66，安装文件与 APK 的 SHA256 一致，签名为正式证书），启动后主页面在前台，没有崩溃日志。
+
+未验证：安装时 Find 上心力球没有开启（前台服务没有运行），所以跨天补整理、残留录音清理和同步频率都还没在真机上看到。唤醒锁这次没动：录音时 audioserver 自己就持有唤醒锁，God 的 `God:MindBall` 可能是多余的，但要先在 Find 上用 `dumpsys power` 确认。心力球卡片在预览版里会提前返回，这次页面上的改动在预览版里看不到，所以没有截图。

@@ -73,6 +73,25 @@ public final class MindBallTest {
         assertEquals("这一段已录 7 分钟 · 听到说话 1 分 5 秒 · 满 10 分钟或点「立即整理」就转写", MindBall.liveLine(7 * 60_000 + 59_000, 65));
         assertEquals("麦克风被通话或其他录音占用，一分钟后再试", MindBall.liveLine(-1, 0));
     }
+    @Test public void aPastDaysTailIsSummarizedOnTheNextRound() {
+        assertEquals("yesterday is looked at although nothing of it was transcribed this round", java.util.List.of("2026-10-23", "2026-10-22", "2026-10-21", "2026-10-20"),
+            MindBall.summaryDays(java.util.List.of(), java.util.List.of("2026-10-19", "2026-10-22", "2026-10-20", "2026-10-21"), "2026-10-23"));
+        assertEquals("an older day just transcribed into is looked at too", java.util.List.of("2026-10-23", "2026-10-22", "2026-10-21", "2026-10-15"),
+            MindBall.summaryDays(java.util.List.of("2026-10-15", "2026-10-23"), java.util.List.of("2026-10-23", "2026-10-22", "2026-10-21", "2026-10-15"), "2026-10-23"));
+        assertEquals(java.util.List.of("2026-10-23"), MindBall.summaryDays(java.util.List.of(), java.util.List.of(), "2026-10-23"));
+    }
+    @Test public void onlyTodayWaitsForTheHourlySummary() {
+        long now = at("14:00"), half = now - 30 * 60_000L, hour = now - 61 * 60_000L;
+        assertFalse(MindBall.summaryDue(false, true, now, now - 1, half, now));
+        assertTrue(MindBall.summaryDue(false, true, now, now - 1, hour, now));
+        assertTrue("立即整理", MindBall.summaryDue(true, true, now, now - 1, half, now));
+        assertTrue("a past day with new text is summarized at once", MindBall.summaryDue(false, false, now, now - 1, now - 60_000L, now));
+        assertFalse("nothing new: not even 立即整理 asks again", MindBall.summaryDue(true, false, now, now, half, now));
+    }
+    @Test public void onlyAStatusAboutTheFileSkipsIt() {
+        for (int status : new int[] {400, 413, 415, 422}) assertTrue(String.valueOf(status), MindBall.fileRefused(status));
+        for (int status : new int[] {401, 402, 403, 404, 408, 429, 500, 503}) assertFalse(String.valueOf(status), MindBall.fileRefused(status));
+    }
     @Test public void settingsShowHostAndModelName() {
         assertEquals("api.siliconflow.cn", MindBallPage.host("https://api.siliconflow.cn/v1"));
         assertEquals("SenseVoiceSmall", MindBallPage.shortModel("FunAudioLLM/SenseVoiceSmall"));

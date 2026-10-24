@@ -65,6 +65,8 @@ final class MindBall {
     /** Redraws the 心力球 page when it is showing; set by {@link MindBallPage}. */
     static volatile Runnable listener;
     static volatile boolean recording, busy;
+    /** Bumped by 清除全部 under {@link #LOCK}: a round that started before it writes nothing more. */
+    private static volatile int epoch;
 
     static SharedPreferences prefs(Context c) { return c.getApplicationContext().getSharedPreferences("mindball", Context.MODE_PRIVATE); }
     static boolean enabled(Context c) { return prefs(c).getBoolean("enabled", false); }
@@ -111,7 +113,10 @@ final class MindBall {
         return b.build();
     }
     static void refreshNotification(Context c) {
-        if (recording) c.getSystemService(NotificationManager.class).notify(ID_RECORDING, recordingNotification(c));
+        if (!recording) return;
+        Notification n = recordingNotification(c);
+        // Posted where the service stops: a refresh racing 停止录音 must not bring back an ongoing 「正在录音」.
+        main().post(() -> { if (recording) c.getSystemService(NotificationManager.class).notify(ID_RECORDING, n); });
     }
     private static void paused(Context c, String text) {
         channel(c);
@@ -123,8 +128,9 @@ final class MindBall {
     // ---------------------------------------------------------------- status
 
     /** "今天 6 段 · 52 分钟 · 待转写 1 段 · 上次整理 14:05", or the last error. */
-    static String status(Context c) {
-        JSONObject day = day(c, today());
+    static String status(Context c) { return status(c, day(c, today())); }
+    /** The same, from today's day already read. */
+    static String status(Context c, JSONObject day) {
         List<String> parts = new ArrayList<>();
         JSONArray segs = day.optJSONArray("segments"); int n = segs == null ? 0 : segs.length();
         parts.add("今天 " + n + " 段 · " + minutes(segs) + " 分钟");
@@ -190,20 +196,26 @@ final class MindBall {
             catch (IOException | JSONException e) { Log.w(TAG, "done_not_saved"); }
         }
     }
-    /** Deletes every recording, transcript and timeline; the switch and keys stay as they are. */
+    /** Deletes every recording, transcript and timeline, the segment being recorded too; the switch and keys stay. Main thread. */
     static void clearAll(Context c) {
+        MindBallService s = MindBallService.current; if (s != null) s.discard();
         synchronized (LOCK) {
-            for (File f : pending(c)) f.delete();
+            epoch++;
+            File[] audio = audioDir(c).listFiles(); if (audio != null) for (File f : audio) if (!f.getName().equals(MindBallService.writing)) f.delete();
             File[] all = dir(c).listFiles(); if (all != null) for (File f : all) if (f.isFile()) f.delete();
         }
         notifyChanged();
     }
-    /** Drops days older than {@link #KEEP_DAYS} and audio that could not be transcribed for two days. */
+    /** Drops days older than {@link #KEEP_DAYS}, audio that could not be transcribed for two days, and segments cut off by a killed process. */
     static void purge(Context c) {
         String oldest = LocalDate.now(ZoneId.systemDefault()).minusDays(KEEP_DAYS - 1).toString();
         for (String d : days(c)) if (d.compareTo(oldest) < 0) dayFile(c, d).delete();
         long cutoff = System.currentTimeMillis() - 2 * 86_400_000L;
         for (File f : pending(c)) if (startOf(f) < cutoff) f.delete();
+        // An update, a reboot or ColorOS stopping God ends a segment without its index: unusable audio nothing else removes.
+        // The name being recorded is read after the listing, and it is set before its file exists.
+        File[] cut = audioDir(c).listFiles((d, name) -> name.startsWith("recording-"));
+        if (cut != null) for (File f : cut) if (!f.getName().equals(MindBallService.writing)) f.delete();
     }
     static long startOf(File f) { try { return Long.parseLong(f.getName().split("-")[0]); } catch (RuntimeException e) { return 0; } }
     static long endOf(File f) { try { return Long.parseLong(f.getName().split("[-.]")[1]); } catch (RuntimeException e) { return 0; } }
@@ -254,41 +266,72 @@ final class MindBall {
         WORK.execute(() -> { busy = true; notifyChanged(); try { process(app, force); } finally { busy = false; notifyChanged(); refreshNotification(app); if (done != null) main().post(done); } });
     }
     /** Brings the keys from the account (or sends this phone's), then redraws; on the worker, so it never races a transcription. */
-    static void syncAsync(Context c) { Context app = c.getApplicationContext(); WORK.execute(() -> { MindBallSync.run(app); notifyChanged(); }); }
+    static void syncAsync(Context c) { syncAsync(c, 0); }
+    /** The same, skipped when this phone has nothing to send and synced within {@code maxAge}. */
+    static void syncAsync(Context c, long maxAge) { Context app = c.getApplicationContext(); WORK.execute(() -> { if (MindBallSync.runIfDue(app, maxAge)) notifyChanged(); }); }
     private static void process(Context c, boolean force) {
-        // A key typed on another phone is used for this round already.
-        MindBallSync.run(c);
+        int round = epoch;
+        // A key typed on another phone is used for this round already; the account is asked at most every half hour.
+        MindBallSync.runIfDue(c, MindBallSync.ROUND_AGE);
         purge(c);
-        String error = "";
-        Set<String> touched = new TreeSet<>();
+        String error = ""; int dropped = 0;
+        List<String> transcribed = new ArrayList<>(); List<File> refused = new ArrayList<>();
         for (File f : pending(c)) {
+            if (epoch != round) return;
             String key = secret(c, KEY_ASR); if (key == null) { error = "未填写转写服务的 API Key，录音先留在手机上"; break; }
             try {
                 String text = transcribe(asrUrl(c), asrModel(c), key, f).trim();
-                String d = dayOf(startOf(f)); if (!text.isEmpty()) { append(c, d, startOf(f), endOf(f), text); touched.add(d); }
+                String d = dayOf(startOf(f)); if (!text.isEmpty() && append(c, round, d, startOf(f), endOf(f), text)) transcribed.add(d);
                 f.delete();
-            } catch (IOException | JSONException e) { error = "转写失败：" + reason(e); break; }
+                // The service took this segment with the same settings, so the one it refused just before is an unusable file.
+                for (File r : refused) r.delete(); dropped += refused.size(); refused.clear(); error = "";
+            } catch (IOException | JSONException e) {
+                error = "转写失败：" + reason(e);
+                // One refused file must not hold the queue behind it for two days; two in a row point at the settings instead.
+                if (!(e instanceof HttpError) || !fileRefused(((HttpError) e).status) || !refused.isEmpty()) break;
+                refused.add(f);
+            }
         }
-        String today = today(); touched.add(today);
-        for (String d : touched) {
+        if (error.isEmpty() && dropped > 0) error = "有 " + dropped + " 段录音转写服务无法处理，已删除";
+        String today = today();
+        for (String d : summaryDays(transcribed, days(c), today)) {
+            if (epoch != round) return;
             JSONObject day = day(c, d); JSONArray segs = day.optJSONArray("segments"); if (segs == null || segs.length() == 0) continue;
-            long newest = segs.optJSONObject(segs.length() - 1).optLong("end"), through = day.optLong("summarizedThrough", 0);
-            boolean stale = newest > through, due = force || !d.equals(today) || System.currentTimeMillis() - day.optLong("summarizedAt", 0) >= SUMMARY_INTERVAL;
-            if (!stale || !due) continue;
+            long newest = 0; for (int i = 0; i < segs.length(); i++) { JSONObject s = segs.optJSONObject(i); if (s != null) newest = Math.max(newest, s.optLong("end")); }
+            if (!summaryDue(force, d.equals(today), newest, day.optLong("summarizedThrough", 0), day.optLong("summarizedAt", 0), System.currentTimeMillis())) continue;
             String key = secret(c, KEY_DEEPSEEK); if (key == null) { if (error.isEmpty()) error = "未填写 DeepSeek API Key，暂不能整理时间线"; break; }
             try {
                 JSONObject timeline = summarize(model(c), key, d, segs);
-                synchronized (LOCK) { JSONObject latest = day(c, d); latest.put("timeline", timeline).put("summarizedThrough", newest).put("summarizedAt", System.currentTimeMillis()); save(c, d, latest); }
-            } catch (IOException | JSONException e) { if (error.isEmpty()) error = "整理失败：" + reason(e); }
+                synchronized (LOCK) { if (epoch != round) return; JSONObject latest = day(c, d); latest.put("timeline", timeline).put("summarizedThrough", newest).put("summarizedAt", System.currentTimeMillis()); save(c, d, latest); }
+            } catch (JSONException e) { if (error.isEmpty()) error = "整理失败：" + reason(e); }
+            // The key, the balance or the network: the other days would fail the same way, so they wait for the next round.
+            catch (IOException e) { if (error.isEmpty()) error = "整理失败：" + reason(e); break; }
         }
         prefs(c).edit().putString("lastError", error).apply();
     }
-    private static void append(Context c, String d, long start, long end, String text) throws IOException, JSONException {
+    /** False when 清除全部 came after the round began: the text is dropped with everything else. */
+    private static boolean append(Context c, int round, String d, long start, long end, String text) throws IOException, JSONException {
         synchronized (LOCK) {
+            if (epoch != round) return false;
             JSONObject day = day(c, d); JSONArray segs = day.optJSONArray("segments"); if (segs == null) segs = new JSONArray();
             segs.put(new JSONObject().put("start", start).put("end", end).put("text", text.length() > 20_000 ? text.substring(0, 20_000) : text));
-            day.put("segments", segs); save(c, d, day);
+            day.put("segments", segs); save(c, d, day); return true;
         }
+    }
+    /** A status the transcription service gives one file (bad, too large, an unknown format), not the key or the settings. */
+    static boolean fileRefused(int status) { return status == 400 || status == 413 || status == 415 || status == 422; }
+    /**
+     * Days whose timeline may be behind, newest first: today, the days just transcribed into, and the last three days with
+     * a record. Talk after a day's last hourly summary is summarized on the first round after it, the next morning included.
+     */
+    static List<String> summaryDays(Collection<String> transcribed, List<String> days, String today) {
+        Set<String> out = new TreeSet<>(Comparator.reverseOrder()); out.add(today); out.addAll(transcribed);
+        List<String> newest = new ArrayList<>(days); newest.sort(Comparator.reverseOrder()); out.addAll(newest.subList(0, Math.min(3, newest.size())));
+        return new ArrayList<>(out);
+    }
+    /** New text since the last summary, and today's summary at most hourly unless {@code force}; a past day at once. */
+    static boolean summaryDue(boolean force, boolean today, long newest, long through, long summarizedAt, long now) {
+        return newest > through && (force || !today || now - summarizedAt >= SUMMARY_INTERVAL);
     }
     static String reason(Exception e) {
         if (e instanceof HttpError) {

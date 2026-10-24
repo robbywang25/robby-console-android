@@ -23,6 +23,8 @@ public final class MindBallService extends Service {
     static final int VOICED = 1800;
     /** The running recorder, for the page's live line and 立即整理; main thread only. */
     static MindBallService current;
+    /** Name of the file being recorded, so {@link MindBall#purge} keeps it; set before the recorder creates it. */
+    static volatile String writing;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private MediaRecorder recorder; private File file; private long started; private int voiced; private PowerManager.WakeLock wake;
     private final Runnable tick = new Runnable() { @Override public void run() {
@@ -47,7 +49,7 @@ public final class MindBallService extends Service {
         return START_STICKY;
     }
     private void begin() {
-        started = System.currentTimeMillis(); voiced = 0; file = new File(MindBall.audioDir(this), "recording-" + started + ".m4a");
+        started = System.currentTimeMillis(); voiced = 0; file = new File(MindBall.audioDir(this), "recording-" + started + ".m4a"); writing = file.getName();
         if (wake == null) { wake = getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "God:MindBall"); wake.setReferenceCounted(false); }
         wake.acquire(MindBall.SEGMENT + 60_000L);
         MediaRecorder r = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(this) : new MediaRecorder();
@@ -66,6 +68,8 @@ public final class MindBallService extends Service {
     int voicedSeconds() { return recorder == null ? 0 : voiced; }
     /** 立即整理: closes the segment being recorded so it is transcribed now; it is kept if anyone spoke at all. */
     void cut() { if (recorder != null && System.currentTimeMillis() - started >= 3_000L) { finish(1); begin(); } }
+    /** 清除全部: deletes the segment being recorded and starts a fresh one. */
+    void discard() { if (recorder != null) { finish(Integer.MAX_VALUE); begin(); } }
     /** Closes the current segment; one with fewer than {@code minVoiced} loud seconds is deleted, a spoken one queued for transcription. */
     private void finish(int minVoiced) {
         handler.removeCallbacks(tick); MediaRecorder r = recorder; recorder = null; if (r == null) return;
@@ -75,7 +79,7 @@ public final class MindBallService extends Service {
         else file.delete();
     }
     @Override public void onDestroy() {
-        handler.removeCallbacksAndMessages(null); finish(MindBall.MIN_VOICED_SECONDS); MindBall.recording = false; if (current == this) current = null;
+        handler.removeCallbacksAndMessages(null); finish(MindBall.MIN_VOICED_SECONDS); MindBall.recording = false; writing = null; if (current == this) current = null;
         // Switched off: the last segment is in, so the day is summarized now instead of within the hour.
         if (!MindBall.enabled(this)) MindBall.processAsync(this, true);
         if (wake != null && wake.isHeld()) wake.release();
