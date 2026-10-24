@@ -6,6 +6,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: write
+  actions: write
 concurrency:
   group: version-tags
   cancel-in-progress: false
@@ -19,6 +20,7 @@ jobs:
       - name: Tag each new versionName as v<versionName>
         env:
           BEFORE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           version_at() {
@@ -54,5 +56,7 @@ jobs:
               git tag "$tag" "${last[$version]}"
               git push origin "refs/tags/$tag"
               echo "::notice::Tagged $tag at ${last[$version]}"
+              # Tags pushed with GITHUB_TOKEN trigger no workflow, so start the release explicitly.
+              gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref robbywang/god-android -f tag="$tag"
             fi
           done

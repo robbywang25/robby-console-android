@@ -68,7 +68,7 @@ ROBBY_ANDROID_SIGNING_DIR=/absolute/private/signing ./gradlew assembleRelease
 - `docs/PRODUCT-STYLE.md`：当前产品风格、交互原则和迭代验收标准。
 - `.github/workflows/`：编译、静态检查和单元测试；主干上出现新的 `versionName` 时自动打 `v<版本>` tag。
 
-服务端运维、私人数据、签名密钥和内部系统配置不在此仓库。正式 APK 由维护者签名后上传 GitHub Release，Release 选用已自动生成的同名 tag。
+服务端运维、私人数据、签名密钥和内部系统配置不在此仓库。`build.gradle` 的 versionName 合入 `robbywang/god-android` 后，`version-tags.yml` 打出 `vX.Y.Z` tag，再启动 `release.yml`：测试与 lint 通过后，用 `release` 环境 Secrets（`ANDROID_RELEASE_KEYSTORE_BASE64`、`ANDROID_RELEASE_KEYSTORE_PASSWORD`）里的正式证书签名，核对证书 SHA-256，发布带 APK 和 SHA256SUMS 的 Pre-release。Release 标题和正文默认取 `ReleaseNotes.java` 对应条目；需要手写正文时，在同一提交里放 `docs/releases/vX.Y.Z.md`（首行可写 `# vX.Y.Z · 主题` 作为标题）。
 
 ## 许可
 

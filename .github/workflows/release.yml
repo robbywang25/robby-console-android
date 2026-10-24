@@ -1,0 +1,129 @@
+name: Release
+# Builds, signs and publishes the Pre-release for a vX.Y.Z tag. Version tags made by version-tags.yml start it with
+# workflow_dispatch, because tags pushed with GITHUB_TOKEN do not trigger workflows; a tag pushed by hand triggers it
+# directly. The signing key lives only in the `release` environment's secrets and is decoded after every check passed.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag, e.g. v0.40.0
+        required: true
+      dry_run:
+        description: Build, sign and check the certificate without publishing (works for released tags too)
+        type: boolean
+        default: false
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+  DEFAULT_BRANCH: robbywang/god-android
+  # SHA-256 of the release signing certificate of every official build since v0.1.0.
+  EXPECTED_CERT: 83d624e0e6d49598acb2062b793aec69ddefc4f4509a6a42990404661b3da569
+  GH_TOKEN: ${{ github.token }}
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check the tag name
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::'$TAG' is not vMAJOR.MINOR.PATCH"; exit 1; }
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+      - name: Check the tag, version and existing release
+        id: plan
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          version=${TAG#v}
+          name=$(sed -nE "s/^[[:space:]]*versionName[[:space:]]+['\"]([^'\"]+)['\"].*/\1/p" app/build.gradle | head -n1)
+          [[ "$name" == "$version" ]] || { echo "::error::$TAG points at versionName '$name'"; exit 1; }
+          git merge-base --is-ancestor HEAD "origin/$DEFAULT_BRANCH" \
+            || { echo "::error::$TAG is not on $DEFAULT_BRANCH"; exit 1; }
+          # A published release is done; a draft is what an interrupted run left behind and gets rebuilt.
+          state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft \
+            -q 'if .isDraft then "draft" else "published" end' 2>/dev/null || true)
+          if [[ "$state" == published && "$DRY_RUN" != "true" ]]; then
+            echo "::notice::Release $TAG already exists; nothing to do"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # The notes generator comes from this workflow's revision; tags older than it do not have one.
+          git show "$GITHUB_SHA:.github/scripts/release_notes.py" > "$RUNNER_TEMP/release_notes.py"
+      - uses: actions/setup-java@v6
+        if: steps.plan.outputs.skip != 'true'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v4
+        if: steps.plan.outputs.skip != 'true'
+        with:
+          packages: platform-tools
+          log-accepted-android-sdk-licenses: false
+      - name: Install SDK components
+        if: steps.plan.outputs.skip != 'true'
+        run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
+      - name: Unit tests, lint and debug APK
+        if: steps.plan.outputs.skip != 'true'
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug lintRelease assembleDebug
+      - name: Signed release APK
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          [[ -n "$KEYSTORE_BASE64" && -n "$KEYSTORE_PASSWORD" ]] \
+            || { echo "::error::ANDROID_RELEASE_KEYSTORE_BASE64 / _PASSWORD are not set for the release environment"; exit 1; }
+          dir="$RUNNER_TEMP/signing"; mkdir -m 700 "$dir"
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$dir/release.jks"
+          printf '%s' "$KEYSTORE_PASSWORD" > "$dir/store-password"
+          ROBBY_ANDROID_SIGNING_DIR="$dir" ./gradlew --no-daemon assembleRelease
+      - name: Remove the signing key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/signing"
+      - name: Check the certificate and stage the assets
+        if: steps.plan.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release.apk
+          cert=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          [[ "$cert" == "$EXPECTED_CERT" ]] || { echo "::error::signing certificate '$cert' is not the official one"; exit 1; }
+          out="$RUNNER_TEMP/assets"; mkdir "$out"
+          cp "$apk" "$out/robby-console-android-$VERSION.apk"
+          (cd "$out" && sha256sum "robby-console-android-$VERSION.apk" > "SHA256SUMS-$VERSION.txt" && cat "SHA256SUMS-$VERSION.txt")
+          tests=$(cat app/build/test-results/testDebugUnitTest/*.xml | grep -o 'tests="[0-9]*"' | awk -F'"' '{t+=$2} END {print t}')
+          python3 "$RUNNER_TEMP/release_notes.py" "$VERSION" "$tests" \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$out/title.txt" "$out/notes.md"
+          cat "$out/title.txt" "$out/notes.md"
+      - name: Publish the Pre-release
+        if: steps.plan.outputs.skip != 'true' && inputs.dry_run != true
+        env:
+          VERSION: ${{ steps.plan.outputs.version }}
+          STATE: ${{ steps.plan.outputs.state }}
+        run: |
+          set -euo pipefail
+          a="$RUNNER_TEMP/assets"; apk="robby-console-android-$VERSION.apk"; sums="SHA256SUMS-$VERSION.txt"
+          # A draft is invisible to the in-app updater; it goes public only after its assets read back intact.
+          # An earlier run's draft is deleted first (the tag stays) so its assets cannot mix with these.
+          [[ "$STATE" != draft ]] || gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --prerelease \
+            --title "$(cat "$a/title.txt")" --notes-file "$a/notes.md" "$a/$apk" "$a/$sums"
+          mkdir "$RUNNER_TEMP/readback"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" -D "$RUNNER_TEMP/readback"
+          (cd "$RUNNER_TEMP/readback" && sha256sum -c "$sums" && cmp "$apk" "$a/$apk")
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url,isPrerelease,isDraft,assets \
+            -q '"\(.url) prerelease=\(.isPrerelease) draft=\(.isDraft) assets=\([.assets[].name] | join(","))"'
