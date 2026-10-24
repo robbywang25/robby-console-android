@@ -40,4 +40,15 @@ public final class FeatureUsageTest {
             FeatureUsage.recent(m, List.of("observer", "market", "okx", "openai", "tibo")));
         assertEquals("nothing opened: catalog order", List.of("a", "b"), FeatureUsage.recent(new LinkedHashMap<>(), List.of("a", "b")));
     }
+    @Test public void sectionsFollowTheirLatestOpen() {
+        Map<String, List<String>> sections = new LinkedHashMap<>();
+        sections.put("洞察", List.of("market", "okx")); sections.put("资产", List.of("domains")); sections.put("工具", List.of("mindball", "clipboard"));
+        Map<String, FeatureUsage.Entry> m = new LinkedHashMap<>();
+        m = open(m, "okx", NOW - 30 * DAY, 20);   // a habit, but long ago
+        m = open(m, "mindball", NOW, 1);          // once, just now
+        assertEquals(List.of("工具", "洞察", "资产"), FeatureUsage.recentSections(m, sections));
+        assertEquals("nothing opened: catalog order", List.of("洞察", "资产", "工具"), FeatureUsage.recentSections(new LinkedHashMap<>(), sections));
+        m = open(m, "domains", NOW + 1, 1);
+        assertEquals(List.of("资产", "工具", "洞察"), FeatureUsage.recentSections(m, sections));
+    }
 }

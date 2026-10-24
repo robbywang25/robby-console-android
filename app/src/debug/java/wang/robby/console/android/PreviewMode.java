@@ -28,6 +28,19 @@ final class PreviewMode {
      .put(new JSONObject().put("time","12:00").put("kind","todo").put("title","周六回家吃饭，带上体检报告").put("detail","和妈妈通话时约定"))).toString()).put("model","deepseek-flash"));
   }catch(Exception e){throw new IllegalStateException(e);}
  }
+ /** Synthetic 心力球 week for 看板: today as above, plus earlier days with recording time and one 待办 left open. */
+ static java.util.Map<String,JSONObject> mindBallWeek(){
+  try{java.util.Map<String,JSONObject> out=new java.util.HashMap<>();java.time.LocalDate today=java.time.LocalDate.now();out.put(today.toString(),mindBall());
+   int[][] week={{1,95},{2,40},{4,130},{5,25}};String[] todo={"给物业回电话确认维修时间","把周报发给团队","","预约下周的体检"};
+   for(int k=0;k<week.length;k++){java.time.LocalDate day=today.minusDays(week[k][0]);long start=day.atTime(10,0).atZone(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli();
+    org.json.JSONArray items=new org.json.JSONArray().put(new JSONObject().put("time","10:00").put("kind","event").put("title","整理当天的会议记录"));
+    if(!todo[k].isEmpty())items.put(new JSONObject().put("time","15:30").put("kind","todo").put("title",todo[k]));
+    JSONObject done=new JSONObject();if(k==1)done.put(MindBall.todoKey(items.getJSONObject(1)),start);
+    out.put(day.toString(),new JSONObject().put("segments",new org.json.JSONArray().put(new JSONObject().put("start",start).put("end",start+week[k][1]*60_000L).put("text","合成的录音原文。")))
+     .put("timeline",new JSONObject().put("summary","合成的一天。").put("items",items)).put("done",done));}
+   return out;
+  }catch(Exception e){throw new IllegalStateException(e);}
+ }
  /** Synthetic 运行状态 round covering every label the page can show; example.com hosts only. */
  private static JSONObject status(String time)throws Exception{return new JSONObject("""
   {"schemaVersion":2,"generatedAt":"NOW","cacheSeconds":60,"cacheHit":true,"partial":false,

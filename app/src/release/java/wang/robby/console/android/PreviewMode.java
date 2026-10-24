@@ -10,4 +10,5 @@ final class PreviewMode {
  static AppUpdate.Release update(){return null;}
  static String realUpdateAs(){return null;}
  static JSONObject mindBall(){throw new IllegalStateException();}
+ static java.util.Map<String,JSONObject> mindBallWeek(){throw new IllegalStateException();}
 }
