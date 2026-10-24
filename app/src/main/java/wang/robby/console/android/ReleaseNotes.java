@@ -15,6 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.43.1", "2026-10-24", "Token 额度小组件不再留白",
+            "Token 额度小组件拉高后，各行账号均匀铺满，底部不再空出一大块。",
+            "调大字号时，拉高的小组件也能多排几行。"),
         new Entry("0.43.0", "2026-10-24", "接入 UU 远程，一键远控电脑",
             "「功能 → 工具」新增 UU 远程：选一台 Windows 或 Mac 电脑绑定到 God。",
             "绑定后点「远控」直接全屏打开这台电脑。",

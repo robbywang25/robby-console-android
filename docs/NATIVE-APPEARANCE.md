@@ -781,3 +781,14 @@ PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明
 发版：PR #11 合入默认分支（合并提交 `c5017c4`，合入前 CI 两项 `verify` 通过，Codex 代码与安全审查无发现），`release.yml` 自动打 tag `v0.43.0` 并发布 Pre-release「v0.43.0 · 接入 UU 远程，一键远控电脑」（2026-10-24 22:30 北京时间）。附件 `robby-console-android-0.43.0.apk` 与 `SHA256SUMS-0.43.0.txt` 下载后校验通过（`eb6b1d73…0c3d7d12`），签名为正式证书 `83d624e0…3da569`。用 adb 把这个附件覆盖安装到 Flip：versionCode 69，安装文件 SHA256 与附件一致，启动后进程在、crash 缓冲区为空。
 
 未验证：正式版里的真实绑定（登录后截不了图，要本人在正式版里绑定一次）；离线、忙碌、未允许被控、`device_not_found` 这几种失败回调在真机上的表现（只有单元测试）；Find（PMA110）上的安装（发版时仍离线，等上线后用 adb 装 Release 附件）。
+
+## v0.43.1：Token 额度小组件不再留白（2026-10-24）
+
+- `widget_tokens.xml` 的六行改为按权重均分标题下方的高度（`0dp` + `layout_weight=1`，内容垂直居中）；`GodWidgets.tokens` 去掉每行最多 12dp 的 `spare` 补白。`GodWidgets.SIZES` 两种宽度各补 400 / 480 / 560dp，共 16 档（`RemoteViews` 尺寸映射上限）。
+- 没有改动：小组件内容与脱敏规则、刷新时机、认证、`FLAG_SECURE`。
+
+验证：`check.sh` 通过（289 项 JVM 测试 0 失败；lint debug/release 0 错误）。正式签名包 `adb install -r` 覆盖 Find 上的 0.43.0：versionCode 70，安装文件 SHA256 与构建一致（`1f83fe51…87c9c1c4`），签名为 `83d624e0…3da569`。桌面上已放的 Token 额度小组件（约 4×2，327×200dp）刷新后截图：9 个账号排成两列 5 行，行距均匀，底部没有空白，crash 缓冲区为空。
+
+发现的问题：覆盖安装后，God 在 22:47:03 推了两次更新，系统都记为 `widget is not ready`（桌面不在前台）。22:47:58 桌面回到前台，`startListening → onProviderChanged → forceUpdateAppWidget` 拿到的 RemoteViews 是 null，`getDefaultView` 画出了 `initialLayout`：没有标题，只有一行「打开 God」，下面一大块空白。用户最初报告的空白就是这个状态。用 `am broadcast -n …/.TokenWidget -a wang.robby.console.android.WIDGETS_REFRESH` 触发 `refreshAll` 后恢复正常；打开 App 也能恢复。这一版没有修。
+
+未验证：4×4 及更高的摆放（没有在桌面上拖拽改尺寸）；1.6 倍字体下的小组件；预览版没有重装。
