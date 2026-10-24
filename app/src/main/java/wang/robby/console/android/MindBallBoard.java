@@ -48,8 +48,11 @@ final class MindBallBoard {
         }
         return w;
     }
-    /** "3 小时 25 分钟", "40 分钟", "0 分钟". */
-    static String duration(long minutes) { return minutes >= 60 ? minutes / 60 + " 小时" + (minutes % 60 == 0 ? "" : " " + minutes % 60 + " 分钟") : minutes + " 分钟"; }
+    /** "40 分钟" under an hour, then hours to one decimal: "2 小时", "3.4 小时"; short enough for a third-width figure. */
+    static String duration(long minutes) {
+        if (minutes < 60) return minutes + " 分钟";
+        long tenths = Math.round(minutes / 6.0); return (tenths % 10 == 0 ? String.valueOf(tenths / 10) : tenths / 10 + "." + tenths % 10) + " 小时";
+    }
     /** The last {@code n} 关键事项 of a day, latest first; the board shows what happened most recently. */
     static List<JSONObject> latestEvents(JSONObject day, int n) {
         JSONObject tl = day.optJSONObject("timeline"); JSONArray items = tl == null ? null : tl.optJSONArray("items"); List<JSONObject> out = new ArrayList<>();

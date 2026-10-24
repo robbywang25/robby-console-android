@@ -145,7 +145,7 @@ final class MindBallPage {
     private static void weekCard(Context ctx, ConsoleTheme t, LinearLayout parent, MindBallBoard.Week week) {
         LinearLayout c = t.card(parent); TextView h = t.text("近 " + MindBallBoard.DAYS + " 天", 15, true); h.setAccessibilityHeading(true); c.addView(h);
         LinearLayout figures = new LinearLayout(ctx); figures.setPadding(0, t.dp(10), 0, t.dp(4));
-        figure(t, figures, "录音", MindBallBoard.duration(week.totalMinutes())); figure(t, figures, "有录音的天数", week.recordedDays() + " / " + MindBallBoard.DAYS);
+        figure(t, figures, "录音", MindBallBoard.duration(week.totalMinutes())); figure(t, figures, "录音天数", week.recordedDays() + " / " + MindBallBoard.DAYS);
         figure(t, figures, "待办完成", week.done + " / " + week.todos); c.addView(figures);
         int peak = WechatDigestText.peakIndex(week.minutes); long most = peak < 0 ? 0 : week.minutes[peak];
         String description = "近 " + MindBallBoard.DAYS + " 天每日录音，最多 " + most + " 分钟，今天 " + week.minutes[MindBallBoard.DAYS - 1] + " 分钟";
@@ -153,7 +153,7 @@ final class MindBallPage {
         c.addView(new WechatBars(ctx, WechatDigestText.normalize(week.minutes), t.accent, t.line, MindBallBoard.DAYS - 1, description), cp);
         LinearLayout axis = new LinearLayout(ctx); axis.setPadding(0, t.dp(4), 0, 0);
         String[] labels = { dayLabel(week.days.get(0)), most > 0 ? "最多 " + most + " 分钟" : "", "今天" };
-        for (int i = 0; i < 3; i++) { TextView a = t.text(labels[i], 11, false); a.setTextColor(t.faint); a.setGravity(i == 0 ? Gravity.START : i == 1 ? Gravity.CENTER : Gravity.END); axis.addView(a, new LinearLayout.LayoutParams(0, -2, 1)); }
+        for (int i = 0; i < 3; i++) { TextView a = t.text(labels[i], 11, false); a.setTextColor(t.faint); a.setSingleLine(true); a.setGravity(i == 0 ? Gravity.START : i == 1 ? Gravity.CENTER : Gravity.END); axis.addView(a, new LinearLayout.LayoutParams(-2, -2, 1)); }
         axis.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS); c.addView(axis);
         TextView foot = t.text("关键事项 " + week.events + " 条 · 共 " + week.segments + " 段录音 · 录音和记录保留 " + MindBall.KEEP_DAYS + " 天", 12, false); foot.setTextColor(t.faint); foot.setPadding(0, t.dp(8), 0, 0); c.addView(foot);
     }
@@ -238,9 +238,10 @@ final class MindBallPage {
         for (int i = 0; i < items.length(); i++) item(ctx, t, c, items.optJSONObject(i), marks);
     }
     private static void figure(ConsoleTheme t, LinearLayout band, String label, String value) {
-        LinearLayout f = new LinearLayout(band.getContext()); f.setOrientation(LinearLayout.VERTICAL);
-        TextView v = t.text(value, 20, true); f.addView(v); TextView l = t.text(label, 12, false); l.setTextColor(t.faint); f.addView(l);
-        f.setContentDescription(label + " " + value); band.addView(f, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout f = new LinearLayout(band.getContext()); f.setOrientation(LinearLayout.VERTICAL); f.setPadding(0, 0, t.dp(8), 0);
+        TextView v = t.text(value, 20, true); v.setSingleLine(true); f.addView(v); TextView l = t.text(label, 12, false); l.setTextColor(t.faint); f.addView(l);
+        // Columns start from their content's width, so a large font widens "5.3 小时" instead of breaking it.
+        f.setContentDescription(label + " " + value); band.addView(f, new LinearLayout.LayoutParams(-2, -2, 1));
     }
     private static void item(Context ctx, ConsoleTheme t, LinearLayout parent, JSONObject it, JSONObject marks) {
         boolean todo = "todo".equals(it.optString("kind")); String key = MindBall.todoKey(it); boolean done = todo && marks.has(key);

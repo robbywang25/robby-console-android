@@ -41,9 +41,9 @@ public final class MindBallBoardTest {
         assertEquals(List.of("三", "二"), out);
         assertTrue(MindBallBoard.latestEvents(new JSONObject(), 3).isEmpty());
     }
-    @Test public void durationReadsInHoursAndMinutes() {
+    @Test public void durationIsShortForAFigure() {
         assertEquals("0 分钟", MindBallBoard.duration(0)); assertEquals("40 分钟", MindBallBoard.duration(40));
-        assertEquals("2 小时", MindBallBoard.duration(120)); assertEquals("3 小时 25 分钟", MindBallBoard.duration(205));
+        assertEquals("2 小时", MindBallBoard.duration(120)); assertEquals("3.4 小时", MindBallBoard.duration(205)); assertEquals("1 小时", MindBallBoard.duration(62));
     }
     private static List<String> titles(List<MindBallBoard.Todo> todos) { List<String> out = new ArrayList<>(); for (MindBallBoard.Todo t : todos) out.add(t.title); return out; }
 }
