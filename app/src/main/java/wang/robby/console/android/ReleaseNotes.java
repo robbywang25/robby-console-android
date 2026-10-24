@@ -15,7 +15,14 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
-        new Entry("0.40.0", "2026-10-23", "常亮展示与防烧屏屏保",
+        new Entry("0.40.1", "2026-10-24", "心力球更可靠，后台少连网",
+            "前一天最后没来得及整理的录音，第二天会自动补进那天的时间线。",
+            "某段录音被转写服务拒绝时，后面的录音照常转写，不再卡住两天。",
+            "God 被系统停止或更新时没录完的那段音频，会自动删除。",
+            "「清除全部录音与记录」也会删掉正在录的这一段。",
+            "Key 同步不再每次打开 God、每转写一段都连服务器，打开心力球页面时仍会立即同步。",
+            "停止录音后，不会再偶尔留下一条「正在录音」的通知。"),
+        new Entry("0.40.0", "2026-10-24", "常亮展示与防烧屏屏保",
             "「我 → 外观」新增常亮展示：打开后，God 在前台时屏幕不会自动熄灭。",
             "一段时间没有操作就显示纯黑屏保，亮度降到最低，OLED 屏幕不会烧屏。",
             "屏保时间可选 30 秒到 1 小时，默认 5 分钟；轻触屏幕或按返回键恢复。",

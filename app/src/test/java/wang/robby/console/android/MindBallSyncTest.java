@@ -46,6 +46,15 @@ public final class MindBallSyncTest {
         assertEquals(-1L, MindBallSync.retryDelay(429, 1));
         for (int status : new int[] {401, 403, 404, 500, 503}) assertEquals(-1L, MindBallSync.retryDelay(status, 0));
     }
+    @Test public void theAccountIsAskedOnlyNowAndThen() {
+        long now = 5_000_000L;
+        assertTrue("the first sync in a process", MindBallSync.due(false, -1, now, MindBallSync.ROUND_AGE));
+        assertFalse(MindBallSync.due(false, now - MindBallSync.ROUND_AGE + 1, now, MindBallSync.ROUND_AGE));
+        assertTrue(MindBallSync.due(false, now - MindBallSync.ROUND_AGE, now, MindBallSync.ROUND_AGE));
+        assertTrue("a change saved here goes at once", MindBallSync.due(true, now - 1, now, MindBallSync.ROUND_AGE));
+        assertTrue("the settings row", MindBallSync.due(false, now, now, 0));
+        assertTrue(MindBallSync.PAGE_AGE < MindBallSync.RESUME_AGE && MindBallSync.RESUME_AGE < MindBallSync.ROUND_AGE);
+    }
     @Test public void theRouteIsRegisteredForReadingAndSaving() {
         assertTrue(AccountCenter.readRoute(AccountCenter.APP_SECRETS));
         assertTrue(AccountCenter.writeRoute(AccountCenter.APP_SECRETS));

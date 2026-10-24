@@ -37,11 +37,12 @@ final class MindBallPage {
         MindBall.listener = () -> { LinearLayout c = shown.get(); if (c != null && c.isAttachedToWindow()) render(c.getContext(), c); };
         container.removeAllViews();
         ConsoleTheme t = new ConsoleTheme(ctx); boolean preview = PreviewMode.isBuild();
-        control(ctx, t, container, preview);
         List<String> days = preview ? List.of(MindBall.today()) : MindBall.days(ctx);
         if (selected == null || !days.contains(selected)) selected = MindBall.today();
-        if (days.size() > 1) dayChips(ctx, t, container, days);
         JSONObject day = preview ? PreviewMode.mindBall() : MindBall.day(ctx, selected);
+        // The status line counts today: the day file is read once when today is the day shown.
+        control(ctx, t, container, preview, selected.equals(MindBall.today()) ? day : null);
+        if (days.size() > 1) dayChips(ctx, t, container, days);
         timeline(ctx, t, container, day);
         transcript(ctx, t, container, day);
         settings(ctx, t, container, preview);
@@ -55,7 +56,7 @@ final class MindBallPage {
     }
     static void refresh() { Runnable r = MindBall.listener; if (r != null) r.run(); }
 
-    private static void control(Context ctx, ConsoleTheme t, LinearLayout parent, boolean preview) {
+    private static void control(Context ctx, ConsoleTheme t, LinearLayout parent, boolean preview, JSONObject today) {
         boolean on = !preview && MindBall.enabled(ctx), live = on && MindBall.recording; Host host = ctx instanceof Host ? (Host) ctx : null;
         LinearLayout c = t.card(parent);
         LinearLayout top = new LinearLayout(ctx); top.setGravity(Gravity.CENTER_VERTICAL);
@@ -69,7 +70,7 @@ final class MindBallPage {
         toggle.setOnCheckedChangeListener((v, checked) -> { if (host != null) host.mindBallSwitch(checked); v.post(MindBallPage::refresh); });
         top.addView(toggle); c.addView(top);
         if (preview) return;
-        TextView status = t.text(MindBall.status(ctx), 12, false); status.setTextColor(t.faint); status.setPadding(0, t.dp(8), 0, 0); c.addView(status);
+        TextView status = t.text(MindBall.status(ctx, today != null ? today : MindBall.day(ctx, MindBall.today())), 12, false); status.setTextColor(t.faint); status.setPadding(0, t.dp(8), 0, 0); c.addView(status);
         if (live) {
             // The segment being recorded is not in the day yet: show how far it is, ticking while the page is in view.
             TextView now = t.text(MindBall.live(), 13, false); now.setTextColor(t.ink); now.setPadding(0, t.dp(6), 0, 0); c.addView(now);

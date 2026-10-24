@@ -2,6 +2,7 @@ package wang.robby.console.android;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.os.SystemClock;
 import android.util.Log;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -12,13 +13,28 @@ import wang.robby.console.android.auth.AuthSession;
  * (DeepSeek key, transcription key, transcription address and model, DeepSeek model). God's gateway seals it before it
  * is stored. Reading and saving need {@link AuthSession#PROFILE_WRITE}; without it the keys stay on this phone.
  * A save here is uploaded right away (or on the next sync when offline), and a newer save from another phone replaces
- * this phone's copy. The later save wins. Runs on {@link MindBall}'s worker, before anything is transcribed.
+ * this phone's copy. The later save wins. Runs on {@link MindBall}'s worker, before a transcription round when the
+ * last sync is half an hour old, on opening God while recording, and on opening the page.
  */
 final class MindBallSync {
     private MindBallSync() {}
     static final String SYNCED_AT = "syncedAt", DIRTY = "syncDirty", STATE = "syncState";
     static final String[] FIELDS = {"deepseekKey", "asrKey", "asrUrl", "asrModel", "model"};
+    /**
+     * How old the last sync may be before one is asked for again: a transcription round, opening God while recording, and
+     * opening the 心力球 page. A change saved here, and the settings row, sync at once.
+     */
+    static final long ROUND_AGE = 30 * 60_000L, RESUME_AGE = 10 * 60_000L, PAGE_AGE = 60_000L;
+    /** When the last sync began ({@link SystemClock#elapsedRealtime}); -1 before the first in this process. */
+    private static volatile long lastRun = -1;
     enum Step { UPLOAD, APPLY, NONE }
+
+    static boolean due(boolean dirty, long lastRun, long now, long maxAge) { return dirty || lastRun < 0 || now - lastRun >= maxAge; }
+    /** {@link #run} unless this phone has nothing to send and synced within {@code maxAge}; true when it ran. */
+    static boolean runIfDue(Context c, long maxAge) {
+        if (!due(MindBall.prefs(c).getBoolean(DIRTY, false), lastRun, SystemClock.elapsedRealtime(), maxAge)) return false;
+        run(c); return true;
+    }
 
     /**
      * What to do with the server's copy. An unsent local change is uploaded; a document the server never had (or can no
@@ -62,6 +78,7 @@ final class MindBallSync {
     /** One sync, on the worker thread. Never throws; the outcome is left in {@link #STATE}. */
     static void run(Context c) {
         if (PreviewMode.isBuild()) return;
+        lastRun = SystemClock.elapsedRealtime();
         SharedPreferences p = MindBall.prefs(c);
         AuthSession auth;
         try { auth = new AuthSession(c); if (!auth.hasSession()) { state(p, "仅本机：登录后可在多台手机间同步"); return; } }

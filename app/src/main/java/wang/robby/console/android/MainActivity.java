@@ -168,7 +168,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         askSyncedNotify();
         // The microphone may only start while God is in front: opening the app resumes 心力球 after a reboot or update.
         if(!PreviewMode.isBuild()&&MindBall.enabled(this))MindBall.start(this);
-        if(!PreviewMode.isBuild())MindBall.syncAsync(this);
+        // Keys saved on another phone: asked at most every 10 minutes and only while recording; opening 心力球 asks at once.
+        if(!PreviewMode.isBuild()&&MindBall.enabled(this))MindBall.syncAsync(this,MindBallSync.RESUME_AGE);
         MindBallPage.refresh();
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
         // A change waiting for a session that may now write (after signing in again) goes at once.
@@ -780,7 +781,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!loggedIn()){LinearLayout c=card();c.addView(text(f.title,17,INK,true));TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(6),0,dp(18));c.addView(t);Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);c.addView(passkey,new LinearLayout.LayoutParams(-1,-2));LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);c.addView(button("通过已有设备授权",this::deviceLogin),d);restoreViewport();return;}
         // 心力球 reads only this phone: pulling down transcribes and summarizes what is waiting.
         if(f.local()){final PullScrollView page=scroll;page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processNow(this,page::finishRefresh);});
-            LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);MindBallPage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
+            LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);MindBallPage.render(this,local);restoreViewport();
+            if(!PreviewMode.isBuild())MindBall.syncAsync(this,MindBallSync.PAGE_AGE);if(done!=null)done.run();return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
         String key=path; JSONObject cached=key.startsWith("travel-ledger/")?null:snapshots.get(key);
