@@ -770,7 +770,7 @@ PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明
 - 预览版：`PreviewActivity` 的 debug manifest 加了同一个回调 filter（预览版的 `MainActivity` 不导出）。默认显示两台合成电脑，不打开 UU 远程；带 `--ez preview_real_uu true` 启动时改用预览版自己的存储，真实拉起 UU 远程。
 - 没有改动：认证、God 读接口、`FLAG_SECURE`、账号同步的键（`uu-remote` 不在 `PreferenceSync.KEYS` 里）。
 
-验证：`check.sh` 通过（288 项 JVM 测试 0 失败，新增 `UURemoteTest` 9 项；lint debug/release 0 错误，3 条警告为原有的 Gradle 版本和 `LedgerActions` 字符串拼接）。Release 为正式证书签名（`83d624e0…3da569`），APK SHA256 `eedadd72…1f4d823a`。
+验证：`check.sh` 通过（289 项 JVM 测试 0 失败，新增 `UURemoteTest` 10 项；lint debug/release 0 错误，3 条警告为原有的 Gradle 版本和 `LedgerActions` 字符串拼接）。Release 为正式证书签名（`83d624e0…3da569`）。下面的真机验证用的是首个提交的包（`eedadd72…1f4d823a`）；按 Codex 评审修改后，「重新绑定」要替换的那一行和 bind nonce 一起存进 SharedPreferences（`bindReplace`），一起消费，God 在 UU 远程前台期间被系统杀掉也不丢。合并逻辑抽成 `UURemote.merge` 并加了测试。修改后的包（Release `77cb7546…acd8b3ea8`，预览 `ecb77f8d…c225d4dbe`）重新覆盖安装到 Flip，安装文件 SHA256 一致，已绑定的电脑照常读出，没有崩溃日志；重新绑定流程本身没有在真机上再走一遍。
 
 设备：Find 不在线，按本人要求在小米 MIX Flip（2405CPX3DC，HyperOS / Android 16，UU 远程 4.42.0）上验收。
 

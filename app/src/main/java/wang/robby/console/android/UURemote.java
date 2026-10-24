@@ -33,7 +33,7 @@ final class UURemote {
     /** UU 远程 queues a bind for up to 180 s while it signs in; past this a result is too old to be the one asked for. */
     static final long PENDING_MILLIS = 30 * 60_000L;
     private static final String PREFS = "uu-remote", DEVICES = "devices", BIND_NONCE = "bindNonce", BIND_AT = "bindAt",
-        CONTROL_NONCE = "controlNonce", CONTROL_AT = "controlAt";
+        BIND_REPLACE = "bindReplace", CONTROL_NONCE = "controlNonce", CONTROL_AT = "controlAt";
 
     static final class Device {
         final String key, id, name; final long boundAt; final String last; final long lastAt;
@@ -46,10 +46,37 @@ final class UURemote {
         static Device of(JSONObject o) { return new Device(o.optString("key"), o.optString("id"), o.optString("name"), o.optLong("boundAt"), o.optString("last"), o.optLong("lastAt")); }
     }
 
-    /** What a callback said, for the page to show; {@code device} is the local key it concerns, or null. */
+    /**
+     * What a callback said, for the page to show; {@code device} is the local key it concerns, or null. A bind that
+     * succeeded says {@code new}, {@code replaced} (a 重新绑定 took over the old row and its name) or {@code existing}.
+     */
     static final class Result {
-        final boolean bind, ok; final String code, device;
-        Result(boolean bind, boolean ok, String code, String device) { this.bind = bind; this.ok = ok; this.code = code == null ? "" : code; this.device = device; }
+        final boolean bind, ok, rebind; final String code, device;
+        Result(boolean bind, boolean ok, String code, String device) { this(bind, ok, code, device, false); }
+        Result(boolean bind, boolean ok, String code, String device, boolean rebind) { this.bind = bind; this.ok = ok; this.code = code == null ? "" : code; this.device = device; this.rebind = rebind; }
+    }
+
+    /** The device list after a successful bind of {@code id}, and the row and outcome to report. */
+    static final class Merge {
+        final List<Device> devices; final String key, code;
+        Merge(List<Device> devices, String key, String code) { this.devices = devices; this.key = key; this.code = code; }
+    }
+    /**
+     * Adds the computer UU 远程 returned. With {@code replace} (the row 重新绑定 was started from) the new id takes over
+     * that row's name and the old row goes; an id already bound keeps its row, which works again.
+     */
+    static Merge merge(List<Device> before, String id, String replace, String newKey, long now) {
+        List<Device> all = new ArrayList<>(before); Device prior = null, same = null;
+        for (Device d : all) { if (d.key.equals(replace)) prior = d; if (d.id.equals(id)) same = d; }
+        if (same != null) {
+            String name = prior != null && prior != same ? prior.name : same.name;
+            if (prior != null && prior != same) all.remove(prior);
+            all.set(all.indexOf(same), new Device(same.key, same.id, name, same.boundAt, "", 0));
+            return new Merge(all, same.key, prior != null ? "replaced" : "existing");
+        }
+        Device d = new Device(newKey, id, prior != null ? prior.name : defaultName(all), now, "", 0);
+        if (prior != null) all.set(all.indexOf(prior), d); else all.add(d);
+        return new Merge(all, d.key, prior != null ? "replaced" : "new");
     }
 
     // ---- Protocol (pure, unit tested) ----
@@ -171,9 +198,13 @@ final class UURemote {
     }
     private static String scheme(Context ctx) { return ctx.getPackageName(); }
 
-    /** Opens UU 远程's computer picker; false when UU 远程 could not be opened. */
-    static boolean bind(Context ctx) {
-        String nonce = UUID.randomUUID().toString(); prefs(ctx).edit().putString(BIND_NONCE, nonce).putLong(BIND_AT, System.currentTimeMillis()).apply();
+    /**
+     * Opens UU 远程's computer picker; false when UU 远程 could not be opened. {@code replace} is the row a 重新绑定
+     * started from, kept with the nonce so it survives God being stopped while UU 远程 is in front.
+     */
+    static boolean bind(Context ctx, String replace) {
+        String nonce = UUID.randomUUID().toString(); SharedPreferences.Editor e = prefs(ctx).edit().putString(BIND_NONCE, nonce).putLong(BIND_AT, System.currentTimeMillis());
+        (replace == null ? e.remove(BIND_REPLACE) : e.putString(BIND_REPLACE, replace)).apply();
         return open(ctx, bindRequest(bindCallback(scheme(ctx)), nonce));
     }
     /** Opens the computer in UU 远程; only picture-in-picture reports back. */
@@ -196,11 +227,11 @@ final class UURemote {
         SharedPreferences p = prefs(ctx); Map<String, String> q = query(uri.getEncodedQuery()); long now = System.currentTimeMillis();
         if (BIND.equals(uri.getPath())) {
             String nonce = now - p.getLong(BIND_AT, 0) <= PENDING_MILLIS ? p.getString(BIND_NONCE, null) : null;
-            Result r = readBind(q, nonce); if (r == null) return null; p.edit().remove(BIND_NONCE).remove(BIND_AT).apply();
-            if (!r.ok) return r;
-            List<Device> all = devices(ctx); for (Device d : all) if (d.id.equals(r.code)) return new Result(true, true, "", d.key);
-            Device d = new Device(UUID.randomUUID().toString().substring(0, 8), r.code, defaultName(all), now, "", 0); all.add(d); save(ctx, all);
-            return new Result(true, true, "new", d.key);
+            Result r = readBind(q, nonce); if (r == null) return null;
+            String replace = p.getString(BIND_REPLACE, null); p.edit().remove(BIND_NONCE).remove(BIND_AT).remove(BIND_REPLACE).apply();
+            if (!r.ok) return new Result(true, false, r.code, null, replace != null);
+            Merge m = merge(devices(ctx), r.code, replace, UUID.randomUUID().toString().substring(0, 8), now); save(ctx, m.devices);
+            return new Result(true, true, m.code, m.key, replace != null);
         }
         if (CONTROL.equals(uri.getPath())) {
             String nonce = now - p.getLong(CONTROL_AT, 0) <= PENDING_MILLIS ? p.getString(CONTROL_NONCE, null) : null;

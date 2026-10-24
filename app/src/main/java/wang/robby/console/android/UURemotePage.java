@@ -25,8 +25,6 @@ import java.util.List;
 final class UURemotePage {
     private UURemotePage() {}
     private static WeakReference<LinearLayout> shown = new WeakReference<>(null);
-    /** The stale computer a 重新绑定 replaces once the new bind succeeds; process memory only. */
-    private static String replacing;
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("M月d日");
 
     static void refresh() { LinearLayout c = shown.get(); if (c != null && c.isAttachedToWindow()) render(c.getContext(), c); }
@@ -67,7 +65,7 @@ final class UURemotePage {
         LinearLayout c = t.card(parent); TextView h = t.text("我的电脑" + (all.isEmpty() ? "" : " · " + all.size()), 15, true); h.setAccessibilityHeading(true); c.addView(h);
         if (all.isEmpty()) { TextView e = t.text("还没有绑定电脑。绑定后在这里一键远控。", 14, false); e.setPadding(0, t.dp(8), 0, t.dp(4)); c.addView(e); }
         for (UURemote.Device d : all) row(ctx, t, c, d, ready);
-        Button bind = t.button("绑定电脑", () -> { replacing = null; bind(ctx); }); t.button(bind, all.isEmpty()); bind.setEnabled(ready);
+        Button bind = t.button("绑定电脑", () -> bind(ctx, null)); t.button(bind, all.isEmpty()); bind.setEnabled(ready);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.topMargin = t.dp(12); c.addView(bind, lp);
     }
 
@@ -103,11 +101,11 @@ final class UURemotePage {
         }));
     }
 
-    private static void bind(Context ctx) {
+    private static void bind(Context ctx, String replace) {
         if (fixture()) { toast(ctx, "预览版不打开 UU 远程"); return; }
-        if (!UURemote.bind(ctx)) toast(ctx, "无法打开 UU 远程");
+        if (!UURemote.bind(ctx, replace)) toast(ctx, "无法打开 UU 远程");
     }
-    private static void rebind(Context ctx, UURemote.Device d) { replacing = d.key; bind(ctx); }
+    private static void rebind(Context ctx, UURemote.Device d) { bind(ctx, d.key); }
     private static void control(Context ctx, UURemote.Device d, int windowType) {
         if (fixture()) { toast(ctx, "预览版不打开 UU 远程"); return; }
         if (!UURemote.control(ctx, d, windowType)) toast(ctx, "无法打开 UU 远程");
@@ -126,11 +124,10 @@ final class UURemotePage {
         ConsoleTheme t = new ConsoleTheme(ctx); refresh();
         UURemote.Device d = r.device == null ? null : UURemote.device(ctx, r.device);
         if (r.bind) {
-            if (!r.ok) { String old = replacing; replacing = null; if ("user_cancel".equals(r.code)) toast(ctx, "已取消绑定"); else show(t, new AlertDialog.Builder(ctx).setTitle(old == null ? "没有绑定成功" : "没有重新绑定成功").setMessage(UURemote.bindText(r.code)).setPositiveButton("知道了", null)); return; }
+            if (!r.ok) { if ("user_cancel".equals(r.code)) toast(ctx, "已取消绑定"); else show(t, new AlertDialog.Builder(ctx).setTitle(r.rebind ? "没有重新绑定成功" : "没有绑定成功").setMessage(UURemote.bindText(r.code)).setPositiveButton("知道了", null)); return; }
             if (d == null) return;
-            String old = replacing; replacing = null; UURemote.Device prior = old == null || old.equals(d.key) ? null : UURemote.device(ctx, old);
-            if (prior != null) { UURemote.remove(ctx, prior.key); UURemote.rename(ctx, d.key, prior.name); refresh(); toast(ctx, "已重新绑定「" + prior.name + "」"); return; }
-            if ("new".equals(r.code)) rename(ctx, t, d, "给这台电脑起个名字"); else toast(ctx, "这台电脑已经绑定过了：「" + d.name + "」");
+            if ("replaced".equals(r.code)) toast(ctx, "已重新绑定「" + d.name + "」");
+            else if ("new".equals(r.code)) rename(ctx, t, d, "给这台电脑起个名字"); else toast(ctx, "这台电脑已经绑定过了：「" + d.name + "」");
             return;
         }
         String name = d == null ? "电脑" : "「" + d.name + "」";

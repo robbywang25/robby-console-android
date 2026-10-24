@@ -64,6 +64,20 @@ public final class UURemoteTest {
         assertTrue(UURemote.parseDevices("not json").isEmpty());
         assertTrue("rows without an id are dropped", UURemote.parseDevices("[{\"key\":\"a\"}]").isEmpty());
     }
+    @Test public void rebindTakesOverTheStaleRowAndItsName() {
+        List<UURemote.Device> before = List.of(new UURemote.Device("a", "id1", "书房", 10, "device_not_found", 30), new UURemote.Device("b", "id2", "公司", 20, "", 0));
+        UURemote.Merge m = UURemote.merge(before, "id9", "a", "n", 99);
+        assertEquals("replaced", m.code); assertEquals("n", m.key); assertEquals(2, m.devices.size());
+        assertEquals("id9", m.devices.get(0).id); assertEquals("书房", m.devices.get(0).name); assertFalse(m.devices.get(0).stale());
+        UURemote.Merge plain = UURemote.merge(before, "id9", null, "n", 99);
+        assertEquals("new", plain.code); assertEquals(3, plain.devices.size()); assertEquals("电脑 1", plain.devices.get(2).name);
+        UURemote.Merge same = UURemote.merge(before, "id1", "a", "n", 99);
+        assertEquals("the same id comes back: the row works again", "replaced", same.code); assertEquals("a", same.key); assertEquals(2, same.devices.size()); assertFalse(same.devices.get(0).stale());
+        UURemote.Merge other = UURemote.merge(before, "id2", "a", "n", 99);
+        assertEquals("b", other.key); assertEquals(1, other.devices.size()); assertEquals("书房", other.devices.get(0).name);
+        assertEquals("existing", UURemote.merge(before, "id2", null, "n", 99).code);
+        assertEquals("a row that is gone is not replaced", "new", UURemote.merge(before, "id9", "zz", "n", 99).code);
+    }
     @Test public void catalogListsItAsALocalTool() {
         FeatureCatalog.Feature f = FeatureCatalog.find("uu-remote");
         assertNotNull(f); assertTrue(f.local()); assertEquals("工具", f.group);
