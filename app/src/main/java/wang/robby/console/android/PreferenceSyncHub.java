@@ -220,6 +220,8 @@ final class PreferenceSyncHub {
                     case "dailyLine" -> { notices.putInt("daily", ((Number) e.getValue()).intValue()); noticeTouch = true; }
                     case "lowLine" -> { notices.putInt("low", ((Number) e.getValue()).intValue()); noticeTouch = true; }
                     case "creditsLine" -> { notices.putInt("creditsLine", ((Number) e.getValue()).intValue()); noticeTouch = true; }
+                    case "marketDays" -> { notices.putInt("marketDays", ((Number) e.getValue()).intValue()); noticeTouch = true; }
+                    case "marketLine" -> { notices.putInt("marketLine", ((Number) e.getValue()).intValue()); noticeTouch = true; }
                     default -> { }
                 }
             }

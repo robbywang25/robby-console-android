@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.41.0", "2026-10-24", "行情波动提醒，录音通知可隐藏",
+            "市场看板新增行情波动提醒：关注资产几天内涨跌超过提醒线时通知你。",
+            "天数可选 1 到 7 天，默认 3 天；提醒线 2% 到 20%，默认 5%。",
+            "同一资产同一方向只提醒一次，多涨跌一个提醒线后才再提醒。",
+            "开关在市场看板页底部，也在「我 → 通知 → 市场」里。",
+            "心力球页新增「录音通知」，可直达系统设置把录音通知关掉，录音照常进行。",
+            "在通知栏划掉录音通知后，这次录音期间不会再弹出来。"),
         new Entry("0.40.1", "2026-10-24", "心力球更可靠，后台少连网",
             "前一天最后没来得及整理的录音，第二天会自动补进那天的时间线。",
             "某段录音被转写服务拒绝时，后面的录音照常转写，不再卡住两天。",

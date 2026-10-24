@@ -51,7 +51,8 @@ import javax.crypto.spec.GCMParameterSpec;
  */
 final class MindBall {
     private MindBall() {}
-    static final String TAG = "GodMindBall", CHANNEL = "mindball-v1", ACTION_STOP = "wang.robby.console.android.MINDBALL_STOP";
+    static final String TAG = "GodMindBall", CHANNEL = "mindball-v1", CHANNEL_RECORDING = "mindball-recording-v1";
+    static final String ACTION_STOP = "wang.robby.console.android.MINDBALL_STOP", ACTION_DISMISSED = "wang.robby.console.android.MINDBALL_DISMISSED";
     static final int ID_RECORDING = 7201, ID_PAUSED = 7202;
     static final long SEGMENT = 10 * 60_000L, SUMMARY_INTERVAL = 60 * 60_000L;
     static final int KEEP_DAYS = 30, MIN_VOICED_SECONDS = 8, MAX_DAY_CHARS = 300_000;
@@ -65,6 +66,8 @@ final class MindBall {
     /** Redraws the 心力球 page when it is showing; set by {@link MindBallPage}. */
     static volatile Runnable listener;
     static volatile boolean recording, busy;
+    /** 「心力球正在录音」 was swiped away (Android 14 and later allow it); it is not posted again until recording restarts. */
+    static volatile boolean noticeDismissed;
     /** Bumped by 清除全部 under {@link #LOCK}: a round that started before it writes nothing more. */
     private static volatile int epoch;
 
@@ -94,10 +97,21 @@ final class MindBall {
 
     // ---------------------------------------------------------------- notifications
 
+    /**
+     * Two channels, so switching off the ongoing one in system settings hides it without losing 心力球已暂停. Android
+     * keeps a microphone service's notification at least at low importance unless the person lowers it themselves.
+     */
     static void channel(Context c) {
-        NotificationChannel ch = new NotificationChannel(CHANNEL, "心力球", NotificationManager.IMPORTANCE_LOW);
-        ch.setDescription("心力球录音中的常驻通知"); ch.setShowBadge(false);
-        c.getSystemService(NotificationManager.class).createNotificationChannel(ch);
+        NotificationChannel ch = new NotificationChannel(CHANNEL, "心力球提醒", NotificationManager.IMPORTANCE_LOW);
+        ch.setDescription("录音暂停、需要打开 God 继续时提醒"); ch.setShowBadge(false);
+        NotificationChannel rec = new NotificationChannel(CHANNEL_RECORDING, "心力球录音中", NotificationManager.IMPORTANCE_LOW);
+        rec.setDescription("录音时的常驻通知。关掉这一类即可隐藏，状态栏仍会显示麦克风标志"); rec.setShowBadge(false);
+        c.getSystemService(NotificationManager.class).createNotificationChannels(List.of(ch, rec));
+    }
+    /** Whether the person switched 「心力球录音中」 off in system settings. */
+    static boolean noticeHidden(Context c) {
+        NotificationChannel ch = c.getSystemService(NotificationManager.class).getNotificationChannel(CHANNEL_RECORDING);
+        return ch != null && ch.getImportance() == NotificationManager.IMPORTANCE_NONE;
     }
     static PendingIntent openPage(Context c) {
         Intent open = new Intent(c, MainActivity.class).putExtra(TiboWatch.EXTRA_OPEN, "mindball").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
@@ -106,17 +120,18 @@ final class MindBall {
     static Notification recordingNotification(Context c) {
         channel(c);
         PendingIntent stop = PendingIntent.getService(c, ACTION_STOP.hashCode(), new Intent(c, MindBallService.class).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Notification.Builder b = new Notification.Builder(c, CHANNEL).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle("心力球正在录音").setContentText(status(c))
-            .setContentIntent(openPage(c)).setOngoing(true).setCategory(Notification.CATEGORY_SERVICE)
+        PendingIntent dismissed = PendingIntent.getBroadcast(c, ACTION_DISMISSED.hashCode(), new Intent(c, TiboWatchReceiver.class).setAction(ACTION_DISMISSED), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        Notification.Builder b = new Notification.Builder(c, CHANNEL_RECORDING).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle("心力球正在录音").setContentText(status(c))
+            .setContentIntent(openPage(c)).setDeleteIntent(dismissed).setOngoing(true).setCategory(Notification.CATEGORY_SERVICE)
             .addAction(new Notification.Action.Builder(null, "停止录音", stop).build());
         if (android.os.Build.VERSION.SDK_INT >= 31) b.setForegroundServiceBehavior(Notification.FOREGROUND_SERVICE_IMMEDIATE);
         return b.build();
     }
     static void refreshNotification(Context c) {
-        if (!recording) return;
+        if (!recording || noticeDismissed) return;
         Notification n = recordingNotification(c);
-        // Posted where the service stops: a refresh racing 停止录音 must not bring back an ongoing 「正在录音」.
-        main().post(() -> { if (recording) c.getSystemService(NotificationManager.class).notify(ID_RECORDING, n); });
+        // Posted where the service stops: a refresh racing 停止录音 (or a swipe) must not bring back 「正在录音」.
+        main().post(() -> { if (recording && !noticeDismissed) c.getSystemService(NotificationManager.class).notify(ID_RECORDING, n); });
     }
     private static void paused(Context c, String text) {
         channel(c);

@@ -35,7 +35,7 @@ final class PreferenceSync {
         "board", "clocks", "calendarDays", "hiddenQuotaCards",
         "glassOn", "glassLevel", "statusBar", "islandLeft", "islandRight",
         "hiddenFeatures", "shownFeatures", "recentFeatures",
-        "noticeKinds", "dailyLine", "lowLine", "creditsLine", "enhancedNotice", "persistentNotice", "tiboNotice");
+        "noticeKinds", "dailyLine", "lowLine", "creditsLine", "marketDays", "marketLine", "enhancedNotice", "persistentNotice", "tiboNotice");
     /**
      * Stored on the phone, never uploaded. Listed so a test can hand every one of them in and watch the document
      * stay clear of them: session, cutout geometry, 常亮展示, read caches, reminder runtime, signature and avatar.
@@ -49,7 +49,7 @@ final class PreferenceSync {
         "islandLeftPx", "islandTopPx", "islandRightPx", "islandBottomPx",
         "screenWidth", "statusHeight", "alwaysOn", "alwaysOnSaver",
         "state", "pending", "seen", "lastCheckAt", "lastError", "primed",
-        "creditBase", "creditFired",
+        "creditBase", "creditFired", "marketReadAt",
         "enabledAt", "round", "pendingTest", "more",
         "hideStatusBar", "prefSyncVersion", "prefSyncUpdatedAt", "prefSyncBase", "prefSyncDirty", "prefSyncPending",
         "prefSyncAskNotify", "prefSyncEdited");
@@ -168,6 +168,8 @@ final class PreferenceSync {
             copy(raw, "dailyLine", notices, "daily");
             copy(raw, "lowLine", notices, "low");
             copy(raw, "creditsLine", notices, "creditsLine");
+            copy(raw, "marketDays", notices, "marketDays");
+            copy(raw, "marketLine", notices, "marketLine");
             copy(raw, "enhancedNotice", notices, "enhanced");
             copy(raw, "persistentNotice", notices, "persistent");
         }
@@ -490,6 +492,8 @@ final class PreferenceSync {
             case "dailyLine" -> choice(raw, boxes(Notices.DAILY_CHOICES));
             case "lowLine" -> choice(raw, boxes(Notices.LOW_CHOICES));
             case "creditsLine" -> choice(raw, boxes(Notices.CREDIT_CHOICES));
+            case "marketDays" -> choice(raw, boxes(Notices.MARKET_DAY_CHOICES));
+            case "marketLine" -> choice(raw, boxes(Notices.MARKET_LINE_CHOICES));
             default -> null;
         };
     }

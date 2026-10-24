@@ -14,7 +14,7 @@ import java.util.Set;
 final class NoticePages {
     private NoticePages() {}
     static final String ROOT = "notices";
-    static final String QUOTA = "notices-quota", SITES = "notices-sites", MODE = "notices-mode", CHALLENGE = "notices-challenge", CHECK = "notices-check";
+    static final String QUOTA = "notices-quota", SITES = "notices-sites", MARKET = "notices-market", MODE = "notices-mode", CHALLENGE = "notices-challenge", CHECK = "notices-check";
 
     static final class Group {
         final String id, title, symbol; final List<String> keys; final boolean readOnly;
@@ -25,15 +25,19 @@ final class NoticePages {
     static final List<Group> GROUPS = List.of(
         new Group(QUOTA, "Token 额度", "gauge", List.of(Notices.DAILY, Notices.CREDITS, Notices.LOW, Notices.RESET, Notices.ACCOUNT, Notices.CARD), false),
         new Group(SITES, "站点", "pulse", List.of(Notices.SITES), false),
+        new Group(MARKET, "市场", "trend", List.of(Notices.MARKET), false),
         new Group(MODE, "提醒方式", "bell", List.of("enhanced", "persistent"), false),
         new Group(CHALLENGE, "28 天挑战", "calendar", List.of("tibo"), false),
         new Group(CHECK, "后台检查", "history", List.of(), true));
 
-    /** What the phone has stored. Old installs only have on, daily, low, enhanced and persistent; the new line defaults. */
+    /** What the phone has stored. Old installs only have on, daily, low, enhanced and persistent; the newer lines default. */
     static final class Snapshot {
-        final Set<String> on; final int daily, low, creditsLine; final boolean enhanced, persistent, tibo, primed;
+        final Set<String> on; final int daily, low, creditsLine, marketDays, marketLine; final boolean enhanced, persistent, tibo, primed;
         Snapshot(Set<String> on, int daily, int low, int creditsLine, boolean enhanced, boolean persistent, boolean tibo, boolean primed) {
-            this.on = on; this.daily = daily; this.low = low; this.creditsLine = creditsLine;
+            this(on, daily, low, creditsLine, Notices.MARKET_DAYS_DEFAULT, Notices.MARKET_LINE_DEFAULT, enhanced, persistent, tibo, primed);
+        }
+        Snapshot(Set<String> on, int daily, int low, int creditsLine, int marketDays, int marketLine, boolean enhanced, boolean persistent, boolean tibo, boolean primed) {
+            this.on = on; this.daily = daily; this.low = low; this.creditsLine = creditsLine; this.marketDays = marketDays; this.marketLine = marketLine;
             this.enhanced = enhanced; this.persistent = persistent; this.tibo = tibo; this.primed = primed;
         }
         /** Persistent counts only while 增强提醒 is on, because it cannot ring without it. */
@@ -79,6 +83,8 @@ final class NoticePages {
             number(notices, "daily", 30, Notices.DAILY_CHOICES),
             number(notices, "low", 10, Notices.LOW_CHOICES),
             number(notices, "creditsLine", Notices.CREDIT_DEFAULT, Notices.CREDIT_CHOICES),
+            number(notices, "marketDays", Notices.MARKET_DAYS_DEFAULT, Notices.MARKET_DAY_CHOICES),
+            number(notices, "marketLine", Notices.MARKET_LINE_DEFAULT, Notices.MARKET_LINE_CHOICES),
             flag(notices, "enhanced"), flag(notices, "persistent"), flag(tibo, "enabled"), flag(notices, "primed"));
     }
     /** Looking at a group. The snapshot comes back unchanged, primed included. */
@@ -95,14 +101,14 @@ final class NoticePages {
             case "tibo" -> tibo = value;
             default -> { if (value) on.add(key); else on.remove(key); }
         }
-        return new Snapshot(on, s.daily, s.low, s.creditsLine, enhanced, persistent, tibo, false);
+        return new Snapshot(on, s.daily, s.low, s.creditsLine, s.marketDays, s.marketLine, enhanced, persistent, tibo, false);
     }
     /** A threshold that is already selected does not clear primed. A real change does. */
     static Snapshot line(Snapshot s, String which, int value) {
-        int current = "daily".equals(which) ? s.daily : "low".equals(which) ? s.low : s.creditsLine;
+        int current = switch (which) { case "daily" -> s.daily; case "low" -> s.low; case "marketDays" -> s.marketDays; case "marketLine" -> s.marketLine; default -> s.creditsLine; };
         if (current == value) return s;
-        return new Snapshot(s.on, "daily".equals(which) ? value : s.daily, "low".equals(which) ? value : s.low,
-            "daily".equals(which) || "low".equals(which) ? s.creditsLine : value, s.enhanced, s.persistent, s.tibo, false);
+        return new Snapshot(s.on, "daily".equals(which) ? value : s.daily, "low".equals(which) ? value : s.low, "creditsLine".equals(which) ? value : s.creditsLine,
+            "marketDays".equals(which) ? value : s.marketDays, "marketLine".equals(which) ? value : s.marketLine, s.enhanced, s.persistent, s.tibo, false);
     }
 
     private static boolean flag(Map<String, ?> map, String key) { return map != null && Boolean.TRUE.equals(map.get(key)); }

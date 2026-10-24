@@ -28,8 +28,13 @@ final class NoticeCenter {
 
     static Notices.Settings settings(Context c) {
         SharedPreferences p = prefs(c);
-        return new Notices.Settings(new HashSet<>(p.getStringSet("on", Collections.emptySet())), p.getInt("daily", 30), p.getInt("low", 10), creditsLine(p));
+        return new Notices.Settings(new HashSet<>(p.getStringSet("on", Collections.emptySet())), p.getInt("daily", 30), p.getInt("low", 10), creditsLine(p),
+            Notices.choice(p.getInt("marketDays", Notices.MARKET_DAYS_DEFAULT), Notices.MARKET_DAY_CHOICES, Notices.MARKET_DAYS_DEFAULT),
+            Notices.choice(p.getInt("marketLine", Notices.MARKET_LINE_DEFAULT), Notices.MARKET_LINE_CHOICES, Notices.MARKET_LINE_DEFAULT));
     }
+    static final String CH_MARKET = "god-market-v1";
+    /** Daily closes and a quote that moves slowly next to quotas: the market is read at most every ten minutes. */
+    static final long MARKET_EVERY = 10 * 60_000L;
     /** One of 20/50/100/200/500; anything else, including a missing key, is 50. */
     static int creditsLine(SharedPreferences p) {
         int v = p.getInt("creditsLine", Notices.CREDIT_DEFAULT);
@@ -54,14 +59,14 @@ final class NoticeCenter {
         if (TiboWatch.active(c)) TiboWatch.start(c, true); else TiboWatch.stop(c);
     }
     /**
-     * daily, low or creditsLine. Picking the line already stored does nothing, so opening the menu cannot clear the
-     * first-read latch. A real change does not clear it either: the next read would otherwise mark the day fired and
-     * drop the notice this line was set to catch.
+     * daily, low, creditsLine, marketDays or marketLine. Picking the line already stored does nothing, so opening the
+     * menu cannot clear the first-read latch. A real change does not clear it either: the next read would otherwise
+     * mark the day fired and drop the notice this line was set to catch.
      */
     static void threshold(Context c, String which, int value) {
-        String sync = switch (which) { case "daily" -> "dailyLine"; case "low" -> "lowLine"; case "creditsLine" -> "creditsLine"; default -> null; };
+        String sync = switch (which) { case "daily" -> "dailyLine"; case "low" -> "lowLine"; case "creditsLine", "marketDays", "marketLine" -> which; default -> null; };
         if (sync == null) return;
-        int fallback = "daily".equals(which) ? 30 : "low".equals(which) ? 10 : Notices.CREDIT_DEFAULT;
+        int fallback = switch (which) { case "daily" -> 30; case "low" -> 10; case "marketDays" -> Notices.MARKET_DAYS_DEFAULT; case "marketLine" -> Notices.MARKET_LINE_DEFAULT; default -> Notices.CREDIT_DEFAULT; };
         if (prefs(c).getInt(which, fallback) == value) return;
         prefs(c).edit().putInt(which, value).apply();
         PreferenceSyncHub.note(c, sync);
@@ -74,12 +79,16 @@ final class NoticeCenter {
         SharedPreferences p = prefs(c); Notices.State state;
         try { state = new Notices.State(new JSONObject(p.getString("state", "{}"))); } catch (org.json.JSONException e) { state = new Notices.State(null); }
         List<Notices.Notice> due = new ArrayList<>(); String error = null;
-        boolean quotas = false; for (String k : s.on) if (!k.equals(Notices.SITES)) quotas = true;
+        boolean quotas = false; for (String k : s.on) if (Notices.QUOTA_KINDS.contains(k)) quotas = true;
         try { if (quotas) { JSONObject q = api.get("tokens/quotas"); GodWidgets.observe(c, "tokens/quotas", q); due.addAll(Notices.quotas(q, state, s, now, ZoneId.systemDefault())); } }
         catch (Exception e) { error = reason(e); }
         try { if (s.has(Notices.SITES)) { JSONObject o = api.get("overview"); GodWidgets.observe(c, "overview", o); due.addAll(Notices.sites(o, state, s, now)); } }
         catch (Exception e) { if (error == null) error = reason(e); }
         boolean primed = p.getBoolean("primed", false);
+        // Before the latch is set the market is read at once, so the first read learns the moves already under way.
+        boolean market = s.has(Notices.MARKET) && (!primed || now - p.getLong("marketReadAt", 0) >= MARKET_EVERY);
+        try { if (market) { JSONObject m = api.get("market"); due.addAll(Notices.market(m, state, s, now, ZoneId.systemDefault())); p.edit().putLong("marketReadAt", now).apply(); } }
+        catch (Exception e) { if (error == null) error = reason(e); }
         SharedPreferences.Editor edit = p.edit().putString("state", state.json.toString()).putLong("lastCheckAt", now);
         if (error == null) edit.remove("lastError").putBoolean("primed", true); else edit.putString("lastError", error);
         edit.commit();
@@ -93,12 +102,14 @@ final class NoticeCenter {
         quota.setDescription("当天消耗、Codex 积分、额度将用完、额度重置、账号与重置卡"); quota.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
         NotificationChannel sites = new NotificationChannel(CH_SITES, "站点状态", NotificationManager.IMPORTANCE_HIGH);
         sites.setDescription("监测中的站点离线与恢复"); sites.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
+        NotificationChannel market = new NotificationChannel(CH_MARKET, "行情波动提醒", NotificationManager.IMPORTANCE_DEFAULT);
+        market.setDescription("关注资产在你设的天数内涨跌超过提醒线"); market.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
         // A channel's importance cannot be raised after it exists, so 增强提醒 has a channel of its own.
         NotificationChannel alert = new NotificationChannel(CH_ALERT, "God 增强提醒", NotificationManager.IMPORTANCE_HIGH);
         alert.setDescription("开启增强提醒后，额度和站点提醒以横幅、声音和震动送达；持续提醒会一直响到你点「知道了」");
         alert.setSound(RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION), new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
         alert.enableVibration(true); alert.setVibrationPattern(new long[]{0, 400, 250, 400}); alert.enableLights(true); alert.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
-        c.getSystemService(NotificationManager.class).createNotificationChannels(List.of(quota, sites, alert));
+        c.getSystemService(NotificationManager.class).createNotificationChannels(List.of(quota, sites, market, alert));
     }
     static boolean enhanced(Context c) { return prefs(c).getBoolean("enhanced", false); }
     static boolean persistent(Context c) { return enhanced(c) && prefs(c).getBoolean("persistent", false); }
@@ -118,11 +129,11 @@ final class NoticeCenter {
      */
     static void post(Context context, Notices.Notice n, int round) {
         Context c = context.getApplicationContext(); channels(c);
-        boolean site = n.kind.equals(Notices.SITES), loud = enhanced(c), keep = persistent(c);
-        String channel = loud ? CH_ALERT : site ? CH_SITES : CH_QUOTA;
+        boolean site = n.kind.equals(Notices.SITES), market = n.kind.equals(Notices.MARKET), loud = enhanced(c), keep = persistent(c);
+        String channel = loud ? CH_ALERT : site ? CH_SITES : market ? CH_MARKET : CH_QUOTA;
         Intent open = new Intent(c, MainActivity.class).putExtra(TiboWatch.EXTRA_OPEN, n.open).putExtra(EXTRA_KEY, n.key).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent tap = PendingIntent.getActivity(c, n.key.hashCode(), open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-        Notification hidden = new Notification.Builder(c, channel).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle("God").setContentText(site ? "站点状态有变化" : "额度提醒").build();
+        Notification hidden = new Notification.Builder(c, channel).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle("God").setContentText(site ? "站点状态有变化" : market ? "行情波动提醒" : "额度提醒").build();
         Notification.Builder b = new Notification.Builder(c, channel).setSmallIcon(R.drawable.ic_stat_tibo).setContentTitle((round > 1 ? "再次提醒 · " : "") + n.title).setContentText(n.text)
             .setStyle(new Notification.BigTextStyle().bigText(n.text)).setContentIntent(tap).setAutoCancel(!keep).setShowWhen(true).setWhen(System.currentTimeMillis())
             .setCategory(site ? Notification.CATEGORY_ERROR : Notification.CATEGORY_REMINDER).setVisibility(Notification.VISIBILITY_PRIVATE).setPublicVersion(hidden)

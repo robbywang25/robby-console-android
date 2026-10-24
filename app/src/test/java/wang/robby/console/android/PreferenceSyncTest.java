@@ -36,6 +36,8 @@ public final class PreferenceSyncTest {
         assertEquals(local.get("dailyLine"), back.get("dailyLine"));
         assertEquals(local.get("lowLine"), back.get("lowLine"));
         assertEquals(local.get("creditsLine"), back.get("creditsLine"));
+        assertEquals(local.get("marketDays"), back.get("marketDays"));
+        assertEquals(local.get("marketLine"), back.get("marketLine"));
         assertEquals(local.get("enhancedNotice"), back.get("enhancedNotice"));
         assertEquals(local.get("persistentNotice"), back.get("persistentNotice"));
         assertEquals(local.get("tiboNotice"), back.get("tiboNotice"));
@@ -55,6 +57,8 @@ public final class PreferenceSyncTest {
         prefs.put("dailyLine", 15);
         prefs.put("lowLine", true);
         prefs.put("creditsLine", 15);
+        prefs.put("marketDays", 9);
+        prefs.put("marketLine", 4);
         prefs.put("clocks", new JSONArray().put(new JSONObject().put("name", "X").put("zone", "Not A Zone")).put(new JSONObject().put("name", "北京时间").put("zone", "Asia/Shanghai")));
         prefs.put("recentFeatures", new JSONArray().put(new JSONObject().put("id", "Bad Id").put("score", 1).put("at", 5)).put(new JSONObject().put("id", "clipboard").put("score", 1.5).put("at", 50)));
         prefs.put("futureWidget", true);
@@ -73,6 +77,8 @@ public final class PreferenceSyncTest {
         assertFalse(got.containsKey("dailyLine"));
         assertFalse(got.containsKey("lowLine"));
         assertFalse(got.containsKey("creditsLine"));
+        assertFalse(got.containsKey("marketDays"));
+        assertFalse(got.containsKey("marketLine"));
         assertEquals(List.of("北京时间|Asia/Shanghai"), got.get("clocks"));
         List<PreferenceSync.Recent> recent = cast(got.get("recentFeatures"));
         assertEquals(1, recent.size());
@@ -558,10 +564,12 @@ public final class PreferenceSyncTest {
         local.put("hiddenFeatures", List.of("umami", "secrets"));
         local.put("shownFeatures", List.of("posthog"));
         local.put("recentFeatures", List.of(new PreferenceSync.Recent("tokens", 2.5, 1_700_000_000_000L), new PreferenceSync.Recent("clipboard", 1.25, 1_700_000_100_000L)));
-        local.put("noticeKinds", List.of("daily", "credits", "low", "sites"));
+        local.put("noticeKinds", List.of("daily", "credits", "low", "sites", "market"));
         local.put("dailyLine", 40);
         local.put("lowLine", 5);
         local.put("creditsLine", 100);
+        local.put("marketDays", 7);
+        local.put("marketLine", 3);
         local.put("enhancedNotice", true);
         local.put("persistentNotice", true);
         local.put("tiboNotice", true);
