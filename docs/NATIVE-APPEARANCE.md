@@ -762,3 +762,20 @@ PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明
 - 正式版：`adb install -r` 覆盖 Flip 上的 0.41.0，versionCode 68，安装文件 SHA256 与构建一致，启动后进程在、crash 缓冲区为空。Flip 上没开心力球录音，所以真实录音、转写与看板上的真实数据没有验证；登录后的真实页面截不了图（`FLAG_SECURE`）。
 
 未验证：Find（PMA110）上的预览和正式安装，等它上线后补装。
+
+## v0.43.0：接入 UU 远程（2026-10-24）
+
+- 「功能 → 工具」新增本地功能 `uu-remote`（`FeatureCatalog.LOCAL`，无 path/scope，图标 `desktop`）。协议照网易开源的 netease-uuyc/uuremote-integration-guide：`UURemote` 负责请求 URL、回调解析、nonce、错误码文案、版本比较和本机存储，`UURemotePage` 负责页面：UU 远程安装状态卡、「我的电脑」列表（行内「远控」= 全屏，点行弹出全屏 / 小窗 / 重新绑定 / 重命名 / 解除绑定）、「绑定电脑」按钮，说明收进 ⓘ。
+- 回调：manifest 给 `MainActivity` 加了 `${applicationId}://uuremote` 的 VIEW filter；`onCreate` 和 `onNewIntent` 先交给 `uuRemote()`，不会落到 OAuth 回调。绑定和小窗各存一个一次性 nonce（SharedPreferences，进程被杀也在），超过 30 分钟作废，对不上的回调直接丢弃。小窗回调 URL 自带 `d=<本机设备编号>&n=<nonce>`，UU 远程保留原参数后再追加结果。
+- 预览版：`PreviewActivity` 的 debug manifest 加了同一个回调 filter（预览版的 `MainActivity` 不导出）。默认显示两台合成电脑，不打开 UU 远程；带 `--ez preview_real_uu true` 启动时改用预览版自己的存储，真实拉起 UU 远程。
+- 没有改动：认证、God 读接口、`FLAG_SECURE`、账号同步的键（`uu-remote` 不在 `PreferenceSync.KEYS` 里）。
+
+验证：`check.sh` 通过（288 项 JVM 测试 0 失败，新增 `UURemoteTest` 9 项；lint debug/release 0 错误，3 条警告为原有的 Gradle 版本和 `LedgerActions` 字符串拼接）。Release 为正式证书签名（`83d624e0…3da569`），APK SHA256 `eedadd72…1f4d823a`。
+
+设备：Find 不在线，按本人要求在小米 MIX Flip（2405CPX3DC，HyperOS / Android 16，UU 远程 4.42.0）上验收。
+
+- 预览版 0.43.0（SHA256 `2f435468…0150783b3`）：浅色、深色、1.6 倍字体下截图检查了合成数据页、行菜单和空状态（真实模式下「绑定电脑」是主按钮）。大字体下副标题换行，没有截断。
+- 真实协议（`preview_real_uu`）：点「绑定电脑」，HyperOS 先弹「关联启动」确认（本人允许），UU 远程打开设备选择，本人选了一台电脑；约 18 秒后回调进 `PreviewActivity`，存下「电脑 1」，bind nonce 已清除。全屏远控：UU 远程打开 `ScreenActivity`，本人确认能看到电脑画面。小窗远控第一次：UU 远程跳去系统悬浮窗权限页，那次请求没有回调。本人授权后重试：20:18:06 发出请求，20:18:07 回调进 God，设备行记为 `success`，control nonce 已清除。小窗里是电脑画面，没有截图。
+- 正式版：`adb install -r` 覆盖 Flip 上的 0.42.0，versionCode 69，安装文件 SHA256 与构建一致，启动后进程在、crash 缓冲区为空。
+
+未验证：正式版里的真实绑定（登录后截不了图，要本人在正式版里绑定一次）；离线、忙碌、未允许被控、`device_not_found` 这几种失败回调在真机上的表现（只有单元测试）；Find（PMA110）上的安装。

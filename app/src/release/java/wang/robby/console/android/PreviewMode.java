@@ -11,4 +11,6 @@ final class PreviewMode {
  static String realUpdateAs(){return null;}
  static JSONObject mindBall(){throw new IllegalStateException();}
  static java.util.Map<String,JSONObject> mindBallWeek(){throw new IllegalStateException();}
+ static boolean realUU(){return false;}
+ static java.util.List<UURemote.Device> uuDevices(){throw new IllegalStateException();}
 }
