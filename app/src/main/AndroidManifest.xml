@@ -19,6 +19,11 @@
       microphone indicator and an ongoing notification. Audio and text stay in the app's private storage. -->
  <uses-permission android:name="android.permission.RECORD_AUDIO" />
  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+ <!-- UU 远程: its version is checked (the protocol needs 4.42.0) and its uuremote:// links are opened. -->
+ <queries>
+  <package android:name="com.netease.uuremote" />
+  <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="uuremote" /></intent>
+ </queries>
  <application android:label="God" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:theme="@style/AppTheme" android:allowBackup="false" android:dataExtractionRules="@xml/data_extraction_rules" android:fullBackupContent="false" android:usesCleartextTraffic="false" android:supportsRtl="true">
   <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
@@ -26,6 +31,12 @@
     <action android:name="android.intent.action.VIEW"/>
     <category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/>
     <data android:scheme="https" android:host="god.robby.wang" android:path="/mobile/android/callback"/>
+   </intent-filter>
+   <!-- UU 远程 returns bind and picture-in-picture results here; each carries the nonce God sent, others are dropped. -->
+   <intent-filter>
+    <action android:name="android.intent.action.VIEW"/>
+    <category android:name="android.intent.category.DEFAULT"/><category android:name="android.intent.category.BROWSABLE"/>
+    <data android:scheme="${applicationId}" android:host="uuremote"/>
    </intent-filter>
   </activity>
   <receiver android:name=".UpdateReceiver" android:exported="false" />

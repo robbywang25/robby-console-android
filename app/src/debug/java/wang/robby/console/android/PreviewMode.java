@@ -3,15 +3,20 @@ import android.content.Intent;
 import org.json.JSONObject;
 /** Debug-only isolated visual fixture. No requests and no real credentials. */
 final class PreviewMode {
- private static boolean signedOut, realUpdate;
+ private static boolean signedOut, realUpdate, realUU;
  static boolean isBuild(){return true;}
  static boolean loggedIn(){return !signedOut;}
- static void configure(android.app.Activity activity,Intent intent){signedOut=intent.getBooleanExtra("preview_signed_out",false);realUpdate=intent.getBooleanExtra("preview_real_update",false);}
+ static void configure(android.app.Activity activity,Intent intent){signedOut=intent.getBooleanExtra("preview_signed_out",false);realUpdate=intent.getBooleanExtra("preview_real_update",false);realUU=realUU||intent.getBooleanExtra("preview_real_uu",false);}
  /**
   * Opt-in device check of the real GitHub path: the preview pretends to be 0.3.0, so it finds and downloads the
   * newest release and verifies its SHA-256; the package check then stops it, because the preview is another package.
   */
  static String realUpdateAs(){return realUpdate?"0.3.0":null;}
+ /** Opt-in device check of the UU 远程 protocol: the UU 远程 page then uses this preview's own store and really opens UU 远程. */
+ static boolean realUU(){return realUU;}
+ /** Synthetic bound computers for the UU 远程 page; their ids are not UU 远程's and nothing is opened. */
+ static java.util.List<UURemote.Device> uuDevices(){long day=86_400_000L,now=System.currentTimeMillis();
+  return java.util.List.of(new UURemote.Device("preview1","preview","书房 Mac mini",now-3*day,"success",now-day),new UURemote.Device("preview2","preview","公司 Windows",now-9*day,"device_offline",now-2*day));}
  /** Synthetic newer release so the update card can be checked without contacting GitHub. */
  static AppUpdate.Release update(){return new AppUpdate.Release("9.9.9","界面预览更新","合成的新版本，只用于检查更新卡片和系统安装流程。","2026-10-16","robby-console-android-9.9.9.apk","",245760,"");}
  /** Synthetic 心力球 day: a morning of transcript and its timeline; no audio, no request. */

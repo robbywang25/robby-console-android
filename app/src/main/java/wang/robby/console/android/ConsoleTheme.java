@@ -116,7 +116,7 @@ public final class ConsoleTheme {
     private static int hue(String symbol){return switch(symbol){
         case "chart","trend"->0xff3b82f6;case "ledger","plus","edit"->0xfff59e0b;case "globe","server"->0xff14b8a6;case "pulse"->0xff22c55e;
         case "clipboard","document","history","gauge","calendar"->0xff8b5cf6;case "bell"->0xffef4444;case "chat"->0xff07c160;case "image"->0xffec4899;case "shield","key","user","people","download","phone"->0xff0052d9;case "mail"->0xff0ea5e9;
-        case "trash"->0xffef4444;case "drop"->0xff0ea5e9;case "chip"->0xff6366f1;case "mic"->0xfff97316;default->0xff64748b;};}
+        case "trash"->0xffef4444;case "drop"->0xff0ea5e9;case "chip"->0xff6366f1;case "mic"->0xfff97316;case "desktop"->0xff0ea5e9;default->0xff64748b;};}
     public ImageView icon(String name,int color,int size){if("grid".equals(name))return tabIcon(name,true,size);ImageView v=new ImageView(context);v.setImageDrawable(new Symbol(name,ink));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;}
     public ImageView tabIcon(String name,boolean selected,int size){
         int asset=switch(name){
@@ -136,7 +136,7 @@ public final class ConsoleTheme {
         case "travel-ledger"->"ledger";case "clipboard"->"clipboard";case "infrastructure"->"server";
         case "status","site-maintenance"->"pulse";case "market","okx"->"trend";
         case "engineering"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog","wechat-messages"->"chat";
-        case "prompts","visit-insight-reports"->"document";case "deepseek"->"chip";case "mindball"->"mic";case "secrets","wechat-login-audit"->"shield";default->"grid";};}
+        case "prompts","visit-insight-reports"->"document";case "deepseek"->"chip";case "mindball"->"mic";case "uu-remote"->"desktop";case "secrets","wechat-login-audit"->"shield";default->"grid";};}
     /** Visible tab names. "设置" stays the internal identity so saved navigation keeps working. */
     public static String tabLabel(String group){return "设置".equals(group)?"我":group;}
     /**
@@ -274,6 +274,7 @@ public final class ConsoleTheme {
                 case "drop":{Path q=new Path();q.moveTo(12,3);q.cubicTo(12,3,5,10.5f,5,14.5f);q.cubicTo(5,18.4f,8.1f,21,12,21);q.cubicTo(15.9f,21,19,18.4f,19,14.5f);q.cubicTo(19,10.5f,12,3,12,3);c.drawPath(q,p);c.drawArc(8,12,12,18,100,80,false,p);break;}
                 case "eye":c.drawArc(2,5,22,25,200,140,false,p);c.drawArc(2,-1,22,19,20,140,false,p);c.drawCircle(12,12,3,p);line(c,4,20,20,4);break;
                 case "chip":box(c,6,6,12,12);box(c,9.5f,9.5f,5,5);line(c,9.5f,2.5f,9.5f,6);line(c,14.5f,2.5f,14.5f,6);line(c,9.5f,18,9.5f,21.5f);line(c,14.5f,18,14.5f,21.5f);line(c,2.5f,9.5f,6,9.5f);line(c,2.5f,14.5f,6,14.5f);line(c,18,9.5f,21.5f,9.5f);line(c,18,14.5f,21.5f,14.5f);break;
+                case "desktop":box(c,3,4,18,12);line(c,12,16,12,20);line(c,8,20,16,20);break;
                 case "mic":c.drawRoundRect(9,3,15,14,3,3,p);c.drawArc(5.5f,5,18.5f,17.5f,0,180,false,p);line(c,12,17.5f,12,21);line(c,8.5f,21,15.5f,21);break;
                 case "bell":line(c,6,16.5f,6,11);c.drawArc(6,5,18,17,180,180,false,p);line(c,18,11,18,16.5f);line(c,4.5f,16.5f,19.5f,16.5f);line(c,10,19.5f,14,19.5f);line(c,12,3.5f,12,5);break;
                 default: c.drawCircle(12,12,8,p);

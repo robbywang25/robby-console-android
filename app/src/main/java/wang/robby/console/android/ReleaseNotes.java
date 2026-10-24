@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.43.0", "2026-10-24", "接入 UU 远程，一键远控电脑",
+            "「功能 → 工具」新增 UU 远程：选一台 Windows 或 Mac 电脑绑定到 God。",
+            "绑定后点「远控」直接全屏打开这台电脑。",
+            "点一台电脑还可以选「小窗远控」，画面以画中画浮在桌面上，结果会回到 God。",
+            "电脑离线、被解绑或不允许被控时，God 会说明原因，并可以一键重新绑定。",
+            "可以给电脑重命名、解除绑定；设备标识只保存在这台手机上。",
+            "需要安装 UU 远程 4.42.0 或更高版本，没装时可直接去应用商店。"),
         new Entry("0.42.0", "2026-10-24", "心力球看板，功能分区按最近使用",
             "心力球新增「看板」：录音开关、今天的概况和最近的关键事项一眼看到。",
             "看板汇总近 7 天未完成的待办，可以直接勾选完成。",

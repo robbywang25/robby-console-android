@@ -122,13 +122,20 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // A recreated Activity (process death) or a Recents relaunch re-delivers the original launch
         // Intent. Its one-time OAuth callback was already consumed, so replaying it only produced a
         // spurious "登录未完成或已过期" error. Fresh callbacks always arrive as a new launch or onNewIntent.
-        if(state==null&&!launchedFromHistory(getIntent()))handle(getIntent()); else getIntent().setData(null);
+        if(state==null&&!launchedFromHistory(getIntent())){if(!uuRemote(getIntent()))handle(getIntent());} else getIntent().setData(null);
         openRequested(getIntent());
         UpdateReceiver.listener=updateListener;publishShortcuts();
         if(Build.VERSION.SDK_INT>=33) getOnBackInvokedDispatcher().registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT,this::goBack);
     }
     @Override protected void onSaveInstanceState(Bundle state) {super.onSaveInstanceState(state);state.putString("group",group);state.putString("feature",selectedId);state.putString("project",project);saveViewport();state.putInt("scroll",ledgerCursor==null?navigation.offset(routeKey()):0);}
-    @Override protected void onNewIntent(Intent intent) {super.onNewIntent(intent);setIntent(intent);if(!launchedFromHistory(intent))handle(intent);else intent.setData(null);openRequested(intent);}
+    @Override protected void onNewIntent(Intent intent) {super.onNewIntent(intent);setIntent(intent);if(!launchedFromHistory(intent)){if(!uuRemote(intent))handle(intent);}else intent.setData(null);openRequested(intent);}
+    /** UU 远程 answering a bind or a picture-in-picture request: never an OAuth callback, so it is taken here first. */
+    private boolean uuRemote(Intent intent){
+        Uri uri=intent==null?null:intent.getData();if(!UURemote.isCallback(this,uri))return false;intent.setData(null);
+        UURemote.Result r=UURemote.receive(this,uri);if(r==null)return true;
+        FeatureCatalog.Feature f=find("uu-remote");if(f!=null&&loggedIn()&&!f.id.equals(selectedId)){if(!group.equals("功能")){saveViewport();group="功能";}open(f);}
+        UURemotePage.announce(this,r);return true;
+    }
     /** The reminder, the alarm page and launcher shortcuts open one page of the fixed catalog; nothing else can be requested. */
     private void openRequested(Intent intent){
         // Opening God from a 持续提醒 counts as 知道了 for that reminder.
@@ -163,6 +170,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         TokensPages.refreshReminder();
         // Back from 心力球录音中's channel settings: its row says whether the notice is now hidden.
         MindBallPage.refresh();
+        // Back from the app store: UU 远程 may now be installed or updated.
+        UURemotePage.refresh();
         if(accountBrowserPending){accountBrowserPending=false;if(ACCOUNT_PAGE.equals(selectedId)&&loggedIn()){accountStatus=null;accountDevices=null;build();}}
         // ColorOS may stop the reminder or refuse to restart it after an update; opening the app brings it back.
         if(!PreviewMode.isBuild()&&TiboWatch.active(this))TiboWatch.start(this,TiboWatch.checkDue(this));
@@ -786,6 +795,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!loggedIn()){LinearLayout c=card();c.addView(text(f.title,17,INK,true));TextView t=text("登录后查看此功能的真实数据。",15,MUTED,false);t.setPadding(0,dp(6),0,dp(18));c.addView(t);Button passkey=button("使用 Passkey 登录",this::login);theme.button(passkey,true);c.addView(passkey,new LinearLayout.LayoutParams(-1,-2));LinearLayout.LayoutParams d=new LinearLayout.LayoutParams(-1,-2);d.topMargin=dp(10);c.addView(button("通过已有设备授权",this::deviceLogin),d);restoreViewport();return;}
         // 心力球 reads only this phone: pulling down transcribes and summarizes what is waiting. Its settings are a page behind the gear.
         if(f.local()){final PullScrollView page=scroll;LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);
+            // UU 远程 reads only this phone too: pulling down looks again at whether UU 远程 is installed.
+            if("uu-remote".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->{UURemotePage.render(this,local);page.finishRefresh();});UURemotePage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
             if(MindBallPage.SETTINGS.equals(project)){heading.setText("心力球设置");page.setRefresh(pullMark,pullGlyph,"同步设置",()->{if(!PreviewMode.isBuild())MindBall.syncAsync(this);page.finishRefresh();});MindBallPage.renderSettings(this,local);}
             else{trailing.addView(circle("gear","心力球设置",()->{saveViewport();++generation;project=MindBallPage.SETTINGS;enterFrom=1;build();}));
                 page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processNow(this,page::finishRefresh);});MindBallPage.render(this,local);}
