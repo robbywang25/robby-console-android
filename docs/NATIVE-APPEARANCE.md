@@ -781,3 +781,16 @@ PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明
 发版：PR #11 合入默认分支（合并提交 `c5017c4`，合入前 CI 两项 `verify` 通过，Codex 代码与安全审查无发现），`release.yml` 自动打 tag `v0.43.0` 并发布 Pre-release「v0.43.0 · 接入 UU 远程，一键远控电脑」（2026-10-24 22:30 北京时间）。附件 `robby-console-android-0.43.0.apk` 与 `SHA256SUMS-0.43.0.txt` 下载后校验通过（`eb6b1d73…0c3d7d12`），签名为正式证书 `83d624e0…3da569`。用 adb 把这个附件覆盖安装到 Flip：versionCode 69，安装文件 SHA256 与附件一致，启动后进程在、crash 缓冲区为空。
 
 未验证：正式版里的真实绑定（登录后截不了图，要本人在正式版里绑定一次）；离线、忙碌、未允许被控、`device_not_found` 这几种失败回调在真机上的表现（只有单元测试）；Find（PMA110）上的安装（发版时仍离线，等上线后用 adb 装 Release 附件）。
+
+## v0.43.1：Token 额度小组件不再留白（2026-10-24）
+
+- `widget_tokens.xml` 的六行改为按权重均分标题下方的高度（`0dp` + `layout_weight=1`，内容垂直居中）；`GodWidgets.tokens` 去掉每行最多 12dp 的 `spare` 补白。`GodWidgets.SIZES` 两种宽度各补 400 / 480 / 560dp，共 16 档（`RemoteViews` 尺寸映射上限）。
+- 初始布局：Token 额度、重置日历、运行状态、微信消息的 `initialLayout` 改为 `widget_waiting_{tokens,calendar,status,wechat}.xml`：卡片背景，God 图标、名称、琥珀色「待更新」，居中写「打开 God 更新」。God 小组件（`god_widget`）和时区时钟（`widget_clock_hero`）的初始布局本来就能显示，没有改。
+- `GodWidgets.read`：只要有一条接口被 `justRead` 跳过或读取失败，就调用 `refreshAll` + `GodWidget.refresh`，所以每次后台检查都会把已放的小组件重新画一遍。
+- 没有改动：小组件内容与脱敏规则、认证、`FLAG_SECURE`。
+
+原因：覆盖安装后，God 推的更新被系统记为 `widget is not ready`（桌面不在前台）。桌面回到前台时，`startListening → onProviderChanged → forceUpdateAppWidget` 拿到的 RemoteViews 是 null，`getDefaultView` 画出 `initialLayout`。原来的 `initialLayout` 是没填内容的 `widget_tokens`：没有标题，只有一行「打开 God」，下面是大片空白。用户最初报告的就是这个状态，打开 App 或执行 `am broadcast -n …/.TokenWidget -a wang.robby.console.android.WIDGETS_REFRESH` 后恢复。
+
+验证：`check.sh` 通过（289 项 JVM 测试 0 失败；lint debug/release 0 错误）。正式签名包 `adb install -r` 覆盖安装到 Find：versionCode 70，安装文件 SHA256 与构建一致（`d2ca72c7…835151b6`），签名为 `83d624e0…3da569`。桌面上已放的 Token 额度小组件（约 4×2，327×200dp）截图：9 个账号排成两列 5 行，行距均匀，底部没有空白。在桌面不在前台时覆盖安装复现了两次，日志里都有 `forceUpdateAppWidget … remoteViews is null`。God 没有被打开，小组件分别在 22:57:32 和 22:59（装完后紧接着的 TiboWatch 检查）重新画出来。中途有一张截图带到了系统设置的账号页，已经删除，没有查看。
+
+未验证：占位布局本身在真机上没拍到（一次退回桌面时人在应用抽屉，另一次检查比截图先到）；「跳过时也重画」这条路径只靠代码保证，两次恢复走的都是原有的读取后重画；4×4 及更高的摆放、1.6 倍字体；预览版没有重装。

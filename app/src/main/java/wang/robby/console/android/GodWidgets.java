@@ -88,15 +88,18 @@ final class GodWidgets {
     static void watch(Context c) { if (!PreviewMode.isBuild() && placed(c)) TiboWatch.start(c, TiboWatch.checkDue(c)); }
     /**
      * The background check's reads for the placed widgets, on its thread. A route 我 → 通知 has just read in the same check
-     * is skipped. Each read goes through {@link GodWidget#observe}, so God 小组件 and these widgets redraw from it.
+     * is skipped. Each read goes through {@link GodWidget#observe}, so God 小组件 and these widgets redraw from it. When a
+     * route was skipped or failed they are redrawn anyway: after God is updated ColorOS shows a placed widget's initialLayout until the next
+     * update, so every check puts the drawn widget back within a couple of minutes.
      */
     static void read(Context c, MobileApi api, long now) {
-        SharedPreferences p = prefs(c);
+        SharedPreferences p = prefs(c); boolean drawn = true;
         for (String route : routes(c)) {
-            if (WidgetSnapshot.justRead(p.getLong(WidgetSnapshot.kind(route) + "At", 0), now)) continue;
+            if (WidgetSnapshot.justRead(p.getLong(WidgetSnapshot.kind(route) + "At", 0), now)) { drawn = false; continue; }
             try { GodWidget.observe(c, route, api.get(route)); Log.i("GodWidgets", "read " + route); }
-            catch (Exception e) { Log.w("GodWidgets", "read " + route + " failed " + (e instanceof MobileApi.ApiError ? "http=" + ((MobileApi.ApiError) e).status : e.getClass().getSimpleName())); }
+            catch (Exception e) { drawn = false; Log.w("GodWidgets", "read " + route + " failed " + (e instanceof MobileApi.ApiError ? "http=" + ((MobileApi.ApiError) e).status : e.getClass().getSimpleName())); }
         }
+        if (!drawn) { refreshAll(c); GodWidget.refresh(c); }
     }
     /** Redraws every placed widget of these five kinds and books the redraw for when a reading turns stale. */
     static void refreshAll(Context context) {
@@ -115,7 +118,9 @@ final class GodWidgets {
         for (int[] s : SIZES) sized.put(new android.util.SizeF(s[0], s[1]), views(c, kind, s[0], s[1]));
         return new RemoteViews(sized);
     }
-    private static final int[][] SIZES = {{110, 110}, {110, 150}, {110, 200}, {110, 260}, {110, 330}, {200, 110}, {200, 150}, {200, 200}, {200, 260}, {200, 330}};
+    // Up to 560dp tall so a 4 × 4 or 4 × 5 placement gets a layout with rows to match; RemoteViews takes at most 16 sizes.
+    private static final int[][] SIZES = {{110, 110}, {110, 150}, {110, 200}, {110, 260}, {110, 330}, {110, 400}, {110, 480}, {110, 560},
+        {200, 110}, {200, 150}, {200, 200}, {200, 260}, {200, 330}, {200, 400}, {200, 480}, {200, 560}};
     /**
      * The widget laid out for a cell of {@code w} × {@code h} dp: how many rows fit, and whether the reset note and reading
      * time have room. Text is in sp and the cell in dp, so a larger font shows fewer rows instead of smaller text.
@@ -164,14 +169,14 @@ final class GodWidgets {
         RemoteViews v = new RemoteViews(c.getPackageName(), R.layout.widget_tokens); tap(c, v, android.R.id.background, "tokens", 21);
         JSONArray list = data == null ? null : data.optJSONArray("rows"); int n = list == null ? 0 : list.length(), total = data == null ? 0 : Math.max(n, data.optInt("total", n));
         int lines = Math.max(1, Math.min(TOKEN_LINES.length, (int) (room / listRow))); boolean grid = wide && total > lines;
-        if (grid) lines = Math.max(1, Math.min(TOKEN_LINES.length, (int) (room / gridRow))); float rowDp = grid ? gridRow : listRow;
+        if (grid) lines = Math.max(1, Math.min(TOKEN_LINES.length, (int) (room / gridRow)));
         int per = grid ? 2 : 1, shown = Math.min(n, lines * per), more = total - shown;
         String meta = data == null ? null : (more > 0 ? "+" + more + (roomy ? " · " : "") : "") + (roomy ? WidgetSnapshot.meta(at, now, zone) : "");
         header(c, v, "Token 额度", "gauge", 0xff6366f1, meta == null || meta.isEmpty() ? null : meta, stale);
         StringBuilder said = new StringBuilder("Token 额度");
-        // Height left over below the last line goes between the lines (up to 12dp each), so a short list does not leave a gap.
-        int used = Math.max(1, (shown + per - 1) / per); float spare = Math.max(0, Math.min(12, (room - used * rowDp) / used)); float density = c.getResources().getDisplayMetrics().density;
-        for (int r = 0; r < TOKEN_LINES.length; r++) { v.setViewVisibility(TOKEN_LINES[r], r == 0 || r * per < shown ? View.VISIBLE : View.GONE); v.setViewPadding(TOKEN_LINES[r], 0, Math.round(((grid && tight ? r == 0 ? 6 : 4 : r == 0 ? 9 : 7) + spare) * density), 0, 0); }
+        // The lines share the height left below them by weight (widget_tokens.xml), so a short list or a cell taller than its size step leaves no gap.
+        float density = c.getResources().getDisplayMetrics().density;
+        for (int r = 0; r < TOKEN_LINES.length; r++) { v.setViewVisibility(TOKEN_LINES[r], r == 0 || r * per < shown ? View.VISIBLE : View.GONE); v.setViewPadding(TOKEN_LINES[r], 0, Math.round((grid && tight ? r == 0 ? 6 : 4 : r == 0 ? 9 : 7) * density), 0, 0); }
         for (int k = 0; k < TOKEN_IDS.length; k++) {
             int[] id = TOKEN_IDS[k]; int slot = grid ? k : k % 2 == 0 ? k / 2 : -1; JSONObject row = slot < 0 || slot >= shown ? null : list.optJSONObject(slot);
             if (row == null) {

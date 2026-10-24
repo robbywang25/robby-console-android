@@ -3,6 +3,12 @@
     <string name="widget_description">God 图标和 Tibo 的公开重置预告，点按打开 App</string>
     <string name="widget_open">打开 God</string>
     <string name="widget_title">God</string>
+    <string name="widget_waiting">打开 God 更新</string>
+    <string name="widget_pending">待更新</string>
+    <string name="widget_tokens_title">Token 额度</string>
+    <string name="widget_calendar_title">重置日历</string>
+    <string name="widget_status_title">运行状态</string>
+    <string name="widget_wechat_title">微信消息</string>
     <string name="widget_none" translatable="false">—</string>
     <string name="widget_dot" translatable="false">●</string>
     <string name="widget_tokens_description">各账号剩余额度与重置时间，额度少的排在前面</string>
