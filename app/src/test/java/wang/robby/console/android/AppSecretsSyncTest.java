@@ -82,6 +82,10 @@ public final class AppSecretsSyncTest {
         assertTrue(AppSecretsSync.takeFirst(Step.APPLY, true)); assertTrue(AppSecretsSync.takeFirst(Step.MERGE, true));
         assertFalse(AppSecretsSync.takeFirst(Step.NONE, false));
     }
+    @Test public void aChangeSavedDuringAnUploadStaysPending() {
+        assertTrue(AppSecretsSync.sent(3, 3));
+        assertFalse("the lamp was edited again while the earlier upload was in flight", AppSecretsSync.sent(3, 4));
+    }
     @Test public void aDocumentWithOnlyDefaultsHasNothingToUpload() throws Exception {
         JSONObject empty = new JSONObject();
         for (String f : AppSecretsSync.FIELDS) empty.put(f, JSONObject.NULL);

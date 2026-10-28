@@ -27,6 +27,11 @@ final class AppSecretsSync {
      */
     static final String LIGHT_DIRTY = "syncLightDirty";
     /**
+     * Bumped with each change saved here. The page saves on the main thread while a sync runs on the worker, so a
+     * successful upload clears a dirty flag only when no newer change arrived after its body was built.
+     */
+    static final String KEYS_REV = "syncKeysRev", LIGHT_REV = "syncLightRev";
+    /**
      * Whether {@link #SYNCED_AT} was taken from a version 2 read. A stamp recorded by 0.44.0 or against an older gateway
      * came from a view without the lamp, so the same stamp on version 2 may still hide a lamp this phone never applied.
      */
@@ -125,9 +130,11 @@ final class AppSecretsSync {
     private static String str(JSONObject doc, String f) { return doc.isNull(f) ? null : doc.optString(f, null); }
 
     /** A key or setting saved on this phone: uploaded on the next sync, which the caller starts. */
-    static void changed(Context c) { MindBall.prefs(c).edit().putBoolean(DIRTY, true).apply(); }
+    static void changed(Context c) { SharedPreferences p = MindBall.prefs(c); p.edit().putBoolean(DIRTY, true).putInt(KEYS_REV, p.getInt(KEYS_REV, 0) + 1).apply(); }
     /** The lamp set up, changed or removed on this phone: uploaded on the next sync, which the caller starts. */
-    static void lightChanged(Context c) { MindBall.prefs(c).edit().putBoolean(LIGHT_DIRTY, true).apply(); }
+    static void lightChanged(Context c) { SharedPreferences p = MindBall.prefs(c); p.edit().putBoolean(LIGHT_DIRTY, true).putInt(LIGHT_REV, p.getInt(LIGHT_REV, 0) + 1).apply(); }
+    /** Whether a dirty flag may be cleared after an upload: the change it marks is the one that was sent. */
+    static boolean sent(int revSent, int revNow) { return revSent == revNow; }
     /** A change saved here that has not reached the account yet, such as a lamp removed while offline. */
     static boolean pending(Context c) { SharedPreferences p = MindBall.prefs(c); return p.getBoolean(DIRTY, false) || p.getBoolean(LIGHT_DIRTY, false); }
 
@@ -180,13 +187,15 @@ final class AppSecretsSync {
         boolean knows = !v2 || secrets != null && secrets.has(LIGHT), localLight = v2 && !local.isNull(LIGHT);
         String syncedAt = v2 && !p.getBoolean(SYNCED_V2, false) ? null : p.getString(SYNCED_AT, null);
         // A lamp change waits for version 2: against an older gateway only the keys count as changed.
+        int lightRev = p.getInt(LIGHT_REV, 0);
         boolean dirtyKeys = p.getBoolean(DIRTY, false), dirtyLight = v2 && p.getBoolean(LIGHT_DIRTY, false);
         String remoteAt = remote.isNull("updatedAt") ? null : remote.optString("updatedAt", null);
         Step step = decide(dirtyKeys || dirtyLight, hasAny(local), syncedAt, remoteAt, remoteHas, knows, localLight);
         boolean newer = remoteHas && remoteAt != null && !remoteAt.equals(syncedAt);
         // An upload sends only what changed here: the account's newer copy of the other part is taken first.
         if (takeFirst(step, newer)) {
-            apply(c, secrets, !dirtyKeys, !dirtyLight);
+            // A lamp saved on the page since this sync began is this phone's newer change, not something to overwrite.
+            apply(c, secrets, !dirtyKeys, !dirtyLight && sent(lightRev, p.getInt(LIGHT_REV, 0)));
             p.edit().putString(SYNCED_AT, remoteAt).putBoolean(SYNCED_V2, v2).apply();
             MindBall.notifyChanged();
         }
@@ -194,10 +203,13 @@ final class AppSecretsSync {
             // Until some phone has saved a lamp, a phone without one saves just the keys: a null here would read as
             // "removed" on the phone whose lamp has not been sent yet.
             boolean keysOnly = v2 && !knows && !localLight;
+            int keysSent = p.getInt(KEYS_REV, 0), lightSent = p.getInt(LIGHT_REV, 0);
             JSONObject body = keysOnly ? local(c, false, null) : local(c, v2, remoteLight);
             JSONObject saved = api.post(keysOnly ? AccountCenter.APP_SECRETS : path, body);
-            SharedPreferences.Editor e = p.edit().putString(SYNCED_AT, saved.optString("updatedAt", "")).putBoolean(SYNCED_V2, v2).putBoolean(DIRTY, false);
-            if (v2) e.putBoolean(LIGHT_DIRTY, false);
+            SharedPreferences.Editor e = p.edit().putString(SYNCED_AT, saved.optString("updatedAt", "")).putBoolean(SYNCED_V2, v2);
+            // A change saved while this upload was in flight stays dirty, so the sync it started sends it.
+            if (sent(keysSent, p.getInt(KEYS_REV, 0))) e.putBoolean(DIRTY, false);
+            if (v2 && sent(lightSent, p.getInt(LIGHT_REV, 0))) e.putBoolean(LIGHT_DIRTY, false);
             e.apply();
         }
     }
