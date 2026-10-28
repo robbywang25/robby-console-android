@@ -47,6 +47,15 @@ public final class MiioLightTest {
         byte[] token = hex(TOKEN), p = MiioLight.packet(token, 7, 8, "{\"id\":3,\"result\":[\"ok\"]}\u0000");
         assertEquals("{\"id\":3,\"result\":[\"ok\"]}", MiioLight.open(token, p, p.length));
     }
+    @Test public void onlyTheReplyToThisRequestIsAccepted() {
+        byte[] token = hex(TOKEN), mine = MiioLight.packet(token, 7, 8, "{\"id\":42,\"result\":[]}"), older = MiioLight.packet(token, 7, 8, "{\"id\":41,\"result\":{\"model\":\"x\"}}");
+        assertEquals("{\"id\":42,\"result\":[]}", MiioLight.reply(token, mine, 42));
+        assertNull("a late reply to the previous request", MiioLight.reply(token, older, 42));
+        assertNull("a late second hello", MiioLight.reply(token, hex("21310020000000002276f2f2000004d2" + rep("ff", 16)), 42));
+        assertNull("sealed with another token", MiioLight.reply(MiioLight.token("ffeeddccbbaa99887766554433221100"), mine, 42));
+        assertTrue(MiioLight.isHelloReply(hex("21310020000000002276f2f2000004d2" + rep("ff", 16))));
+        assertFalse("a command reply is not a hello", MiioLight.isHelloReply(mine));
+    }
     @Test public void layoutFollowsTheModelsSpec() {
         MiioLight.Layout lamp22 = MiioLight.layout("yeelink.light.lamp22");
         assertEquals(2, lamp22.brightness); assertEquals(3, lamp22.ct); assertEquals(2700, lamp22.minCt); assertEquals(6500, lamp22.maxCt);

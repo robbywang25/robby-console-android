@@ -113,6 +113,13 @@ final class MiioLight {
         try { String s = new String(crypt(Cipher.DECRYPT_MODE, token, body), StandardCharsets.UTF_8); int end = s.lastIndexOf('}'); return end < 0 ? s : s.substring(0, end + 1); }
         catch (IllegalStateException e) { return null; }
     }
+    /** A hello reply is exactly a 32-byte header; a command reply always carries a body. */
+    static boolean isHelloReply(byte[] p) { return p.length == HEADER && readHello(p, p.length) != null; }
+    /** The JSON of a reply to request {@code id}, or null for a packet that is not one (another request's, a hello, another token). */
+    static String reply(byte[] token, byte[] p, int id) {
+        String json = open(token, p, p.length); if (json == null) return null;
+        try { return new JSONObject(json).optInt("id", -1) == id ? json : null; } catch (JSONException e) { return null; }
+    }
     static String request(int id, String method, JSONArray params) {
         try { return new JSONObject().put("id", id).put("method", method).put("params", params).toString(); } catch (JSONException e) { throw new IllegalStateException(e); }
     }
@@ -168,27 +175,33 @@ final class MiioLight {
             catch (IOException e) { throw new LightException("无法在这台手机上打开局域网连接。"); }
         }
         long deviceId() { return deviceId; }
-        private byte[] exchange(byte[] out, String silent) throws LightException {
+        /**
+         * Sends {@code out} and waits for the reply {@code match} accepts. A late answer to an earlier try or request
+         * (a second hello, an old command's reply) can arrive on the same socket; it is skipped until the deadline.
+         */
+        private byte[] exchange(byte[] out, String silent, java.util.function.Predicate<byte[]> match) throws LightException {
             byte[] in = new byte[4096];
             for (int t = 0; t < TRIES; t++) {
                 try {
-                    socket.send(new DatagramPacket(out, out.length, address, PORT)); DatagramPacket r = new DatagramPacket(in, in.length); socket.receive(r);
-                    if (r.getAddress().equals(address)) return Arrays.copyOf(in, r.getLength());
+                    socket.send(new DatagramPacket(out, out.length, address, PORT)); long deadline = System.currentTimeMillis() + TIMEOUT_MS;
+                    for (long left = TIMEOUT_MS; left > 0; left = deadline - System.currentTimeMillis()) {
+                        socket.setSoTimeout((int) left); DatagramPacket r = new DatagramPacket(in, in.length); socket.receive(r);
+                        byte[] got = Arrays.copyOf(in, r.getLength()); if (r.getAddress().equals(address) && match.test(got)) return got;
+                    }
                 } catch (SocketTimeoutException e) { /* one more try */ } catch (IOException e) { throw new LightException("这台手机现在连不上局域网：" + e.getMessage()); }
             }
             throw new LightException(silent);
         }
         private void greet() throws LightException {
-            byte[] r = exchange(hello(), "灯没有回应。确认手机和灯连着同一个 Wi-Fi、地址没有变，并且灯通着电。"); Hello h = readHello(r, r.length); if (h == null) throw new LightException("这个地址回复的不是米家设备。");
+            byte[] r = exchange(hello(), "灯没有回应。确认手机和灯连着同一个 Wi-Fi、地址没有变，并且灯通着电。", MiioLight::isHelloReply); Hello h = readHello(r, r.length);
             deviceId = h.deviceId; stamp = h.stamp; helloAt = System.currentTimeMillis();
         }
         Object call(String method, JSONArray params) throws LightException {
             if (helloAt == 0) greet();
             int id = nextId++; long now = stamp + (System.currentTimeMillis() - helloAt) / 1000;
             // A lamp drops packets sealed with another token without a word, so silence after a good hello points at the token.
-            byte[] r = exchange(packet(token, deviceId, now, request(id, method, params)), "灯在线，但没有理会这条指令：多半是 token 不对，请在「修改设置」里核对 32 位 token。"); String json = open(token, r, r.length);
-            if (json == null) throw new LightException("Token 不对：灯的回复解不开。请核对 32 位 token。");
-            return result(json, id);
+            byte[] r = exchange(packet(token, deviceId, now, request(id, method, params)), "灯在线，但没有理会这条指令：多半是 token 不对，请在「修改设置」里核对 32 位 token。", p -> reply(token, p, id) != null);
+            return result(reply(token, r, id), id);
         }
         @Override public void close() { socket.close(); }
     }
