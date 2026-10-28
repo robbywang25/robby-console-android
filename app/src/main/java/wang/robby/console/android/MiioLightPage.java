@@ -134,8 +134,10 @@ final class MiioLightPage {
             String a = address.getText().toString().trim(), k = token.getText().toString().trim();
             if (!MiioLight.validAddress(a)) { address.setError("填家里局域网的 IPv4 地址，例如 192.168.1.15"); return; }
             if (!(has && k.isEmpty()) && !MiioLight.validToken(k)) { token.setError("token 是 32 位十六进制字符"); return; }
+            String n = name.getText().toString().trim();
+            if (n.codePointCount(0, n.length()) > AppSecretsSync.NAME_MAX) { name.setError("名称最多 " + AppSecretsSync.NAME_MAX + " 个字"); return; }
             if (fixture()) { toast(ctx, "预览版不保存设置"); d.dismiss(); return; }
-            MiioLight.configure(ctx, a, name.getText().toString(), k); AppSecretsSync.changed(ctx); d.dismiss(); settingsChanged(); sync(ctx, 0);
+            MiioLight.configure(ctx, a, n, k); AppSecretsSync.changed(ctx); d.dismiss(); settingsChanged(); sync(ctx, 0);
         });
     }
     private static EditText field(Context ctx, ConsoleTheme t, LinearLayout box, String hint, String value, int type) {

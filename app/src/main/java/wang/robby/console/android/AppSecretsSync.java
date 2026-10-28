@@ -21,10 +21,15 @@ import wang.robby.console.android.auth.AuthSession;
 final class AppSecretsSync {
     private AppSecretsSync() {}
     static final String SYNCED_AT = "syncedAt", DIRTY = "syncDirty", STATE = "syncState", LIGHT_STATE = "syncLightState";
+    /**
+     * Whether {@link #SYNCED_AT} was taken from a version 2 read. A stamp recorded by 0.44.0 or against an older gateway
+     * came from a view without the lamp, so the same stamp on version 2 may still hide a lamp this phone never applied.
+     */
+    static final String SYNCED_V2 = "syncedV2";
     static final String[] FIELDS = {"deepseekKey", "asrKey", "asrUrl", "asrModel", "model"};
     static final String LIGHT = "mijiaLight";
     /** The lamp is only read and written on version 2; a gateway older than it answers 404 there. */
-    static final String V2 = AccountCenter.APP_SECRETS + "?version=2";
+    static final String V2 = AccountCenter.APP_SECRETS_V2;
     /**
      * How old the last sync may be before one is asked for again: a transcription round, opening God while recording, and
      * opening the 心力球 page. A change saved here, and the settings row, sync at once.
@@ -67,7 +72,14 @@ final class AppSecretsSync {
         if (!withLight) return doc;
         if (!MiioLight.configured(c)) return doc.put(LIGHT, JSONObject.NULL);
         String token = MiioLight.tokenHex(c);
-        return doc.put(LIGHT, token == null ? remoteLight == null ? JSONObject.NULL : remoteLight : light(MiioLight.name(c), MiioLight.address(c), token));
+        return doc.put(LIGHT, token == null ? remoteLight == null ? JSONObject.NULL : remoteLight : light(syncName(MiioLight.name(c)), MiioLight.address(c), token));
+    }
+    static final int NAME_MAX = 40;
+    /** The name as the account accepts it: no control characters, at most 40 characters (0.44.0 had no limit), never blank. */
+    static String syncName(String name) {
+        String s = name == null ? "" : name.replaceAll("\\p{Cc}", "").trim();
+        if (s.codePointCount(0, s.length()) > NAME_MAX) s = s.substring(0, s.offsetByCodePoints(0, NAME_MAX)).trim();
+        return s.isEmpty() ? "米家灯" : s;
     }
     static JSONObject light(String name, String address, String token) throws JSONException { return new JSONObject().put("name", name).put("address", address).put("token", token); }
     static boolean hasAny(JSONObject doc) { for (String f : FIELDS) if (!doc.isNull(f)) return true; return doc.has(LIGHT) && !doc.isNull(LIGHT); }
@@ -104,6 +116,8 @@ final class AppSecretsSync {
 
     /** A key or setting saved on this phone: uploaded on the next sync, which the caller starts. */
     static void changed(Context c) { MindBall.prefs(c).edit().putBoolean(DIRTY, true).apply(); }
+    /** A change saved here that has not reached the account yet, such as a lamp removed while offline. */
+    static boolean pending(Context c) { return MindBall.prefs(c).getBoolean(DIRTY, false); }
 
     /** "已同步到账号", "仅本机：…", "待同步", or a failure, for the settings card. */
     static String state(Context c) { return MindBall.prefs(c).getString(STATE, ""); }
@@ -152,10 +166,11 @@ final class AppSecretsSync {
         JSONObject local = local(c, v2, remoteLight);
         // An older gateway neither keeps nor returns the lamp: the keys sync as before and the lamp waits on this phone.
         boolean knows = !v2 || secrets != null && secrets.has(LIGHT), localLight = v2 && !local.isNull(LIGHT);
-        Step step = decide(p.getBoolean(DIRTY, false), hasAny(local), p.getString(SYNCED_AT, null), remote.isNull("updatedAt") ? null : remote.optString("updatedAt", null), remoteHas, knows, localLight);
+        String syncedAt = v2 && !p.getBoolean(SYNCED_V2, false) ? null : p.getString(SYNCED_AT, null);
+        Step step = decide(p.getBoolean(DIRTY, false), hasAny(local), syncedAt, remote.isNull("updatedAt") ? null : remote.optString("updatedAt", null), remoteHas, knows, localLight);
         if (step == Step.APPLY || step == Step.MERGE) {
             apply(c, secrets);
-            p.edit().putString(SYNCED_AT, remote.getString("updatedAt")).apply();
+            p.edit().putString(SYNCED_AT, remote.getString("updatedAt")).putBoolean(SYNCED_V2, v2).apply();
             MindBall.notifyChanged();
         }
         if (step == Step.UPLOAD || step == Step.MERGE) {
@@ -164,7 +179,7 @@ final class AppSecretsSync {
             boolean keysOnly = v2 && !knows && !localLight;
             JSONObject body = step == Step.MERGE ? local(c, true, remoteLight) : keysOnly ? local(c, false, null) : local;
             JSONObject saved = api.post(keysOnly ? AccountCenter.APP_SECRETS : path, body);
-            p.edit().putString(SYNCED_AT, saved.optString("updatedAt", "")).putBoolean(DIRTY, false).apply();
+            p.edit().putString(SYNCED_AT, saved.optString("updatedAt", "")).putBoolean(SYNCED_V2, v2).putBoolean(DIRTY, false).apply();
         }
     }
     /** Milliseconds to wait before the one retry: only a busy gateway (429) is retried, a few seconds later. -1: give up. */

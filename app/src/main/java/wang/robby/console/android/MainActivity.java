@@ -179,9 +179,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         askSyncedNotify();
         // The microphone may only start while God is in front: opening the app resumes 心力球 after a reboot or update.
         if(!PreviewMode.isBuild()&&MindBall.enabled(this))MindBall.start(this);
-        // Keys and the lamp saved on another phone: asked at most every 10 minutes and only while recording or with a lamp
-        // set up here; opening 心力球 or 米家灯光 asks at once.
-        if(!PreviewMode.isBuild()&&(MindBall.enabled(this)||MiioLight.configured(this)))MindBall.syncAsync(this,AppSecretsSync.RESUME_AGE);
+        // Keys and the lamp saved on another phone: asked at most every 10 minutes and only while recording, with a lamp set
+        // up here, or with a change still unsent (a lamp removed offline); opening 心力球 or 米家灯光 asks at once.
+        if(!PreviewMode.isBuild()&&(MindBall.enabled(this)||MiioLight.configured(this)||AppSecretsSync.pending(this)))MindBall.syncAsync(this,AppSecretsSync.RESUME_AGE);
         MindBallPage.refresh();
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
         // A change waiting for a session that may now write (after signing in again) goes at once.

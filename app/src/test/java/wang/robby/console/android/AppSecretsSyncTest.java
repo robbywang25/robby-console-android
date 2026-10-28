@@ -59,6 +59,22 @@ public final class AppSecretsSyncTest {
         try { AppSecretsSync.checked(new JSONObject(keys.toString()).put(AppSecretsSync.LIGHT, "192.168.1.15")); fail("accepted a bare address"); } catch (JSONException expected) {}
         assertEquals("account/app-secrets?version=2", MobileApi.checkedPath(AppSecretsSync.V2));
     }
+    @Test public void theVersionedPathIsTheOneWriteWithAQuery() {
+        assertTrue(MobileApi.writable(AppSecretsSync.V2)); assertTrue(MobileApi.writable(AccountCenter.APP_SECRETS));
+        assertFalse(MobileApi.writable(AccountCenter.APP_SECRETS + "?version=3")); assertFalse(MobileApi.writable(AccountCenter.PREFERENCES + "?version=2"));
+    }
+    @Test public void aStampFromAViewWithoutTheLampDoesNotHideIt() {
+        // 0.44.0 recorded AT from the five-key view; on version 2 the phone compares against nothing, so the lamp is applied.
+        assertEquals(Step.APPLY, AppSecretsSync.decide(false, true, null, AT, true, true, false));
+    }
+    @Test public void namesAreShapedTheWayTheAccountAcceptsThem() {
+        assertEquals("台灯", AppSecretsSync.syncName(" 台灯 "));
+        String longName = new String(new char[50]).replace('\0', '灯');
+        for (String n : new String[] {longName, "😀" + longName}) { String cut = AppSecretsSync.syncName(n); assertEquals("0.44.0 had no limit", AppSecretsSync.NAME_MAX, cut.codePointCount(0, cut.length())); }
+        assertTrue("a surrogate pair is never split", AppSecretsSync.syncName("😀" + longName).startsWith("😀"));
+        assertEquals("书房灯", AppSecretsSync.syncName("书房\u0007灯"));
+        assertEquals("米家灯", AppSecretsSync.syncName("\t")); assertEquals("米家灯", AppSecretsSync.syncName(null));
+    }
     @Test public void aDocumentWithOnlyDefaultsHasNothingToUpload() throws Exception {
         JSONObject empty = new JSONObject();
         for (String f : AppSecretsSync.FIELDS) empty.put(f, JSONObject.NULL);

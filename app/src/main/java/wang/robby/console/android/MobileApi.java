@@ -86,9 +86,11 @@ public final class MobileApi {
     }
     public JSONObject post(String path,JSONObject body) throws Exception {
         checkedPath(path);
-        if(!path.matches("travel-ledger/(entry-writes|people-writes)/(prepare|commit|resolve)")&&!AccountCenter.writeRoute(path))throw new IllegalArgumentException("写入接口未登记");
+        if(!writable(path))throw new IllegalArgumentException("写入接口未登记");
         return request("POST",path,body,auth.accessToken());
     }
+    /** Writes go only to registered routes; the lamp's versioned app-secrets path is the one write with a query. */
+    static boolean writable(String path){return path.matches("travel-ledger/(entry-writes|people-writes)/(prepare|commit|resolve)")||AccountCenter.writeRoute(path)||AccountCenter.APP_SECRETS_V2.equals(path);}
     private JSONObject request(String method,String path,JSONObject body,String accessToken) throws Exception {
         checkedPath(path);
         URL url = new URL("https://god.robby.wang/api/mobile/v1/" + path);
