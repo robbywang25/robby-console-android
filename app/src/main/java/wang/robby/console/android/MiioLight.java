@@ -168,7 +168,7 @@ final class MiioLight {
             catch (IOException e) { throw new LightException("无法在这台手机上打开局域网连接。"); }
         }
         long deviceId() { return deviceId; }
-        private byte[] exchange(byte[] out) throws LightException {
+        private byte[] exchange(byte[] out, String silent) throws LightException {
             byte[] in = new byte[4096];
             for (int t = 0; t < TRIES; t++) {
                 try {
@@ -176,16 +176,17 @@ final class MiioLight {
                     if (r.getAddress().equals(address)) return Arrays.copyOf(in, r.getLength());
                 } catch (SocketTimeoutException e) { /* one more try */ } catch (IOException e) { throw new LightException("这台手机现在连不上局域网：" + e.getMessage()); }
             }
-            throw new LightException("灯没有回应。确认手机和灯连着同一个 Wi-Fi、地址没有变，并且灯通着电。");
+            throw new LightException(silent);
         }
         private void greet() throws LightException {
-            byte[] r = exchange(hello()); Hello h = readHello(r, r.length); if (h == null) throw new LightException("这个地址回复的不是米家设备。");
+            byte[] r = exchange(hello(), "灯没有回应。确认手机和灯连着同一个 Wi-Fi、地址没有变，并且灯通着电。"); Hello h = readHello(r, r.length); if (h == null) throw new LightException("这个地址回复的不是米家设备。");
             deviceId = h.deviceId; stamp = h.stamp; helloAt = System.currentTimeMillis();
         }
         Object call(String method, JSONArray params) throws LightException {
             if (helloAt == 0) greet();
             int id = nextId++; long now = stamp + (System.currentTimeMillis() - helloAt) / 1000;
-            byte[] r = exchange(packet(token, deviceId, now, request(id, method, params))); String json = open(token, r, r.length);
+            // A lamp drops packets sealed with another token without a word, so silence after a good hello points at the token.
+            byte[] r = exchange(packet(token, deviceId, now, request(id, method, params)), "灯在线，但没有理会这条指令：多半是 token 不对，请在「修改设置」里核对 32 位 token。"); String json = open(token, r, r.length);
             if (json == null) throw new LightException("Token 不对：灯的回复解不开。请核对 32 位 token。");
             return result(json, id);
         }

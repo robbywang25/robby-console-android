@@ -90,17 +90,20 @@ final class MiioLightPage {
         if (!configured(ctx)) return;
         LinearLayout c = t.card(parent); TextView h = t.text("连接", 15, true); h.setAccessibilityHeading(true); c.addView(h);
         String model = reading != null && reading.model != null ? reading.model : fixture() ? "yeelink.light.lamp22" : MiioLight.model(ctx);
-        row(t, c, "地址", fixture() ? "192.168.1.x · 局域网" : MiioLight.address(ctx));
-        row(t, c, "Token", "已加密保存");
-        row(t, c, "型号", model == null ? "连接后读取" : model + (reading != null && reading.firmware != null ? " · 固件 " + reading.firmware : ""));
+        // One label column, as wide as its widest label at the person's font size, so the values line up.
+        TextView probe = t.text("", 14, false); int w = 0; for (String s : new String[]{"地址", "Token", "型号"}) w = Math.max(w, (int) Math.ceil(probe.getPaint().measureText(s)));
+        int column = w + t.dp(12);
+        row(t, c, column, "地址", fixture() ? "192.168.1.x · 局域网" : MiioLight.address(ctx));
+        row(t, c, column, "Token", "已加密保存");
+        row(t, c, column, "型号", model == null ? "连接后读取" : model + (reading != null && reading.firmware != null ? " · 固件 " + reading.firmware : ""));
         LinearLayout buttons = new LinearLayout(ctx); buttons.setPadding(0, t.dp(12), 0, 0);
         LinearLayout.LayoutParams half = new LinearLayout.LayoutParams(0, -2, 1); half.rightMargin = t.dp(8);
         buttons.addView(t.button("修改设置", () -> setup(ctx, t)), half);
-        buttons.addView(t.button("移除这盏灯", () -> remove(ctx, t)), new LinearLayout.LayoutParams(0, -2, 1)); c.addView(buttons);
+        buttons.addView(t.button("移除", () -> remove(ctx, t)), new LinearLayout.LayoutParams(0, -2, 1)); c.addView(buttons);
     }
-    private static void row(ConsoleTheme t, LinearLayout card, String label, String value) {
+    private static void row(ConsoleTheme t, LinearLayout card, int column, String label, String value) {
         LinearLayout r = new LinearLayout(card.getContext()); r.setPadding(0, t.dp(8), 0, 0);
-        r.addView(t.text(label, 14, false), new LinearLayout.LayoutParams(t.dp(64), -2));
+        r.addView(t.text(label, 14, false), new LinearLayout.LayoutParams(column, -2));
         TextView v = t.text(value, 14, false); v.setTextColor(t.ink); r.addView(v, new LinearLayout.LayoutParams(0, -2, 1)); card.addView(r);
     }
 
