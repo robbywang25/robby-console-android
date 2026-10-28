@@ -841,3 +841,16 @@ PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明
 网关改动在 site-admin 的 `claude/app-secrets-mijia-light`（`services/mobile-account.js`，基于线上运行的 `c8a6d40`），`account/server.py`、nginx 和 unit 都不变；`services/mobile-account.test.js` 新增 2 项，19 项全部通过。
 
 未验证：网关还没部署，两台手机之间真正互相同步灯还没跑过；Find 没有安装。
+
+## v0.46.0：看板 Token 卡片的十格余量条（2026-10-28）
+
+本人要求给看板的 Token 额度加可视化进度条，在四个方案（行下细条、行内短胶囊、十格分段、整行底色）里选了十格分段。
+
+- `TokensModel.segments` 把余量换成亮格数：0 或未知不亮，>0 至少 1 格，100% 才 10 格，其余四舍五入并限制在 1～9。
+- `FeatureRenderer` 的看板 `tokens` 分支在名称行后，为每个有读数的窗口加一排 10 格；颜色沿用 `TokensModel.level`，读数不新时用 `faint`。Claude 两排的标签宽度取两者实测宽度的较大值，保证大字体下格子对齐。
+- 读取占位（`widgetLoading`）每行下面加一排未亮的格子，读到后卡片高度不跳。
+- 详情页、桌面小组件不变。
+
+验证：`check.sh` 通过（311 项 JVM 测试，0 失败；新增 `meterCellsNeverHideWhatIsLeft`；lint debug/release 0 错误）。Find（PMA110）预览版检查了浅色、深色、1.6 倍字体下的看板：各档颜色、灰色「上次」读数、Claude 两排对齐、「待授权」账号不画条都正常；第一次构建 Claude 的「5 小时」标签被截断，改为按实测宽度后修复。正式包（versionCode 73，正式证书）覆盖安装到 Find，安装文件 SHA256 `30f5c51f…4d7792` 与构建产物一致，启动后没有崩溃日志。
+
+未验证：读取占位那一帧（预览版读数是即时的，没抓到）；登录后的真实看板（`FLAG_SECURE` 截不了图，请本人看）。

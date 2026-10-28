@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.46.0", "2026-10-28", "看板额度多了十格余量条",
+            "看板 Token 额度卡片里，每个账号名字下面多了一排十格余量条，一格是 10%。",
+            "余量 50% 以上是绿色，20%～50% 琥珀色，不到 20% 红色；读数不是最新时显示灰色。",
+            "Claude 的 5 小时和每周额度各占一排，分开看。",
+            "只要还剩一点额度就至少亮一格，满额才会全亮。"),
         new Entry("0.45.0", "2026-10-28", "米家灯在你的每台手机上都能用",
             "在一台手机上设置好米家灯，登录同一账号的其他安卓手机打开「米家灯光」就能直接用。",
             "在一台手机上修改或移除这盏灯，其他手机也会跟着变。",
