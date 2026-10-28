@@ -112,6 +112,10 @@ public final class FeatureRenderer {
             View bar = new View(context); bar.setBackground(u.theme.shape(u.theme.soft, 6)); r.addView(bar, new LinearLayout.LayoutParams(u.dp(64), u.dp(12)));
             if (u.theme.effects) { android.animation.ObjectAnimator pulse = android.animation.ObjectAnimator.ofFloat(bar, View.ALPHA, 1f, .35f); pulse.setDuration(700); pulse.setRepeatMode(android.animation.ValueAnimator.REVERSE); pulse.setRepeatCount(android.animation.ValueAnimator.INFINITE); pulse.start(); }
             shell.addView(r);
+            // An unlit meter where the figures' cells will be, so the card does not grow when they arrive.
+            LinearLayout meter = new LinearLayout(context); meter.setPadding(u.dp(15), u.dp(4), 0, 0);
+            for (int c = 0; c < 10; c++) { View cell = new View(context); cell.setBackground(u.theme.shape(u.theme.line, 2)); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, u.dp(6), 1); if (c > 0) lp.leftMargin = u.dp(2); meter.addView(cell, lp); }
+            shell.addView(meter);
         }
         shell.setContentDescription("Token 额度，正在读取");
     }
@@ -182,6 +186,15 @@ public final class FeatureRenderer {
                         if (!prefix.isEmpty()) { TextView l = u.text(prefix, 11, false); l.setPadding(u.dp(10), 0, u.dp(3), 0); r.addView(l); }
                         TextView val = u.text(whole.format(pc) + "%", 14, true); if (prefix.isEmpty()) val.setPadding(u.dp(10), 0, 0, 0); r.addView(val); }
                     shell.addView(r);
+                    // A ten-cell meter per window under the name, one cell per 10%; Claude labels its 5-hour and weekly rows.
+                    // Labels share the widest one's width so both rows' cells line up at any font size.
+                    float labelW = 0; if (periods.size() > 1) for (TokensModel.Period pd : periods) if (pd.label != null) labelW = Math.max(labelW, u.text(pd.label, 11, false).getPaint().measureText(pd.label));
+                    for (TokensModel.Period pd : periods) { Double pc = TokensModel.remaining(pd.window); if (pc == null) continue;
+                        int lit = TokensModel.segments(pc), lv = fresh ? TokensModel.level(pc) : 0; int on = lv == 1 ? u.theme.success : lv == 2 ? u.theme.warning : lv == 3 ? u.theme.danger : u.theme.faint;
+                        LinearLayout meter = new LinearLayout(context); meter.setGravity(Gravity.CENTER_VERTICAL); meter.setPadding(u.dp(15), u.dp(4), 0, 0); meter.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
+                        if (periods.size() > 1 && pd.label != null) { TextView l = u.text(pd.label, 11, false); l.setTextColor(u.theme.faint); l.setSingleLine(true); meter.addView(l, new LinearLayout.LayoutParams((int) Math.ceil(labelW) + u.dp(6), -2)); }
+                        for (int c = 0; c < 10; c++) { View cell = new View(context); cell.setBackground(u.theme.shape(c < lit ? on : u.theme.line, 2)); LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, u.dp(6), 1); if (c > 0) lp.leftMargin = u.dp(2); meter.addView(cell, lp); }
+                        shell.addView(meter); }
                     // The account's email, then Codex Points or Claude's resets, and reset cards, on a small second line aligned with the account name.
                     String extras = TokensModel.boardSubline(TokensModel.boardEmail(a), TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault()));
                     if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }

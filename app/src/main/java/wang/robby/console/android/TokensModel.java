@@ -135,6 +135,12 @@ final class TokensModel {
         if (remainingPercent == null || remainingPercent.isNaN()) return 0;
         return remainingPercent >= 50 ? 1 : remainingPercent >= 20 ? 2 : 3;
     }
+    /** Lit cells of the 看板's ten-cell meter, one per 10%: any balance left lights at least one, only a full one lights all ten. */
+    static int segments(Double remainingPercent) {
+        if (remainingPercent == null || remainingPercent.isNaN() || remainingPercent <= 0) return 0;
+        if (remainingPercent >= 100) return 10;
+        return Math.max(1, Math.min(9, (int) Math.round(remainingPercent / 10)));
+    }
     /**
      * "即将重置": a fresh reading, the window resets within 24 h, at least 20% is left, and more is left than the
      * remaining share of the period, so quota is about to go unused. Stale readings never raise it.

@@ -19,6 +19,14 @@ public final class TokensModelTest {
         assertEquals(2, TokensModel.level(35.0));
         assertEquals(3, TokensModel.level(5.0));
     }
+    @Test public void meterCellsNeverHideWhatIsLeft() {
+        assertEquals(0, TokensModel.segments(null));
+        assertEquals(0, TokensModel.segments(0.0));
+        assertEquals(1, TokensModel.segments(2.0));
+        assertEquals(3, TokensModel.segments(34.0));
+        assertEquals(9, TokensModel.segments(99.6));
+        assertEquals(10, TokensModel.segments(100.0));
+    }
     @Test public void countdownIsHumanAndNeverNegative() {
         assertEquals("30 分钟后重置", TokensModel.countdown(NOW + 30 * 60_000L, NOW));
         assertEquals("3 小时 20 分后重置", TokensModel.countdown(NOW + 200 * 60_000L, NOW));
