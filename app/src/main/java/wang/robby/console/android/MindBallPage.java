@@ -295,7 +295,7 @@ final class MindBallPage {
         hide.setTextColor(t.faint); hide.setPadding(0, t.dp(2), 0, t.dp(6)); c.addView(hide);
         if (preview) return;
         // The row says where things stand in a word or two; the line under it says why.
-        String sync = MindBallSync.state(ctx); int cut = sync.indexOf('：');
+        String sync = AppSecretsSync.state(ctx); int cut = sync.indexOf('：');
         setting(ctx, t, c, "多台手机同步", sync.isEmpty() ? "检查中…" : cut < 0 ? sync : sync.substring(0, cut), () -> MindBall.syncAsync(ctx));
         TextView note = t.text(cut >= 0 ? sync.substring(cut + 1) : "两个 Key 和上面的服务设置会加密保存到你的 God 账号，登录同一账号的其他安卓手机会自动用上。", 12, false);
         note.setTextColor(t.faint); note.setPadding(0, t.dp(2), 0, t.dp(6)); c.addView(note);
@@ -334,18 +334,18 @@ final class MindBallPage {
         LinearLayout b = box(ctx, t); TextView note = t.text(hint, 12, false); note.setPadding(t.dp(2), t.dp(4), 0, 0); b.addView(note);
         EditText key = field(ctx, t, b, MindBall.hasSecret(ctx, name) ? "新的 Key（留空并保存会删除已填写的 Key）" : "API Key", "", true);
         show(t, new AlertDialog.Builder(ctx).setTitle(title).setView(b).setNegativeButton("取消", (d, w) -> key.setText(""))
-            .setPositiveButton("保存", (d, w) -> { MindBall.setSecret(ctx, name, key.getText().toString()); key.setText(""); MindBallSync.changed(ctx); MindBall.processAsync(ctx, false); refresh(); }));
+            .setPositiveButton("保存", (d, w) -> { MindBall.setSecret(ctx, name, key.getText().toString()); key.setText(""); AppSecretsSync.changed(ctx); MindBall.processAsync(ctx, false); refresh(); }));
     }
     private static void serviceDialog(Context ctx, ConsoleTheme t) {
         LinearLayout b = box(ctx, t);
         EditText model = field(ctx, t, b, "DeepSeek 整理模型（deepseek-flash 或 deepseek-v4-pro）", MindBall.model(ctx), false);
         EditText url = field(ctx, t, b, "转写服务地址（OpenAI 兼容，到 /v1 为止）", MindBall.asrUrl(ctx), false);
         EditText asr = field(ctx, t, b, "转写模型", MindBall.asrModel(ctx), false);
-        show(t, new AlertDialog.Builder(ctx).setTitle("整理与转写").setView(b).setNegativeButton("取消", null).setNeutralButton("恢复默认", (d, w) -> { MindBall.configure(ctx, null, null, null); MindBallSync.changed(ctx); MindBall.syncAsync(ctx); refresh(); })
+        show(t, new AlertDialog.Builder(ctx).setTitle("整理与转写").setView(b).setNegativeButton("取消", null).setNeutralButton("恢复默认", (d, w) -> { MindBall.configure(ctx, null, null, null); AppSecretsSync.changed(ctx); MindBall.syncAsync(ctx); refresh(); })
             .setPositiveButton("保存", (d, w) -> {
                 String u = url.getText().toString().trim();
                 if (!u.isEmpty() && !u.startsWith("https://")) { show(t, new AlertDialog.Builder(ctx).setTitle("地址需要以 https:// 开头").setMessage("录音只通过加密连接发送。").setPositiveButton("知道了", null)); return; }
-                MindBall.configure(ctx, u, asr.getText().toString(), model.getText().toString()); MindBallSync.changed(ctx); MindBall.syncAsync(ctx); refresh(); }));
+                MindBall.configure(ctx, u, asr.getText().toString(), model.getText().toString()); AppSecretsSync.changed(ctx); MindBall.syncAsync(ctx); refresh(); }));
     }
     private static void show(ConsoleTheme t, AlertDialog.Builder builder) { AlertDialog d = builder.create(); d.show(); t.dialog(d); }
 }

@@ -240,6 +240,8 @@ final class MiioLight {
     static void forget(Context c) { prefs(c).edit().clear().apply(); }
     /** The saved token as bytes, or null when there is none or this phone's Keystore can no longer open it. */
     static byte[] savedToken(Context c) { return token(unseal(prefs(c).getString("token", null))); }
+    /** The same as 32 lowercase hex digits, for the account's copy. */
+    static String tokenHex(Context c) { String t = unseal(prefs(c).getString("token", null)); return token(t) == null ? null : t; }
 
     private static SecretKey keystoreKey() throws Exception {
         KeyStore ks = KeyStore.getInstance(KEYSTORE); ks.load(null);

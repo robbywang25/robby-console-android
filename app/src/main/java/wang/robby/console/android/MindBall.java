@@ -283,11 +283,16 @@ final class MindBall {
     /** Brings the keys from the account (or sends this phone's), then redraws; on the worker, so it never races a transcription. */
     static void syncAsync(Context c) { syncAsync(c, 0); }
     /** The same, skipped when this phone has nothing to send and synced within {@code maxAge}. */
-    static void syncAsync(Context c, long maxAge) { Context app = c.getApplicationContext(); WORK.execute(() -> { if (MindBallSync.runIfDue(app, maxAge)) notifyChanged(); }); }
+    static void syncAsync(Context c, long maxAge) { syncAsync(c, maxAge, null); }
+    /** The same for the 米家 lamp's page too: {@code done} runs on the main thread afterwards, whether or not a sync ran. */
+    static void syncAsync(Context c, long maxAge, Runnable done) {
+        Context app = c.getApplicationContext();
+        WORK.execute(() -> { try { if (AppSecretsSync.runIfDue(app, maxAge)) notifyChanged(); } finally { if (done != null) main().post(done); } });
+    }
     private static void process(Context c, boolean force) {
         int round = epoch;
         // A key typed on another phone is used for this round already; the account is asked at most every half hour.
-        MindBallSync.runIfDue(c, MindBallSync.ROUND_AGE);
+        AppSecretsSync.runIfDue(c, AppSecretsSync.ROUND_AGE);
         purge(c);
         String error = ""; int dropped = 0;
         List<String> transcribed = new ArrayList<>(); List<File> refused = new ArrayList<>();
