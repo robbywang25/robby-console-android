@@ -30,6 +30,8 @@ final class MiioLightPage {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static WeakReference<LinearLayout> shown = new WeakReference<>(null);
     private static MiioLight.Reading reading; private static String error; private static boolean busy;
+    /** Bumped when the lamp's settings change, so an answer about the old address or token is dropped. */
+    private static int generation;
 
     private static boolean fixture() { return PreviewMode.isBuild() && !PreviewMode.realLight(); }
     private static boolean configured(Context ctx) { return fixture() || MiioLight.configured(ctx); }
@@ -79,9 +81,16 @@ final class MiioLightPage {
         SeekBar bar = new SeekBar(ctx); bar.setMin(min); bar.setMax(max); bar.setProgress(MiioLight.clamp(value, min, max)); bar.setEnabled(enabled);
         bar.setProgressTintList(ColorStateList.valueOf(t.accent)); bar.setThumbTintList(ColorStateList.valueOf(t.accent)); bar.setContentDescription(label);
         bar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override public void onProgressChanged(SeekBar b, int v, boolean user) { String now = v + unit; shownValue.setText(now); }
-            @Override public void onStartTrackingTouch(SeekBar b) {}
-            @Override public void onStopTrackingTouch(SeekBar b) { commit.accept(b.getProgress()); }
+            // A drag sends once on release; TalkBack's range actions and arrow keys never start a drag, so their
+            // changes are sent too, after a short pause so a run of key presses becomes one command.
+            final boolean[] dragging = {false}; final Runnable[] later = {null};
+            private void cancel() { if (later[0] != null) MAIN.removeCallbacks(later[0]); later[0] = null; }
+            @Override public void onProgressChanged(SeekBar b, int v, boolean user) {
+                String now = v + unit; shownValue.setText(now);
+                if (!user || dragging[0]) return; cancel(); later[0] = () -> { later[0] = null; commit.accept(v); }; MAIN.postDelayed(later[0], 500);
+            }
+            @Override public void onStartTrackingTouch(SeekBar b) { dragging[0] = true; cancel(); }
+            @Override public void onStopTrackingTouch(SeekBar b) { dragging[0] = false; commit.accept(b.getProgress()); }
         });
         card.addView(bar, new LinearLayout.LayoutParams(-1, t.dp(40)));
     }
@@ -120,7 +129,7 @@ final class MiioLightPage {
             if (!MiioLight.validAddress(a)) { address.setError("填家里局域网的 IPv4 地址，例如 192.168.1.15"); return; }
             if (!(has && k.isEmpty()) && !MiioLight.validToken(k)) { token.setError("token 是 32 位十六进制字符"); return; }
             if (fixture()) { toast(ctx, "预览版不保存设置"); d.dismiss(); return; }
-            MiioLight.configure(ctx, a, name.getText().toString(), k); reading = null; error = null; d.dismiss(); refresh();
+            MiioLight.configure(ctx, a, name.getText().toString(), k); d.dismiss(); settingsChanged();
         });
     }
     private static EditText field(Context ctx, ConsoleTheme t, LinearLayout box, String hint, String value, int type) {
@@ -129,9 +138,12 @@ final class MiioLightPage {
     }
     private static void remove(Context ctx, ConsoleTheme t) {
         AlertDialog d = new AlertDialog.Builder(ctx).setTitle("移除「" + name(ctx) + "」？").setMessage("只删除这台手机上保存的地址和 token，灯和米家里的设置不受影响。")
-            .setNegativeButton("取消", null).setPositiveButton("移除", (x, y) -> { if (!fixture()) MiioLight.forget(ctx); reading = null; error = null; refresh(); }).create();
+            .setNegativeButton("取消", null).setPositiveButton("移除", (x, y) -> { if (!fixture()) MiioLight.forget(ctx); settingsChanged(); }).create();
         d.show(); t.dialog(d);
     }
+
+    /** New settings: forget what the old ones read, let an answer still on its way be dropped, and read the lamp again. */
+    private static void settingsChanged() { generation++; busy = false; reading = null; error = null; refresh(); }
 
     /** Reads the lamp again; the pull-to-refresh and 重试 come here. {@code done} runs on the main thread afterwards. */
     static void load(Context ctx) { load(ctx, null); }
@@ -139,12 +151,12 @@ final class MiioLightPage {
         if (fixture() || !MiioLight.configured(ctx) || busy) { if (done != null) done.run(); return; }
         Context app = ctx.getApplicationContext(); String address = MiioLight.address(app); byte[] token = MiioLight.savedToken(app);
         if (token == null) { error = "这台手机读不出保存的 token，请在「修改设置」里重新填写。"; refresh(); if (done != null) done.run(); return; }
-        busy = true; refresh();
+        busy = true; int gen = generation; refresh();
         WORK.execute(() -> {
             MiioLight.Reading r = null; String e = null;
             try { r = MiioLight.read(address, token); MiioLight.remember(app, r.model); } catch (MiioLight.LightException x) { e = x.getMessage(); }
             MiioLight.Reading result = r; String failure = e;
-            MAIN.post(() -> { busy = false; error = failure; if (result != null) reading = result; refresh(); if (done != null) done.run(); });
+            MAIN.post(() -> { if (gen == generation) { busy = false; error = failure; if (result != null) reading = result; refresh(); } if (done != null) done.run(); });
         });
     }
     private static void set(Context ctx, int piid, Object value) {
@@ -155,12 +167,12 @@ final class MiioLightPage {
         }
         Context app = ctx.getApplicationContext(); String address = MiioLight.address(app); byte[] token = MiioLight.savedToken(app);
         if (token == null || busy) return;
-        busy = true; refresh();
+        busy = true; int gen = generation; refresh();
         WORK.execute(() -> {
             String e = null; MiioLight.Reading r = null;
             try { MiioLight.set(address, token, piid, value); r = MiioLight.read(address, token); } catch (MiioLight.LightException x) { e = x.getMessage(); }
             MiioLight.Reading result = r; String failure = e;
-            MAIN.post(() -> { busy = false; if (result != null) { reading = result; error = null; } else { error = failure; toast(ctx, failure); } refresh(); });
+            MAIN.post(() -> { if (gen != generation) return; busy = false; if (result != null) { reading = result; error = null; } else { error = failure; toast(ctx, failure); } refresh(); });
         });
     }
     private static void toast(Context ctx, String s) { Toast.makeText(ctx, s, Toast.LENGTH_SHORT).show(); }
