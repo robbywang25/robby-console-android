@@ -12,5 +12,7 @@ final class PreviewMode {
  static JSONObject mindBall(){throw new IllegalStateException();}
  static java.util.Map<String,JSONObject> mindBallWeek(){throw new IllegalStateException();}
  static boolean realUU(){return false;}
+ static boolean realLight(){return false;}
+ static MiioLight.Reading light(){throw new IllegalStateException();}
  static java.util.List<UURemote.Device> uuDevices(){throw new IllegalStateException();}
 }

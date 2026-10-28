@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.44.0", "2026-10-28", "在 God 里开关米家灯",
+            "「功能 → 工具」新增米家灯光：在家里的 Wi-Fi 下直接控制米家灯。",
+            "一键开灯、关灯，拖动滑杆调亮度和色温。",
+            "填一次灯的地址和 token 就能用，token 加密保存在这台手机上。",
+            "不经过小米云和 God 服务器，所以手机要和灯连着同一个 Wi-Fi。",
+            "灯没有回应或 token 不对时，God 会说明原因，下拉即可重试。"),
         new Entry("0.43.1", "2026-10-24", "Token 额度小组件不再留白",
             "Token 额度小组件拉高后，各行账号均匀铺满，底部不再空出一大块。",
             "调大字号时，拉高的小组件也能多排几行。",
