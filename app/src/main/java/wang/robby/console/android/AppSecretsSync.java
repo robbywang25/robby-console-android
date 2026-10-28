@@ -22,6 +22,11 @@ final class AppSecretsSync {
     private AppSecretsSync() {}
     static final String SYNCED_AT = "syncedAt", DIRTY = "syncDirty", STATE = "syncState", LIGHT_STATE = "syncLightState";
     /**
+     * An unsent change to the lamp, kept apart from {@link #DIRTY} (the keys): an upload sends only the part changed here
+     * and takes the account's copy of the other, so setting up a lamp never clears keys this phone has not downloaded.
+     */
+    static final String LIGHT_DIRTY = "syncLightDirty";
+    /**
      * Whether {@link #SYNCED_AT} was taken from a version 2 read. A stamp recorded by 0.44.0 or against an older gateway
      * came from a view without the lamp, so the same stamp on version 2 may still hide a lamp this phone never applied.
      */
@@ -42,7 +47,7 @@ final class AppSecretsSync {
     static boolean due(boolean dirty, long lastRun, long now, long maxAge) { return dirty || lastRun < 0 || now - lastRun >= maxAge; }
     /** {@link #run} unless this phone has nothing to send and synced within {@code maxAge}; true when it ran. */
     static boolean runIfDue(Context c, long maxAge) {
-        if (!due(MindBall.prefs(c).getBoolean(DIRTY, false), lastRun, SystemClock.elapsedRealtime(), maxAge)) return false;
+        if (!due(pending(c), lastRun, SystemClock.elapsedRealtime(), maxAge)) return false;
         run(c); return true;
     }
 
@@ -60,6 +65,11 @@ final class AppSecretsSync {
         return newer ? Step.APPLY : Step.NONE;
     }
 
+    /**
+     * Whether the account's copy is written here before anything is sent: always when applying, and before an upload
+     * when the account changed since this phone last synced, so the part not changed here is not sent back stale.
+     */
+    static boolean takeFirst(Step step, boolean newer) { return step == Step.APPLY || step == Step.MERGE || step == Step.UPLOAD && newer; }
     /**
      * This phone's document; a field never set (so the default applies) is null. With {@code withLight} it carries the
      * lamp too: null when none is set up here, and the account's copy ({@code remoteLight}, absent when it has none) when
@@ -116,8 +126,10 @@ final class AppSecretsSync {
 
     /** A key or setting saved on this phone: uploaded on the next sync, which the caller starts. */
     static void changed(Context c) { MindBall.prefs(c).edit().putBoolean(DIRTY, true).apply(); }
+    /** The lamp set up, changed or removed on this phone: uploaded on the next sync, which the caller starts. */
+    static void lightChanged(Context c) { MindBall.prefs(c).edit().putBoolean(LIGHT_DIRTY, true).apply(); }
     /** A change saved here that has not reached the account yet, such as a lamp removed while offline. */
-    static boolean pending(Context c) { return MindBall.prefs(c).getBoolean(DIRTY, false); }
+    static boolean pending(Context c) { SharedPreferences p = MindBall.prefs(c); return p.getBoolean(DIRTY, false) || p.getBoolean(LIGHT_DIRTY, false); }
 
     /** "已同步到账号", "仅本机：…", "待同步", or a failure, for the settings card. */
     static String state(Context c) { return MindBall.prefs(c).getString(STATE, ""); }
@@ -144,10 +156,10 @@ final class AppSecretsSync {
             if (!lightSynced) p.edit().putString(LIGHT_STATE, "仅本机：服务器还没有开通灯的同步").apply();
         } catch (MobileApi.ApiError e) {
             Log.w(MindBall.TAG, "sync_refused " + e.status);
-            state(p, p.getBoolean(DIRTY, false) ? "待同步：" + reason(e.status) : "同步失败：" + reason(e.status));
+            state(p, pending(c) ? "待同步：" + reason(e.status) : "同步失败：" + reason(e.status));
         } catch (Exception e) {
             Log.w(MindBall.TAG, "sync_failed");
-            state(p, p.getBoolean(DIRTY, false) ? "待同步：网络不可用，稍后自动重试" : "同步失败：网络不可用，稍后自动重试");
+            state(p, pending(c) ? "待同步：网络不可用，稍后自动重试" : "同步失败：网络不可用，稍后自动重试");
         }
     }
     /** Whether the last {@link #once} could carry the lamp; false while the gateway is older than version 2. */
@@ -167,19 +179,26 @@ final class AppSecretsSync {
         // An older gateway neither keeps nor returns the lamp: the keys sync as before and the lamp waits on this phone.
         boolean knows = !v2 || secrets != null && secrets.has(LIGHT), localLight = v2 && !local.isNull(LIGHT);
         String syncedAt = v2 && !p.getBoolean(SYNCED_V2, false) ? null : p.getString(SYNCED_AT, null);
-        Step step = decide(p.getBoolean(DIRTY, false), hasAny(local), syncedAt, remote.isNull("updatedAt") ? null : remote.optString("updatedAt", null), remoteHas, knows, localLight);
-        if (step == Step.APPLY || step == Step.MERGE) {
-            apply(c, secrets);
-            p.edit().putString(SYNCED_AT, remote.getString("updatedAt")).putBoolean(SYNCED_V2, v2).apply();
+        // A lamp change waits for version 2: against an older gateway only the keys count as changed.
+        boolean dirtyKeys = p.getBoolean(DIRTY, false), dirtyLight = v2 && p.getBoolean(LIGHT_DIRTY, false);
+        String remoteAt = remote.isNull("updatedAt") ? null : remote.optString("updatedAt", null);
+        Step step = decide(dirtyKeys || dirtyLight, hasAny(local), syncedAt, remoteAt, remoteHas, knows, localLight);
+        boolean newer = remoteHas && remoteAt != null && !remoteAt.equals(syncedAt);
+        // An upload sends only what changed here: the account's newer copy of the other part is taken first.
+        if (takeFirst(step, newer)) {
+            apply(c, secrets, !dirtyKeys, !dirtyLight);
+            p.edit().putString(SYNCED_AT, remoteAt).putBoolean(SYNCED_V2, v2).apply();
             MindBall.notifyChanged();
         }
         if (step == Step.UPLOAD || step == Step.MERGE) {
             // Until some phone has saved a lamp, a phone without one saves just the keys: a null here would read as
             // "removed" on the phone whose lamp has not been sent yet.
             boolean keysOnly = v2 && !knows && !localLight;
-            JSONObject body = step == Step.MERGE ? local(c, true, remoteLight) : keysOnly ? local(c, false, null) : local;
+            JSONObject body = keysOnly ? local(c, false, null) : local(c, v2, remoteLight);
             JSONObject saved = api.post(keysOnly ? AccountCenter.APP_SECRETS : path, body);
-            p.edit().putString(SYNCED_AT, saved.optString("updatedAt", "")).putBoolean(SYNCED_V2, v2).putBoolean(DIRTY, false).apply();
+            SharedPreferences.Editor e = p.edit().putString(SYNCED_AT, saved.optString("updatedAt", "")).putBoolean(SYNCED_V2, v2).putBoolean(DIRTY, false);
+            if (v2) e.putBoolean(LIGHT_DIRTY, false);
+            e.apply();
         }
     }
     /** Milliseconds to wait before the one retry: only a busy gateway (429) is retried, a few seconds later. -1: give up. */
@@ -188,9 +207,9 @@ final class AppSecretsSync {
         return switch (status) { case 401 -> "登录已失效，请重新登录"; case 403 -> "需要重新登录一次"; case 404 -> "服务器还没有开通同步"; case 429 -> "请求较多，稍后自动重试"; default -> status >= 500 ? "服务暂不可用" : "请求被拒绝（HTTP " + status + "）"; };
     }
     private static void state(SharedPreferences p, String s) { p.edit().putString(STATE, s).putString(LIGHT_STATE, s).apply(); }
-    /** Writes another phone's document here without marking it as a change of this phone. */
-    private static void apply(Context c, JSONObject doc) throws JSONException {
-        if (doc.has(LIGHT)) {
+    /** Writes another phone's document here without marking it as a change of this phone: the keys, the lamp, or both. */
+    private static void apply(Context c, JSONObject doc, boolean keys, boolean lamp) throws JSONException {
+        if (lamp && doc.has(LIGHT)) {
             boolean changed;
             if (doc.isNull(LIGHT)) { changed = MiioLight.configured(c); if (changed) MiioLight.forget(c); }
             else {
@@ -200,6 +219,7 @@ final class AppSecretsSync {
             }
             if (changed) MiioLightPage.syncedFromAccount();
         }
+        if (!keys) return;
         MindBall.setSecret(c, MindBall.KEY_DEEPSEEK, str(doc, "deepseekKey"));
         MindBall.setSecret(c, MindBall.KEY_ASR, str(doc, "asrKey"));
         SharedPreferences.Editor e = MindBall.prefs(c).edit();

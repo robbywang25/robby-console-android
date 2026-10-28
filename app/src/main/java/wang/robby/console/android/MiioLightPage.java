@@ -137,7 +137,7 @@ final class MiioLightPage {
             String n = name.getText().toString().trim();
             if (n.codePointCount(0, n.length()) > AppSecretsSync.NAME_MAX) { name.setError("名称最多 " + AppSecretsSync.NAME_MAX + " 个字"); return; }
             if (fixture()) { toast(ctx, "预览版不保存设置"); d.dismiss(); return; }
-            MiioLight.configure(ctx, a, n, k); AppSecretsSync.changed(ctx); d.dismiss(); settingsChanged(); sync(ctx, 0);
+            MiioLight.configure(ctx, a, n, k); AppSecretsSync.lightChanged(ctx); d.dismiss(); settingsChanged(); sync(ctx, 0);
         });
     }
     private static EditText field(Context ctx, ConsoleTheme t, LinearLayout box, String hint, String value, int type) {
@@ -146,7 +146,7 @@ final class MiioLightPage {
     }
     private static void remove(Context ctx, ConsoleTheme t) {
         AlertDialog d = new AlertDialog.Builder(ctx).setTitle("移除「" + name(ctx) + "」？").setMessage("删除保存的地址和 token，登录同一账号的其他手机也会一起移除。灯和米家里的设置不受影响。")
-            .setNegativeButton("取消", null).setPositiveButton("移除", (x, y) -> { if (!fixture()) { MiioLight.forget(ctx); AppSecretsSync.changed(ctx); } settingsChanged(); sync(ctx, 0); }).create();
+            .setNegativeButton("取消", null).setPositiveButton("移除", (x, y) -> { if (!fixture()) { MiioLight.forget(ctx); AppSecretsSync.lightChanged(ctx); } settingsChanged(); sync(ctx, 0); }).create();
         d.show(); t.dialog(d);
     }
 

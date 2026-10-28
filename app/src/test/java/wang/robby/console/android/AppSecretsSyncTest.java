@@ -75,6 +75,13 @@ public final class AppSecretsSyncTest {
         assertEquals("书房灯", AppSecretsSync.syncName("书房\u0007灯"));
         assertEquals("米家灯", AppSecretsSync.syncName("\t")); assertEquals("米家灯", AppSecretsSync.syncName(null));
     }
+    @Test public void anUploadFirstTakesWhatTheAccountChangedMeanwhile() {
+        // A lamp set up offline on a new phone must not send its never-downloaded keys back as null.
+        assertTrue(AppSecretsSync.takeFirst(Step.UPLOAD, true));
+        assertFalse("nothing newer to take", AppSecretsSync.takeFirst(Step.UPLOAD, false));
+        assertTrue(AppSecretsSync.takeFirst(Step.APPLY, true)); assertTrue(AppSecretsSync.takeFirst(Step.MERGE, true));
+        assertFalse(AppSecretsSync.takeFirst(Step.NONE, false));
+    }
     @Test public void aDocumentWithOnlyDefaultsHasNothingToUpload() throws Exception {
         JSONObject empty = new JSONObject();
         for (String f : AppSecretsSync.FIELDS) empty.put(f, JSONObject.NULL);
