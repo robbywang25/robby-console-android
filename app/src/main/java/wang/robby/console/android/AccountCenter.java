@@ -24,6 +24,8 @@ final class AccountCenter {
     static final String PREFERENCES = "account/preferences";
     /** 心力球's keys and service settings, shared by the account's phones; sealed by the gateway, same scope as the signature. */
     static final String APP_SECRETS = "account/app-secrets";
+    /** The same document with the 米家 lamp; the only query a write may carry. */
+    static final String APP_SECRETS_V2 = APP_SECRETS + "?version=2";
     /** The web user center; binding Apple or WeChat starts there, since it needs the provider's own sign-in page. */
     static final String WEB = "https://god.robby.wang/account/";
     static final String SETTINGS = "https://auth.god.robby.wang/settings/two-factor-authentication";

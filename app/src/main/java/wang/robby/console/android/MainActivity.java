@@ -179,8 +179,9 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         askSyncedNotify();
         // The microphone may only start while God is in front: opening the app resumes 心力球 after a reboot or update.
         if(!PreviewMode.isBuild()&&MindBall.enabled(this))MindBall.start(this);
-        // Keys saved on another phone: asked at most every 10 minutes and only while recording; opening 心力球 asks at once.
-        if(!PreviewMode.isBuild()&&MindBall.enabled(this))MindBall.syncAsync(this,MindBallSync.RESUME_AGE);
+        // Keys and the lamp saved on another phone: asked at most every 10 minutes and only while recording, with a lamp set
+        // up here, or with a change still unsent (a lamp removed offline); opening 心力球 or 米家灯光 asks at once.
+        if(!PreviewMode.isBuild()&&(MindBall.enabled(this)||MiioLight.configured(this)||AppSecretsSync.pending(this)))MindBall.syncAsync(this,AppSecretsSync.RESUME_AGE);
         MindBallPage.refresh();
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
         // A change waiting for a session that may now write (after signing in again) goes at once.
@@ -797,13 +798,13 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(f.local()){final PullScrollView page=scroll;LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);
             // UU 远程 reads only this phone too: pulling down looks again at whether UU 远程 is installed.
             // 米家灯光 talks only to a lamp on this Wi-Fi: pulling down reads it again.
-            if("mijia-light".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->MiioLightPage.load(this,page::finishRefresh));MiioLightPage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
+            if("mijia-light".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->MiioLightPage.load(this,page::finishRefresh));MiioLightPage.render(this,local);MiioLightPage.sync(this,AppSecretsSync.PAGE_AGE);restoreViewport();if(done!=null)done.run();return;}
             if("uu-remote".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->{UURemotePage.render(this,local);page.finishRefresh();});UURemotePage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
             if(MindBallPage.SETTINGS.equals(project)){heading.setText("心力球设置");page.setRefresh(pullMark,pullGlyph,"同步设置",()->{if(!PreviewMode.isBuild())MindBall.syncAsync(this);page.finishRefresh();});MindBallPage.renderSettings(this,local);}
             else{trailing.addView(circle("gear","心力球设置",()->{saveViewport();++generation;project=MindBallPage.SETTINGS;enterFrom=1;build();}));
                 page.setRefresh(pullMark,pullGlyph,"立即整理",()->{if(PreviewMode.isBuild())page.finishRefresh();else MindBall.processNow(this,page::finishRefresh);});MindBallPage.render(this,local);}
             restoreViewport();
-            if(!PreviewMode.isBuild())MindBall.syncAsync(this,MindBallSync.PAGE_AGE);if(done!=null)done.run();return;}
+            if(!PreviewMode.isBuild())MindBall.syncAsync(this,AppSecretsSync.PAGE_AGE);if(done!=null)done.run();return;}
         String path=f.path;
         if(f.path.equals("travel-ledger/current/projects")&&project!=null)path="travel-ledger/current/snapshot?project="+Uri.encode(project)+"&limit=40"+(ledgerCursor==null?"":"&cursor="+Uri.encode(ledgerCursor));
         String key=path; JSONObject cached=key.startsWith("travel-ledger/")?null:snapshots.get(key);

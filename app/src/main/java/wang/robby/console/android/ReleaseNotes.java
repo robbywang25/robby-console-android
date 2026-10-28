@@ -15,6 +15,12 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.45.0", "2026-10-28", "米家灯在你的每台手机上都能用",
+            "在一台手机上设置好米家灯，登录同一账号的其他安卓手机打开「米家灯光」就能直接用。",
+            "在一台手机上修改或移除这盏灯，其他手机也会跟着变。",
+            "已经设置好的灯，升级后会自动同步到账号，不用重新填写。",
+            "灯的地址和 token 与心力球的 Key 一样，加密后保存在你的 God 账号里。",
+            "「连接」卡片新增「同步」一行，写明有没有同步到账号。"),
         new Entry("0.44.0", "2026-10-28", "在 God 里开关米家灯",
             "「功能 → 工具」新增米家灯光：在家里的 Wi-Fi 下直接控制米家灯。",
             "一键开灯、关灯，拖动滑杆调亮度和色温。",
