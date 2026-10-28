@@ -3,10 +3,10 @@ import android.content.Intent;
 import org.json.JSONObject;
 /** Debug-only isolated visual fixture. No requests and no real credentials. */
 final class PreviewMode {
- private static boolean signedOut, realUpdate, realUU;
+ private static boolean signedOut, realUpdate, realUU, realLight;
  static boolean isBuild(){return true;}
  static boolean loggedIn(){return !signedOut;}
- static void configure(android.app.Activity activity,Intent intent){signedOut=intent.getBooleanExtra("preview_signed_out",false);realUpdate=intent.getBooleanExtra("preview_real_update",false);realUU=realUU||intent.getBooleanExtra("preview_real_uu",false);}
+ static void configure(android.app.Activity activity,Intent intent){signedOut=intent.getBooleanExtra("preview_signed_out",false);realUpdate=intent.getBooleanExtra("preview_real_update",false);realUU=realUU||intent.getBooleanExtra("preview_real_uu",false);realLight=realLight||intent.getBooleanExtra("preview_real_light",false);}
  /**
   * Opt-in device check of the real GitHub path: the preview pretends to be 0.3.0, so it finds and downloads the
   * newest release and verifies its SHA-256; the package check then stops it, because the preview is another package.
@@ -14,6 +14,10 @@ final class PreviewMode {
  static String realUpdateAs(){return realUpdate?"0.3.0":null;}
  /** Opt-in device check of the UU 远程 protocol: the UU 远程 page then uses this preview's own store and really opens UU 远程. */
  static boolean realUU(){return realUU;}
+ /** Opt-in device check of 米家灯光: the page then uses this preview's own settings and really talks to the lamp on this Wi-Fi. */
+ static boolean realLight(){return realLight;}
+ /** A synthetic lamp for 米家灯光; nothing is sent. */
+ static MiioLight.Reading light(){return new MiioLight.Reading("yeelink.light.lamp22","2.0.8_0013",new MiioLight.State(true,80,4000),MiioLight.layout("yeelink.light.lamp22"));}
  /** Synthetic bound computers for the UU 远程 page; their ids are not UU 远程's and nothing is opened. */
  static java.util.List<UURemote.Device> uuDevices(){long day=86_400_000L,now=System.currentTimeMillis();
   return java.util.List.of(new UURemote.Device("preview1","preview","书房 Mac mini",now-3*day,"success",now-day),new UURemote.Device("preview2","preview","公司 Windows",now-9*day,"device_offline",now-2*day));}

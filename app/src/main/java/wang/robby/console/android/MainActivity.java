@@ -796,6 +796,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // 心力球 reads only this phone: pulling down transcribes and summarizes what is waiting. Its settings are a page behind the gear.
         if(f.local()){final PullScrollView page=scroll;LinearLayout local=new LinearLayout(this);local.setOrientation(LinearLayout.VERTICAL);content.addView(local);
             // UU 远程 reads only this phone too: pulling down looks again at whether UU 远程 is installed.
+            // 米家灯光 talks only to a lamp on this Wi-Fi: pulling down reads it again.
+            if("mijia-light".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->MiioLightPage.load(this,page::finishRefresh));MiioLightPage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
             if("uu-remote".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->{UURemotePage.render(this,local);page.finishRefresh();});UURemotePage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
             if(MindBallPage.SETTINGS.equals(project)){heading.setText("心力球设置");page.setRefresh(pullMark,pullGlyph,"同步设置",()->{if(!PreviewMode.isBuild())MindBall.syncAsync(this);page.finishRefresh();});MindBallPage.renderSettings(this,local);}
             else{trailing.addView(circle("gear","心力球设置",()->{saveViewport();++generation;project=MindBallPage.SETTINGS;enterFrom=1;build();}));
