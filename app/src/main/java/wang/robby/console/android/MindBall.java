@@ -192,21 +192,33 @@ final class MindBall {
     }
     static JSONObject day(Context c, String day) {
         synchronized (LOCK) {
-            File f = dayFile(c, day); if (!f.exists()) return new JSONObject();
-            try { return new JSONObject(new String(read(f), StandardCharsets.UTF_8)); } catch (IOException | JSONException broken) { Log.w(TAG, "day_unreadable"); return new JSONObject(); }
+            try { return readDay(c, day); } catch (IOException broken) { Log.w(TAG, "day_unreadable"); return new JSONObject(); }
         }
+    }
+    /** A failed read is never an empty document on a write path: retain the original file for recovery. */
+    private static JSONObject readDay(Context c, String day) throws IOException {
+        File f = dayFile(c, day); if (!f.exists()) return new JSONObject();
+        try {
+            JSONObject value = new JSONObject(new String(read(f), StandardCharsets.UTF_8));
+            if (value.has("segments") && value.optJSONArray("segments") == null
+                    || value.has("done") && value.optJSONObject("done") == null
+                    || value.has("timeline") && value.optJSONObject("timeline") == null) throw new JSONException("day shape");
+            return value;
+        } catch (IOException | JSONException broken) { throw new StorageError(broken); }
     }
     private static void save(Context c, String day, JSONObject value) throws IOException {
         synchronized (LOCK) {
             File tmp = new File(dir(c), day + ".json.tmp");
-            try (OutputStream out = new FileOutputStream(tmp)) { out.write(value.toString().getBytes(StandardCharsets.UTF_8)); }
-            if (!tmp.renameTo(dayFile(c, day))) throw new IOException("rename");
+            try {
+                try (FileOutputStream out = new FileOutputStream(tmp)) { out.write(value.toString().getBytes(StandardCharsets.UTF_8)); out.getFD().sync(); }
+                if (!tmp.renameTo(dayFile(c, day))) throw new IOException("rename");
+            } catch (IOException failed) { throw new StorageError(failed); }
         }
     }
     /** Marks a 待办 done or open again; the mark survives later re-summaries because it is keyed by the item's text. */
     static void setDone(Context c, String day, String key, boolean done) {
         synchronized (LOCK) {
-            try { JSONObject d = day(c, day); JSONObject marks = d.optJSONObject("done"); if (marks == null) marks = new JSONObject();
+            try { JSONObject d = readDay(c, day); JSONObject marks = d.optJSONObject("done"); if (marks == null) marks = new JSONObject();
                 if (done) marks.put(key, System.currentTimeMillis()); else marks.remove(key); d.put("done", marks); save(c, day, d); }
             catch (IOException | JSONException e) { Log.w(TAG, "done_not_saved"); }
         }
@@ -316,13 +328,15 @@ final class MindBall {
         String today = today();
         for (String d : summaryDays(transcribed, days(c), today)) {
             if (epoch != round) return;
-            JSONObject day = day(c, d); JSONArray segs = day.optJSONArray("segments"); if (segs == null || segs.length() == 0) continue;
-            long newest = 0; for (int i = 0; i < segs.length(); i++) { JSONObject s = segs.optJSONObject(i); if (s != null) newest = Math.max(newest, s.optLong("end")); }
-            if (!summaryDue(force, d.equals(today), newest, day.optLong("summarizedThrough", 0), day.optLong("summarizedAt", 0), System.currentTimeMillis())) continue;
+            JSONObject day;
+            try { synchronized (LOCK) { day = readDay(c, d); } }
+            catch (IOException broken) { if (error.isEmpty()) error = "整理失败：" + reason(broken); continue; }
+            JSONArray segs = day.optJSONArray("segments"); if (segs == null || segs.length() == 0) continue;
+            if (!summaryDue(force, d.equals(today), day, System.currentTimeMillis())) continue;
             String key = secret(c, KEY_DEEPSEEK); if (key == null) { if (error.isEmpty()) error = "未填写 DeepSeek API Key，暂不能整理时间线"; break; }
             try {
                 JSONObject timeline = summarize(model(c), key, d, segs);
-                synchronized (LOCK) { if (epoch != round) return; JSONObject latest = day(c, d); latest.put("timeline", timeline).put("summarizedThrough", newest).put("summarizedAt", System.currentTimeMillis()); save(c, d, latest); }
+                if (!saveSummary(c, round, d, day, timeline, System.currentTimeMillis())) return;
             } catch (JSONException e) { if (error.isEmpty()) error = "整理失败：" + reason(e); }
             // The key, the balance or the network: the other days would fail the same way, so they wait for the next round.
             catch (IOException e) { if (error.isEmpty()) error = "整理失败：" + reason(e); break; }
@@ -330,36 +344,73 @@ final class MindBall {
         prefs(c).edit().putString("lastError", error).apply();
     }
     /** False when 清除全部 came after the round began: the text is dropped with everything else. */
-    private static boolean append(Context c, int round, String d, long start, long end, String text) throws IOException, JSONException {
+    static boolean append(Context c, int round, String d, long start, long end, String text) throws IOException, JSONException {
         synchronized (LOCK) {
             if (epoch != round) return false;
-            JSONObject day = day(c, d); JSONArray segs = day.optJSONArray("segments"); if (segs == null) segs = new JSONArray();
+            JSONObject day = readDay(c, d); JSONArray segs = day.optJSONArray("segments"); if (segs == null) segs = new JSONArray();
+            // The day save can succeed before the audio deletion (process death, or a failed delete). Keep the first
+            // transcript for that exact recorded interval and do not count it twice when the audio is retried.
+            for (int i = 0; i < segs.length(); i++) {
+                JSONObject existing = segs.optJSONObject(i);
+                if (existing != null && existing.optLong("start", -1) == start && existing.optLong("end", -1) == end) return true;
+            }
+            // Segments are append-only. Bootstrap a legacy checkpoint BEFORE appending, so a delayed older
+            // segment cannot disappear below summarizedThrough. Existing segment contents and fields are retained.
+            if (!day.has("summarizedSegmentCount")) day.put("summarizedSegmentCount", segs.length() - pendingSummarySegments(day));
             segs.put(new JSONObject().put("start", start).put("end", end).put("text", text.length() > 20_000 ? text.substring(0, 20_000) : text));
-            day.put("segments", segs); save(c, d, day); return true;
+            day.put("segments", segs);
+            save(c, d, day); return true;
+        }
+    }
+    /** Commit the source snapshot used for this request; re-read to preserve completion marks made while waiting. */
+    static boolean saveSummary(Context c, int round, String d, JSONObject source, JSONObject timeline, long at) throws IOException, JSONException {
+        synchronized (LOCK) {
+            if (epoch != round) return false;
+            JSONObject latest = readDay(c, d);
+            long newest = 0; JSONArray segs = source.optJSONArray("segments");
+            if (segs != null) for (int i = 0; i < segs.length(); i++) {
+                JSONObject segment = segs.optJSONObject(i); if (segment != null) newest = Math.max(newest, segment.optLong("end"));
+            }
+            latest.put("timeline", timeline).put("summarizedThrough", newest).put("summarizedAt", at)
+                .put("summarizedSegmentCount", segs == null ? 0 : segs.length());
+            save(c, d, latest); return true;
         }
     }
     /** A status the transcription service gives one file (bad, too large, an unknown format), not the key or the settings. */
     static boolean fileRefused(int status) { return status == 400 || status == 413 || status == 415 || status == 422; }
     /**
-     * Days whose timeline may be behind, newest first: today, the days just transcribed into, and the last three days with
-     * a record. Talk after a day's last hourly summary is summarized on the first round after it, the next morning included.
+     * Days whose timeline may be behind, newest first: all retained days, today and days just transcribed into.
+     * A multi-day service outage must not leave older transcripts permanently outside the retry window.
      */
     static List<String> summaryDays(Collection<String> transcribed, List<String> days, String today) {
         Set<String> out = new TreeSet<>(Comparator.reverseOrder()); out.add(today); out.addAll(transcribed);
-        List<String> newest = new ArrayList<>(days); newest.sort(Comparator.reverseOrder()); out.addAll(newest.subList(0, Math.min(3, newest.size())));
+        out.addAll(days);
         return new ArrayList<>(out);
     }
-    /** New text since the last summary, and today's summary at most hourly unless {@code force}; a past day at once. */
-    static boolean summaryDue(boolean force, boolean today, long newest, long through, long summarizedAt, long now) {
-        return newest > through && (force || !today || now - summarizedAt >= SUMMARY_INTERVAL);
+    /** Counts newly appended records even when their recording time is before the previous summary watermark.
+     * Legacy files retain their timestamp behavior until the next append/summary adds the count checkpoint. */
+    static int pendingSummarySegments(JSONObject day) {
+        JSONArray segs = day.optJSONArray("segments"); if (segs == null) return 0;
+        if (day.has("summarizedSegmentCount")) return segs.length() - Math.min(segs.length(), Math.max(0, day.optInt("summarizedSegmentCount")));
+        int newer = 0;
+        for (int i = 0; i < segs.length(); i++) {
+            JSONObject segment = segs.optJSONObject(i);
+            if (segment != null && segment.optLong("end") > day.optLong("summarizedThrough", 0)) newer++;
+        }
+        return newer;
+    }
+    static boolean summaryDue(boolean force, boolean today, JSONObject day, long now) {
+        return pendingSummarySegments(day) > 0 && (force || !today || now - day.optLong("summarizedAt", 0) >= SUMMARY_INTERVAL);
     }
     static String reason(Exception e) {
+        if (e instanceof StorageError) return "本机记录无法读写，已保留原文件";
         if (e instanceof HttpError) {
             int s = ((HttpError) e).status;
             return switch (s) { case 401, 403 -> "API Key 无效或没有权限"; case 402 -> "账户余额不足"; case 413 -> "录音文件过大"; case 429 -> "请求过于频繁，稍后自动重试"; default -> s >= 500 ? "服务暂不可用（HTTP " + s + "）" : "请求被拒绝（HTTP " + s + "）"; };
         }
         return e instanceof JSONException ? "返回内容无法解析" : "网络不可用，稍后自动重试";
     }
+    static final class StorageError extends IOException { StorageError(Exception cause) { super("local record unavailable", cause); } }
     static final class HttpError extends IOException { final int status; HttpError(int status) { super("HTTP " + status); this.status = status; } }
 
     /** POST {base}/audio/transcriptions with the segment as multipart form data; the OpenAI-compatible reply is {"text": …}. */
@@ -372,7 +423,9 @@ final class MindBall {
             byte[] head = multipartHead(boundary, model, audio.getName()), tail = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
             h.setFixedLengthStreamingMode(head.length + audio.length() + tail.length);
             try (OutputStream out = h.getOutputStream(); InputStream in = new FileInputStream(audio)) { out.write(head); byte[] b = new byte[16384]; int n; while ((n = in.read(b)) > 0) out.write(b, 0, n); out.write(tail); }
-            return new JSONObject(body(h)).optString("text", "");
+            Object text = new JSONObject(body(h)).get("text");
+            if (!(text instanceof String)) throw new JSONException("transcription text must be a string");
+            return (String) text;
         } finally { h.disconnect(); }
     }
     static byte[] multipartHead(String boundary, String model, String filename) {
@@ -427,8 +480,8 @@ final class MindBall {
     static JSONObject parseTimeline(String content) throws JSONException {
         String json = content == null ? "" : content.trim();
         if (json.startsWith("```")) json = json.replaceAll("^```(?:json)?\\s*", "").replaceAll("\\s*```$", "");
-        JSONObject in = new JSONObject(json); JSONArray items = in.optJSONArray("items"); List<JSONObject> kept = new ArrayList<>();
-        if (items != null) for (int i = 0; i < items.length() && kept.size() < 200; i++) {
+        JSONObject in = new JSONObject(json); JSONArray items = in.getJSONArray("items"); List<JSONObject> kept = new ArrayList<>();
+        for (int i = 0; i < items.length() && kept.size() < 200; i++) {
             JSONObject it = items.optJSONObject(i); if (it == null) continue;
             String title = cap(it.optString("title"), 80); if (title.isEmpty()) continue;
             String time = it.optString("time").trim(); if (!time.matches("([01]\\d|2[0-3]):[0-5]\\d")) time = time.matches("\\d:[0-5]\\d") ? "0" + time : "";
