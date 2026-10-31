@@ -21,7 +21,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
-/** Explicit presentation allowlists. Never traverses or prints arbitrary JSON, credentials or clipboard content. */
+/** Explicit presentation allowlists. Never traverses or prints arbitrary JSON or credentials; clipboard text only on an explicit reveal. */
 public final class FeatureRenderer {
     private FeatureRenderer() {}
     /** Implemented by the host so overview figures can open their detail screen. */
@@ -570,10 +570,12 @@ public final class FeatureRenderer {
         LinearLayout c = u.card("当前内容"); u.metrics(c, "条数", String.valueOf(total), "公开", String.valueOf(publicCount), "私密", String.valueOf(total - publicCount));
         u.row(c, "来源", source(obj(p, "sourceStatus")));
         LinearLayout g = u.list("剪贴内容"); int i = 0;
-        for (JSONObject n : rows(p, "items")) u.item(g, "剪贴内容 " + (++i), flag(n, "isPublic", "公开", "私密"), join("创建 " + date(n, "createdAt"), "到期 " + date(n, "expiresAt")),
-            "可见性", flag(n, "isPublic", "公开", "私密"), "创建", date(n, "createdAt"), "到期", date(n, "expiresAt"));
+        // Each row opens to its masked body; the text is read for that one item only when 显示内容 is tapped.
+        for (JSONObject n : rows(p, "items")) { String id = n.optString("id", "");
+            u.expand(g, "剪贴内容 " + (++i), flag(n, "isPublic", "公开", "私密"), join("创建 " + date(n, "createdAt"), "到期 " + date(n, "expiresAt")),
+                "clipboard|" + id, body -> ClipboardReveal.fill(u.context, u.theme, body, id)); }
         empty(u, p, "items", "暂无剪贴内容");
-        u.explain("只显示元数据：应用不请求、不显示剪贴内容正文。");
+        u.explain("列表只含元数据；点开一条再点「显示内容」才读取这一条正文，60 秒后自动隐藏，不保存在手机上。");
     }
     private static void ledger(UI u, JSONObject p) {
         if (p.optJSONArray("projects") != null) {

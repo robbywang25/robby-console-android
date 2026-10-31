@@ -18,7 +18,7 @@ import wang.robby.console.android.auth.DeviceAuthorization;
 import wang.robby.console.android.auth.NativePasskeyFlow;
 
 /** Native client. No embedded web content, demo balances, or service credentials. */
-public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host, MindBallPage.Host {
+public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host, MindBallPage.Host, ClipboardReveal.Host {
     private int INK, MUTED, ACCENT, BG; private ConsoleTheme theme;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     /** 看板 reads run side by side (overview, Token 额度, …) instead of queueing behind one another. */
@@ -1616,6 +1616,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!notificationsAllowed()){tiboTestPending=false;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},TIBO_PERMISSION);return;}
         TiboWatch.enable(this);
         if(!getSystemService(PowerManager.class).isIgnoringBatteryOptimizations(getPackageName()))tiboFix("battery");
+    }
+    /** One cloud clipboard item's text, read on the worker; never cached in {@code snapshots}. */
+    @Override public void revealClipboard(String id,java.util.function.Consumer<String> shown,java.util.function.Consumer<String> failed){
+        worker.execute(()->{try{String text=ClipboardReveal.content(read(ClipboardReveal.route(id)),id);runOnUiThread(()->{if(!isDestroyed())shown.accept(text);});}
+            catch(Exception e){runOnUiThread(()->{if(!isDestroyed())failed.accept(safeError(e));});}});
     }
     @Override public void tiboTest(){if(!notificationsAllowed()){tiboTestPending=true;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},TIBO_PERMISSION);return;}TiboWatch.test(this);}
     private boolean notificationsAllowed(){return Build.VERSION.SDK_INT<33||checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED;}

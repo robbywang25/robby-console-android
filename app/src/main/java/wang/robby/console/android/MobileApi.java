@@ -22,7 +22,7 @@ public final class MobileApi {
             throw new IllegalArgumentException("接口地址无效");
         String route = path.split("\\?",2)[0];
         boolean known = FeatureCatalog.all().stream().anyMatch(f -> f.path.equals(route));
-        if (!known && !route.equals("travel-ledger/current/snapshot") && !route.equals("tokens/tibo/alerts") && !ledgerRoute(route) && !AccountCenter.readRoute(route) && !AccountCenter.writeRoute(route))
+        if (!known && !route.equals("travel-ledger/current/snapshot") && !route.equals("tokens/tibo/alerts") && !ledgerRoute(route) && !AccountCenter.readRoute(route) && !AccountCenter.writeRoute(route) && !route.matches("clipboard/[a-f0-9]{32}/reveal"))
             throw new IllegalArgumentException("接口未登记");
         return path;
     }
@@ -80,7 +80,7 @@ public final class MobileApi {
     }
     /** How many response bytes may be read. A preferences 409 carries the current document plus its wrapper. */
     static int responseLimit(int status, String path) {
-        if (status == 200) return path != null && path.startsWith("travel-ledger/current/snapshot") ? 2097152 : 524288;
+        if (status == 200) return path != null && path.startsWith("travel-ledger/current/snapshot") ? 2097152 : path != null && path.endsWith("/reveal") ? 1048576 : 524288;
         if (status == 409 && AccountCenter.PREFERENCES.equals(path)) return 24576;
         return 16384;
     }

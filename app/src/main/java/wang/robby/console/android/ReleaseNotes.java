@@ -15,6 +15,11 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.48.0", "2026-10-31", "云剪贴板能看正文、能复制了",
+            "云剪贴板里点开一条，再点「显示内容」，就能看到这一条的正文。",
+            "正文下方有「复制」，一点就放进手机剪贴板，可以直接粘贴。",
+            "正文 60 秒后自动隐藏，也可以点「立即隐藏」；不会保存在手机上。",
+            "复制的内容标记为敏感，系统的复制提示和输入法不会显示原文。"),
         new Entry("0.47.0", "2026-10-31", "颂钵与番茄钟，安静地专注",
             "「功能 → 工具」新增颂钵：一只拟物铜钵，轻点敲响，沿钵口画圈它会持续「唱」。",
             "钵声在手机上实时合成，有真钵那样的嗡嗡起伏和长长的余音，可选大、中、小三只钵。",
