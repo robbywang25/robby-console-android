@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.47.0", "2026-10-31", "颂钵与番茄钟，安静地专注",
+            "「功能 → 工具」新增颂钵：一只拟物铜钵，轻点敲响，沿钵口画圈它会持续「唱」。",
+            "钵声在手机上实时合成，有真钵那样的嗡嗡起伏和长长的余音，可选大、中、小三只钵。",
+            "环境音可选白噪音、粉红噪音、棕噪音和雨声，也可以打开「持续唱钵」。",
+            "番茄钟默认专注 25 分钟、休息 5 分钟、每 4 轮长休息，每段结束时颂钵会响。",
+            "熄屏或离开 God 后声音和计时照常，通知栏里可以暂停或停止。",
+            "时长、钵和音量跟着账号同步到你的其他安卓手机。"),
         new Entry("0.46.0", "2026-10-28", "看板额度多了十格余量条",
             "看板 Token 额度卡片里，每个账号名字下面多了一排十格余量条，一格是 10%。",
             "余量 50% 以上是绿色，20%～50% 琥珀色，不到 20% 红色；读数不是最新时显示灰色。",

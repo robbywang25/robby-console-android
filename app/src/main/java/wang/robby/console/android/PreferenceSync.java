@@ -35,7 +35,7 @@ final class PreferenceSync {
         "board", "clocks", "calendarDays", "hiddenQuotaCards",
         "glassOn", "glassLevel", "statusBar", "islandLeft", "islandRight",
         "hiddenFeatures", "shownFeatures", "recentFeatures",
-        "noticeKinds", "dailyLine", "lowLine", "creditsLine", "marketDays", "marketLine", "enhancedNotice", "persistentNotice", "tiboNotice");
+        "noticeKinds", "dailyLine", "lowLine", "creditsLine", "marketDays", "marketLine", "enhancedNotice", "persistentNotice", "tiboNotice", "bowl");
     /**
      * Stored on the phone, never uploaded. Listed so a test can hand every one of them in and watch the document
      * stay clear of them: session, cutout geometry, 常亮展示, read caches, reminder runtime, signature and avatar.
@@ -162,6 +162,7 @@ final class PreferenceSync {
             copy(raw, "hiddenFeatures", ui, FeatureVisibility.HIDDEN);
             copy(raw, "shownFeatures", ui, FeatureVisibility.SHOWN);
             copy(raw, "recentFeatures", ui, "featureUsage");
+            copy(raw, "bowl", ui, BowlSession.SETTINGS);
         }
         if (notices != null) {
             copy(raw, "noticeKinds", notices, "on");
@@ -494,6 +495,7 @@ final class PreferenceSync {
             case "creditsLine" -> choice(raw, boxes(Notices.CREDIT_CHOICES));
             case "marketDays" -> choice(raw, boxes(Notices.MARKET_DAY_CHOICES));
             case "marketLine" -> choice(raw, boxes(Notices.MARKET_LINE_CHOICES));
+            case "bowl" -> Pomodoro.normalize(raw);
             default -> null;
         };
     }
