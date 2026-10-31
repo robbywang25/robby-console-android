@@ -19,6 +19,9 @@
       microphone indicator and an ongoing notification. Audio and text stay in the app's private storage. -->
  <uses-permission android:name="android.permission.RECORD_AUDIO" />
  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+ <!-- 颂钵: the synthesized bowl, ambient noise and 番茄钟 keep playing with the screen off in a media-playback
+      foreground service; an exact alarm (above) wakes it at the end of each phase to sound the bowl. -->
+ <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
  <!-- UU 远程: its version is checked (the protocol needs 4.42.0) and its uuremote:// links are opened. -->
  <queries>
   <package android:name="com.netease.uuremote" />
@@ -74,6 +77,7 @@
   <service android:name=".GodTileService" android:exported="true" android:label="God" android:icon="@drawable/tab_home_solid" android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
    <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE"/></intent-filter>
   </service>
+  <service android:name=".BowlService" android:exported="false" android:foregroundServiceType="mediaPlayback" />
   <service android:name=".MindBallService" android:exported="false" android:foregroundServiceType="microphone" />
   <receiver android:name=".TiboWatchReceiver" android:exported="false">
    <intent-filter><action android:name="android.intent.action.BOOT_COMPLETED"/><action android:name="android.intent.action.MY_PACKAGE_REPLACED"/></intent-filter>

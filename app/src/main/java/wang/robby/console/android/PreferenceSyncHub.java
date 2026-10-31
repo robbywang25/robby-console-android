@@ -216,6 +216,7 @@ final class PreferenceSyncHub {
                     case "hiddenFeatures" -> { ui.putString(FeatureVisibility.HIDDEN, String.join(",", strings(e.getValue()))); uiTouch = true; }
                     case "shownFeatures" -> { ui.putString(FeatureVisibility.SHOWN, String.join(",", strings(e.getValue()))); uiTouch = true; }
                     case "recentFeatures" -> { ui.putString("featureUsage", usage(e.getValue())); uiTouch = true; }
+                    case "bowl" -> { ui.putString(BowlSession.SETTINGS, (String) e.getValue()); uiTouch = true; }
                     case "noticeKinds" -> { notices.putStringSet("on", new HashSet<>(strings(e.getValue()))).putBoolean("primed", false); noticeTouch = true; }
                     case "dailyLine" -> { notices.putInt("daily", ((Number) e.getValue()).intValue()); noticeTouch = true; }
                     case "lowLine" -> { notices.putInt("low", ((Number) e.getValue()).intValue()); noticeTouch = true; }
