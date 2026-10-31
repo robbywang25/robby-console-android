@@ -47,7 +47,7 @@ final class BowlView extends View {
     @Override protected void onMeasure(int w, int h) { setMeasuredDimension(MeasureSpec.getSize(w), Math.round(280 * density)); }
 
     @Override protected void onSizeChanged(int w, int h, int ow, int oh) {
-        cx = w / 2f; r = Math.min(w * .33f, h * .40f); ry = r * .34f; rimY = h * .30f; depth = r * .80f;
+        cx = w / 2f; r = Math.min(w * .33f, h * .40f); ry = r * .34f; rimY = h * .33f; depth = r * .80f;
         cushionY = rimY + depth * .90f; cushionRx = r * 1.26f; cushionRy = r * .40f; thick = r * .17f;
         body.reset(); body.moveTo(cx - r, rimY);
         body.cubicTo(cx - r, rimY + depth * .72f, cx - r * .52f, rimY + depth, cx, rimY + depth);
@@ -80,6 +80,8 @@ final class BowlView extends View {
 
     @Override protected void onDraw(Canvas c) {
         float level = BowlSession.level(); long now = SystemClock.uptimeMillis(); float t = now / 1000f;
+        // A shader is drawn at the paint's alpha, so every shaded fill starts from an opaque colour.
+        fill.setColor(Color.BLACK);
         // Shadow and cushion.
         fill.setShader(shadow); c.drawOval(cx - cushionRx * 1.15f, cushionY + thick, cx + cushionRx * 1.15f, cushionY + thick + cushionRy * 1.3f, fill);
         fill.setShader(cushionSide); c.drawOval(cx - cushionRx, cushionY - cushionRy + thick, cx + cushionRx, cushionY + cushionRy + thick, fill);
@@ -97,7 +99,7 @@ final class BowlView extends View {
             fill.setShader(null); fill.setColor(side < -.1f && side > -.75f ? 0x22fff4d0 : 0x1a000000);
             c.drawOval(x - m * squash, y - m * .7f, x + m * squash, y + m * .7f, fill);
         }
-        fill.setShader(bodyDepth); c.drawRect(cx - r, rimY, cx + r, rimY + depth, fill); fill.setShader(null);
+        fill.setColor(Color.BLACK); fill.setShader(bodyDepth); c.drawRect(cx - r, rimY, cx + r, rimY + depth, fill); fill.setShader(null);
         for (float band : BANDS) {
             float y = rimY + r * band, w = r * (1 - band * band * .25f);
             oval.set(cx - w, y - ry, cx + w, y + ry);
@@ -148,7 +150,7 @@ final class BowlView extends View {
         int s = c.save(); c.translate(malletX, malletY); c.rotate(malletA);
         float len = r * 1.15f, hw = r * .045f, headLen = r * .30f, headW = r * .085f;
         fill.setShader(null); fill.setColor(0x33000000); c.drawRoundRect(headLen * .5f, -hw + density * 3, len, hw + density * 3, hw, hw, fill);
-        fill.setShader(stick); c.drawRoundRect(headLen * .5f, -hw, len, hw, hw, hw, fill);
+        fill.setColor(Color.BLACK); fill.setShader(stick); c.drawRoundRect(headLen * .5f, -hw, len, hw, hw, hw, fill);
         fill.setShader(head); c.drawRoundRect(-headLen * .15f, -headW, headLen, headW, headW, headW, fill); fill.setShader(null);
         stroke.setStrokeWidth(density); stroke.setColor(0x55000000);
         for (int i = 1; i <= 3; i++) { float x = headLen * (.1f + i * .2f); c.drawLine(x, -headW * .92f, x, headW * .92f, stroke); }

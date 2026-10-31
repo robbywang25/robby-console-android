@@ -30,6 +30,8 @@ final class BowlPage {
     static void render(Context ctx, LinearLayout container) {
         shown = new WeakReference<>(container); container.removeAllViews(); BowlSession.listener = BowlPage::refresh;
         ConsoleTheme t = new ConsoleTheme(ctx); Pomodoro.Settings s = BowlSession.settings(ctx); BowlSession.apply(ctx, s);
+        // A timer still running after God was stopped (an update, a force stop) gets its service and notification back.
+        if (!BowlService.running && BowlSession.needsService(ctx)) BowlSession.update(ctx);
         bowl(ctx, t, container, s); timer(ctx, t, container, s); sound(ctx, t, container, s);
         container.addView(t.info(List.of(
             "颂钵的声音是在手机上实时合成的，不是录音：五个不规则泛音，每个由两条相差几赫兹的正弦组成，所以会像真钵一样「嗡嗡」起伏；高泛音衰减得快，基音能响半分钟以上。",
@@ -42,10 +44,11 @@ final class BowlPage {
     private static void bowl(Context ctx, ConsoleTheme t, LinearLayout parent, Pomodoro.Settings s) {
         LinearLayout c = t.card(parent); c.setPadding(t.dp(8), t.dp(8), t.dp(8), t.dp(14));
         BowlView view = new BowlView(ctx, t.dark); c.addView(view, new LinearLayout.LayoutParams(-1, -2));
-        TextView hint = t.text("轻点敲钵 · 沿钵口画圈让它唱", 12, false); hint.setTextColor(t.faint); hint.setGravity(Gravity.CENTER); c.addView(hint, new LinearLayout.LayoutParams(-1, -2));
-        FlowRow sizes = new FlowRow(ctx, t.dp(8), t.dp(8)); sizes.setPadding(0, t.dp(10), 0, 0);
-        for (int i = 0; i < BowlSynth.BOWLS.length; i++) { int index = i; sizes.addView(chip(t, BowlSynth.BOWL_NAMES[i] + " · " + BowlSynth.BOWLS[i] + " Hz", i == s.bowl, () -> BowlSession.save(ctx, BowlSession.settings(ctx).with("bowl", index)))); }
-        LinearLayout center = new LinearLayout(ctx); center.setGravity(Gravity.CENTER_HORIZONTAL); center.addView(sizes); c.addView(center, new LinearLayout.LayoutParams(-1, -2));
+        TextView hint = t.text(BowlSynth.BOWL_NAMES[s.bowl] + " " + BowlSynth.BOWLS[s.bowl] + " Hz · 轻点敲钵 · 沿钵口画圈让它唱", 12, false); hint.setTextColor(t.faint); hint.setGravity(Gravity.CENTER); c.addView(hint, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout sizes = new LinearLayout(ctx); sizes.setGravity(Gravity.CENTER); sizes.setPadding(0, t.dp(10), 0, 0);
+        for (int i = 0; i < BowlSynth.BOWLS.length; i++) { int index = i; TextView size = chip(t, BowlSynth.BOWL_NAMES[i], i == s.bowl, () -> BowlSession.save(ctx, BowlSession.settings(ctx).with("bowl", index))); size.setContentDescription(BowlSynth.BOWL_NAMES[i] + " " + BowlSynth.BOWLS[i] + " 赫兹");
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.setMargins(t.dp(4), 0, t.dp(4), 0); sizes.addView(size, lp); }
+        c.addView(sizes, new LinearLayout.LayoutParams(-1, -2));
     }
 
     private static void timer(Context ctx, ConsoleTheme t, LinearLayout parent, Pomodoro.Settings s) {
