@@ -162,7 +162,7 @@ final class TokensModel {
     // ---- The tokens.robby.wang 账号额度 tile (renderOverview), field by field ----
 
     /** The page's sections in the web's order; accounts never move between them when their readings change. */
-    static final List<String> SECTIONS = List.of("OpenAI", "Claude", "Grok", "Cursor", "TodayAI", "其他");
+    static final List<String> SECTIONS = List.of("OpenAI", "Claude", "Grok", "Cursor", "TodayAI", "Gemini", "其他");
     private static final Map<String, String> PRODUCT_NAMES = Map.of("codex", "Codex", "claude", "Claude", "grok", "Grok Build", "grok-bot", "Grok Bot",
             "cursor", "Cursor", "today-cn", "TodayAI 中国版", "today-global", "TodayAI 全球版", "chatgpt-dots", "ChatGPT Dots", "chatgpt-chat", "ChatGPT 聊天");
     private static final Map<String, String> IDENTITY_PRODUCTS = Map.of("codex", "ChatGPT", "claude", "Claude", "grok", "Grok Build", "grok-bot", "Grok Bot",
@@ -176,25 +176,23 @@ final class TokensModel {
         return !"not_configured".equals(a.opt("status")) && !"chatgpt-dots".equals(product) && !"chatgpt-chat".equals(product);
     }
     static String section(JSONObject a) {
-        String product = String.valueOf(a.opt("product")).toLowerCase(java.util.Locale.ROOT), provider = String.valueOf(a.opt("provider")).toLowerCase(java.util.Locale.ROOT);
-        if (product.startsWith("today-") || provider.equals("todayai")) return "TodayAI";
-        if (product.equals("cursor") || provider.equals("cursor")) return "Cursor";
-        if (product.equals("claude") || provider.equals("anthropic")) return "Claude";
-        if (product.startsWith("grok") || provider.equals("xai")) return "Grok";
-        if (product.equals("codex") || product.startsWith("chatgpt") || provider.equals("openai")) return "OpenAI";
-        return "其他";
+        switch (TokenAccountOrder.providerKey(a)) {
+            case "openai": return "OpenAI";
+            case "anthropic": return "Claude";
+            case "xai": return "Grok";
+            case "cursor": return "Cursor";
+            case "today": return "TodayAI";
+            case "google": return "Gemini";
+            default: return "其他";
+        }
     }
-    /** Stable slot order inside a section: ids compared with their numbers as numbers (codex-2 before codex-10). */
-    static final Comparator<JSONObject> SLOT_ORDER = (x, y) -> {
-        String a = String.valueOf(x.opt("id")), b = String.valueOf(y.opt("id"));
-        String pa = a.replaceAll("\\d+$", ""), pb = b.replaceAll("\\d+$", "");
-        if (!pa.equals(pb)) return pa.compareTo(pb);
-        String na = a.substring(pa.length()), nb = b.substring(pb.length());
-        if (na.isEmpty() || nb.isEmpty()) return na.compareTo(nb);
-        return Long.compare(Long.parseLong(na.length() > 18 ? na.substring(0, 18) : na), Long.parseLong(nb.length() > 18 ? nb.substring(0, 18) : nb));
-    };
+    /** Shared account weight, then the original source ID with ordinal comparison. */
+    static final Comparator<JSONObject> SLOT_ORDER = TokenAccountOrder.ACCOUNT_ORDER;
     static String productName(JSONObject a) {
         String name = PRODUCT_NAMES.get(String.valueOf(a.opt("product")));
+        if ("gemini-web".equals(a.opt("product"))) return "Gemini";
+        if ("gemini-cli".equals(a.opt("product"))) return "Gemini CLI";
+        if ("gemini-api".equals(a.opt("product"))) return "Gemini API";
         return name != null ? name : a.opt("label") instanceof String ? (String) a.opt("label") : "Agent";
     }
     private static String clean(Object v) { return v instanceof String ? ((String) v).replaceAll("[\\u0000-\\u001f\\u007f-\\u009f]", " ").trim() : ""; }

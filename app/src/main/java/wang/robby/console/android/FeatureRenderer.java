@@ -21,7 +21,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
-/** Explicit presentation allowlists. Never traverses or prints arbitrary JSON, credentials or clipboard content. */
+/** Explicit presentation allowlists. Never traverses or prints arbitrary JSON or credentials; clipboard text only on an explicit reveal. */
 public final class FeatureRenderer {
     private FeatureRenderer() {}
     /** Implemented by the host so overview figures can open their detail screen. */
@@ -570,10 +570,12 @@ public final class FeatureRenderer {
         LinearLayout c = u.card("当前内容"); u.metrics(c, "条数", String.valueOf(total), "公开", String.valueOf(publicCount), "私密", String.valueOf(total - publicCount));
         u.row(c, "来源", source(obj(p, "sourceStatus")));
         LinearLayout g = u.list("剪贴内容"); int i = 0;
-        for (JSONObject n : rows(p, "items")) u.item(g, "剪贴内容 " + (++i), flag(n, "isPublic", "公开", "私密"), join("创建 " + date(n, "createdAt"), "到期 " + date(n, "expiresAt")),
-            "可见性", flag(n, "isPublic", "公开", "私密"), "创建", date(n, "createdAt"), "到期", date(n, "expiresAt"));
+        // Each row opens to its masked body; the text is read for that one item only when 显示内容 is tapped.
+        for (JSONObject n : rows(p, "items")) { String id = n.optString("id", "");
+            u.expand(g, "剪贴内容 " + (++i), flag(n, "isPublic", "公开", "私密"), join("创建 " + date(n, "createdAt"), "到期 " + date(n, "expiresAt")),
+                "clipboard|" + id, body -> ClipboardReveal.fill(u.context, u.theme, body, id)); }
         empty(u, p, "items", "暂无剪贴内容");
-        u.explain("只显示元数据：应用不请求、不显示剪贴内容正文。");
+        u.explain("列表只含元数据；点开一条再点「显示内容」才读取这一条正文，60 秒后自动隐藏，不保存在手机上。");
     }
     private static void ledger(UI u, JSONObject p) {
         if (p.optJSONArray("projects") != null) {
@@ -673,19 +675,19 @@ public final class FeatureRenderer {
         long now = System.currentTimeMillis(); ZoneId zone = ZoneId.systemDefault();
         List<JSONObject> all = tokenAccounts(p);
         JSONObject build = null; for (JSONObject a : all) if ("grok".equals(a.optString("id"))) build = a;
-        Map<String, List<JSONObject>> sections = new LinkedHashMap<>(); for (String s : TokensModel.SECTIONS) sections.put(s, new ArrayList<>());
-        for (JSONObject a : all) if (TokensModel.shownOnPage(a)) sections.get(TokensModel.section(a)).add(a);
+        Map<String, List<JSONObject>> sections = new LinkedHashMap<>();
+        for (JSONObject a : all) if (TokensModel.shownOnPage(a)) sections.computeIfAbsent(TokensModel.section(a), key -> new ArrayList<>()).add(a);
         int shown = 0;
         for (Map.Entry<String, List<JSONObject>> e : sections.entrySet()) {
             if (e.getValue().isEmpty()) continue;
-            e.getValue().sort(TokensModel.SLOT_ORDER); u.heading(e.getKey(), null);
+            u.heading(e.getKey(), null);
             for (JSONObject a : e.getValue()) { tokenTile(u, a, sharedPlan(a, build), e.getKey(), now, zone, p.optJSONObject("tiboReset")); shown++; }
         }
         if (shown == 0) { LinearLayout c = u.theme.card(u.root); TextView t = u.text("还没有已接入的账号", 15, false); t.setTextColor(u.theme.muted); c.addView(t); }
     }
-    /** The original nine accounts followed by the additive additionalAccounts (TodayAI), as the web combines them. */
+    /** Preserve wire lists, merge additive Gemini entries and sort only the displayed catalog. */
     static List<JSONObject> tokenAccounts(JSONObject p) {
-        List<JSONObject> out = new ArrayList<>(); for (JSONObject a : rows(p, "accounts")) out.add(a); for (JSONObject a : rows(p, "additionalAccounts")) out.add(a); return out;
+        return TokenAccountOrder.accounts(p);
     }
     /** Grok Bot signed in with Grok Build's email shares Build's subscription, as the web shows it. */
     private static String sharedPlan(JSONObject a, JSONObject build) {
@@ -699,6 +701,7 @@ public final class FeatureRenderer {
             case "Claude": return u.theme.dark ? 0xffe39a7e : 0xffb8532f;
             case "Grok": return u.theme.dark ? 0xffb19cf5 : 0xff6a4cc0;
             case "Cursor": case "TodayAI": return u.theme.dark ? 0xff6fcfab : 0xff1d7f5f;
+            case "Gemini": return u.theme.dark ? 0xffa8c7fa : 0xff356ac3;
             default: return u.theme.ink;
         }
     }

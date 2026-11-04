@@ -32,14 +32,33 @@ public final class WidgetSnapshotTest {
         JSONObject snap = WidgetSnapshot.tokens(quotas(), Set.of("codex-5"));
         JSONArray rows = snap.getJSONArray("rows");
         assertEquals("six Codex (one hidden, ChatGPT 聊天 never shown) and TodayAI", 7, rows.length()); assertEquals(7, snap.getInt("total"));
-        assertEquals("the board's order, not least left first", "Codex · codex-0", WidgetSnapshot.label(rows.getJSONObject(0), false)); assertEquals(90, rows.getJSONObject(0).getLong("percent"));
+        assertEquals("shared account weights, not least left first", "Codex · codex-1", WidgetSnapshot.label(rows.getJSONObject(0), false)); assertEquals(15, rows.getJSONObject(0).getLong("percent"));
         assertEquals("named by email prefix, so not numbered", "Codex", rows.getJSONObject(5).getString("name")); assertEquals("codex-6", rows.getJSONObject(5).getString("account"));
         assertEquals("TodayAI 全球 · today-global", WidgetSnapshot.label(rows.getJSONObject(6), true));
         assertEquals("OpenAI", rows.getJSONObject(0).getString("kind")); assertEquals("TodayAI", rows.getJSONObject(6).getString("kind"));
         assertFalse("no whole email or domain", snap.toString().contains("@") || snap.toString().contains("example"));
-        assertTrue(WidgetSnapshot.low(rows.getJSONObject(1))); assertFalse(WidgetSnapshot.low(rows.getJSONObject(0)));
-        String line = WidgetSnapshot.tokenLine(rows.getJSONObject(1), BEIJING, NOW);
+        assertTrue(WidgetSnapshot.low(rows.getJSONObject(0))); assertFalse(WidgetSnapshot.low(rows.getJSONObject(1)));
+        String line = WidgetSnapshot.tokenLine(rows.getJSONObject(0), BEIJING, NOW);
         assertTrue(line, line.startsWith("Codex · codex-1  15%") && line.endsWith(" 重置"));
+    }
+    @Test public void twoColumnWidgetKeepsSupplierPairsAdjacentAfterASingleAccount() throws Exception {
+        JSONArray rows = new JSONArray();
+        for (String kind : List.of("OpenAI", "OpenAI", "Claude", "Claude", "Grok", "Grok", "Cursor", "TodayAI", "TodayAI", "Gemini", "Gemini"))
+            rows.put(new JSONObject().put("kind", kind));
+        WidgetSnapshot.TokenSlots layout = WidgetSnapshot.tokenSlots(rows, 12, true);
+        assertArrayEquals(new int[]{0, 1, 2, 3, 4, 5, 6, -1, 7, 8, 9, 10}, layout.rowAt);
+        assertEquals(11, layout.shown); assertEquals(12, layout.used);
+        WidgetSnapshot.TokenSlots compact = WidgetSnapshot.tokenSlots(rows, 10, true);
+        assertEquals(9, compact.shown); assertEquals(10, compact.used);
+    }
+    @Test public void supplierLayoutCountsVisibleAccountsRatherThanReservedCells() throws Exception {
+        JSONArray rows = new JSONArray().put(new JSONObject().put("kind", "Cursor"))
+            .put(new JSONObject().put("kind", "Gemini")).put(new JSONObject().put("kind", "Gemini"));
+        WidgetSnapshot.TokenSlots grid = WidgetSnapshot.tokenSlots(rows, 2, true);
+        assertArrayEquals(new int[]{0, -1}, grid.rowAt); assertEquals(1, grid.shown); assertEquals(1, grid.used);
+        WidgetSnapshot.TokenSlots list = WidgetSnapshot.tokenSlots(rows, 2, false);
+        assertArrayEquals(new int[]{0, 1}, list.rowAt); assertEquals(2, list.shown); assertEquals(2, list.used);
+        assertEquals(0, WidgetSnapshot.tokenSlots(null, 12, true).shown);
     }
     @Test public void tokensKeepOneKindTogetherWhateverTheServerOrder() throws Exception {
         JSONArray accounts = new JSONArray().put(account("codex-1", "codex", 40, NOW + H)).put(account("claude-1", "claude", 70, NOW + H)).put(account("codex-2", "codex", 10, NOW + H))

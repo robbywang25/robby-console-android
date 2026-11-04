@@ -170,17 +170,19 @@ final class GodWidgets {
         JSONArray list = data == null ? null : data.optJSONArray("rows"); int n = list == null ? 0 : list.length(), total = data == null ? 0 : Math.max(n, data.optInt("total", n));
         int lines = Math.max(1, Math.min(TOKEN_LINES.length, (int) (room / listRow))); boolean grid = wide && total > lines;
         if (grid) lines = Math.max(1, Math.min(TOKEN_LINES.length, (int) (room / gridRow)));
-        int per = grid ? 2 : 1, shown = Math.min(n, lines * per), more = total - shown;
+        int per = grid ? 2 : 1; WidgetSnapshot.TokenSlots slots = WidgetSnapshot.tokenSlots(list, lines * per, grid);
+        int shown = slots.shown, more = total - shown;
         String meta = data == null ? null : (more > 0 ? "+" + more + (roomy ? " · " : "") : "") + (roomy ? WidgetSnapshot.meta(at, now, zone) : "");
         header(c, v, "Token 额度", "gauge", 0xff6366f1, meta == null || meta.isEmpty() ? null : meta, stale);
         StringBuilder said = new StringBuilder("Token 额度");
         // The lines share the height left below them by weight (widget_tokens.xml), so a short list or a cell taller than its size step leaves no gap.
         float density = c.getResources().getDisplayMetrics().density;
-        for (int r = 0; r < TOKEN_LINES.length; r++) { v.setViewVisibility(TOKEN_LINES[r], r == 0 || r * per < shown ? View.VISIBLE : View.GONE); v.setViewPadding(TOKEN_LINES[r], 0, Math.round((grid && tight ? r == 0 ? 6 : 4 : r == 0 ? 9 : 7) * density), 0, 0); }
+        for (int r = 0; r < TOKEN_LINES.length; r++) { v.setViewVisibility(TOKEN_LINES[r], r == 0 || r * per < slots.used ? View.VISIBLE : View.GONE); v.setViewPadding(TOKEN_LINES[r], 0, Math.round((grid && tight ? r == 0 ? 6 : 4 : r == 0 ? 9 : 7) * density), 0, 0); }
         for (int k = 0; k < TOKEN_IDS.length; k++) {
-            int[] id = TOKEN_IDS[k]; int slot = grid ? k : k % 2 == 0 ? k / 2 : -1; JSONObject row = slot < 0 || slot >= shown ? null : list.optJSONObject(slot);
+            int[] id = TOKEN_IDS[k]; int cell = grid ? k : k % 2 == 0 ? k / 2 : -1;
+            int slot = cell < 0 || cell >= slots.rowAt.length ? -1 : slots.rowAt[cell]; JSONObject row = slot < 0 ? null : list.optJSONObject(slot);
             if (row == null) {
-                boolean note = k == 0 && n == 0; v.setViewVisibility(id[0], note ? View.VISIBLE : k % 2 == 1 && grid && k / 2 * 2 < shown ? View.INVISIBLE : View.GONE);
+                boolean note = k == 0 && n == 0; v.setViewVisibility(id[0], note ? View.VISIBLE : k % 2 == 1 && grid && k / 2 * 2 < slots.used ? View.INVISIBLE : View.GONE);
                 if (note) { v.setTextViewText(id[2], data == null ? "打开 God 后显示" : "没有已接入的账号"); tint(v, id[2], R.color.widget_muted); v.setTextViewText(id[3], ""); v.setTextViewText(id[4], ""); v.setViewVisibility(id[5], View.GONE); v.setViewVisibility(id[1], View.GONE); }
                 continue;
             }

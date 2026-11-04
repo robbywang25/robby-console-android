@@ -202,6 +202,10 @@ final class PreviewMode {
    "benchmarks":[{"market":"A 股","label":"合成指数 甲","price":3735.37,"change":4.45,"changePct":0.12,"ytdPct":-6.31},
                  {"market":"美股","label":"合成指数 乙","price":7712.57,"change":21.8,"changePct":0.28}]}
   """.replace("NOW",time)).put("generatedAt",time);
+ if(path.equals("clipboard"))return new JSONObject().put("apiVersion","2026-07-01").put("generatedAt",time).put("partial",false).put("stale",false).put("sourceStatus",new JSONObject().put("available",true).put("stale",false))
+  .put("items",new org.json.JSONArray().put(new JSONObject().put("id","0123456789abcdef0123456789abcdef").put("isPublic",false).put("createdAt",time).put("expiresAt",java.time.Instant.now().plusSeconds(86400).toString()))
+   .put(new JSONObject().put("id","fedcba9876543210fedcba9876543210").put("isPublic",true).put("createdAt",time).put("expiresAt",java.time.Instant.now().plusSeconds(3600).toString())));
+ if(path.matches("clipboard/[a-f0-9]{32}/reveal"))return new JSONObject().put("apiVersion","2026-07-01").put("item",new JSONObject().put("id",path.split("/")[1]).put("content","合成的剪贴内容，只用于界面预览。\nhttps://example.com/preview"));
  if(path.equals("wechat/digest"))return WechatDigest.exampleResponse(java.time.Instant.now());
  throw new IllegalStateException("此预览不连接真实服务");
  }

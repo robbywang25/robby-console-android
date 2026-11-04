@@ -53,6 +53,7 @@ public final class FeatureCatalog {
         f("mindball", "心力球", "全天录音，DeepSeek 整理关键事项与待办", "工具", "", ""),
         f("uu-remote", "UU 远程", "绑定电脑，一键远控 Windows 与 Mac", "工具", "", ""),
         f("mijia-light", "米家灯光", "家里 Wi-Fi 直连，开关、亮度与色温", "工具", "", ""),
+        f("singing-bowl", "颂钵", "拟物颂钵与白噪音，番茄钟专注", "工具", "", ""),
         f("wechat-login-audit", "微信登录审计", "绑定状态与脱敏登录事件", "设置", "wechat/audit", "god.mobile.wechat.read"),
         f("secrets", "凭据配置", "服务配置状态", "设置", "secrets/status", "god.mobile.read")
     ));
@@ -64,7 +65,7 @@ public final class FeatureCatalog {
      * The person can show them again; an entry leaves this list once its source works.
      */
     /** Features that never call God; each is listed here so a missing path cannot slip in unnoticed. */
-    public static final java.util.Set<String> LOCAL = java.util.Set.of("mindball", "uu-remote", "mijia-light");
+    public static final java.util.Set<String> LOCAL = java.util.Set.of("mindball", "uu-remote", "mijia-light", "singing-bowl");
     public static final Map<String, String> DEFAULT_HIDDEN_REASONS = Map.of(
         "umami", "暂未接通 · 接口暂不可用",
         "posthog", "暂未接通 · 数据源未配置");
@@ -101,6 +102,7 @@ public final class FeatureCatalog {
         Map.entry("mindball", "录音 记录 转写 待办 时间线 备忘 会议 纪要 OPPO 心力球 recorder memo todo timeline"),
         Map.entry("uu-remote", "远程 远控 远程桌面 电脑 Windows Mac 网易 UU远程 画中画 小窗 remote desktop control"),
         Map.entry("mijia-light", "米家 小米 灯 台灯 挂灯 开灯 关灯 亮度 色温 智能家居 Yeelight miIO light lamp smart home"),
+        Map.entry("singing-bowl", "颂钵 钵 西藏 冥想 白噪音 粉红噪音 棕噪音 雨声 环境音 助眠 专注 番茄钟 番茄工作法 计时 倒计时 singing bowl tibetan meditation white noise pomodoro focus timer"),
         Map.entry("wechat-login-audit", "微信 登录 审计 wechat login"),
         Map.entry("secrets", "密钥 凭证 credential"));
 

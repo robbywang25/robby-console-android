@@ -33,7 +33,7 @@ final class TokensPages {
     // ---------------------------------------------------------------- 重置日历
 
     static void calendar(Context ctx, LinearLayout root, JSONObject p) {
-        List<JSONObject> accounts = new ArrayList<>(); for (String key : new String[]{"accounts", "additionalAccounts"}) { JSONArray a = p.optJSONArray(key); if (a != null) for (int i = 0; i < a.length(); i++) { JSONObject o = a.optJSONObject(i); if (o != null) accounts.add(o); } }
+        List<JSONObject> accounts = TokenAccountOrder.accounts(p);
         QuotaCalendar.Model m = QuotaCalendar.build(accounts, ZoneId.systemDefault(), System.currentTimeMillis());
         if (day == null || month == null) { day = m.today; month = YearMonth.from(m.today); }
         LinearLayout box = new LinearLayout(ctx); box.setOrientation(LinearLayout.VERTICAL); root.addView(box);

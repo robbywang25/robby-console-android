@@ -41,6 +41,7 @@ public final class PreferenceSyncTest {
         assertEquals(local.get("enhancedNotice"), back.get("enhancedNotice"));
         assertEquals(local.get("persistentNotice"), back.get("persistentNotice"));
         assertEquals(local.get("tiboNotice"), back.get("tiboNotice"));
+        assertEquals(local.get("bowl"), back.get("bowl"));
         assertEquals(back, PreferenceSync.read(PreferenceSync.document(back)));
     }
 
@@ -573,6 +574,7 @@ public final class PreferenceSyncTest {
         local.put("enhancedNotice", true);
         local.put("persistentNotice", true);
         local.put("tiboNotice", true);
+        local.put("bowl", "focus=50;short=10;long=20;rounds=3;auto=0;bowl=2;bowlVol=60;noiseVol=25");
         return local;
     }
     private static PreferenceSync.Sync ready(Manual time, Net net) { return new PreferenceSync.Sync(time, time, time, net, null); }

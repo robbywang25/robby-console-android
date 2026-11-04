@@ -18,7 +18,7 @@ import wang.robby.console.android.auth.DeviceAuthorization;
 import wang.robby.console.android.auth.NativePasskeyFlow;
 
 /** Native client. No embedded web content, demo balances, or service credentials. */
-public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host, MindBallPage.Host {
+public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host, MindBallPage.Host, ClipboardReveal.Host {
     private int INK, MUTED, ACCENT, BG; private ConsoleTheme theme;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     /** 看板 reads run side by side (overview, Token 额度, …) instead of queueing behind one another. */
@@ -799,6 +799,8 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             // UU 远程 reads only this phone too: pulling down looks again at whether UU 远程 is installed.
             // 米家灯光 talks only to a lamp on this Wi-Fi: pulling down reads it again.
             if("mijia-light".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->MiioLightPage.load(this,page::finishRefresh));MiioLightPage.render(this,local);MiioLightPage.sync(this,AppSecretsSync.PAGE_AGE);restoreViewport();if(done!=null)done.run();return;}
+            // 颂钵 plays and times on this phone alone: nothing to read, so pulling down only redraws the page.
+            if("singing-bowl".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->{BowlPage.render(this,local);page.finishRefresh();});BowlPage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
             if("uu-remote".equals(f.id)){page.setRefresh(pullMark,pullGlyph,"刷新",()->{UURemotePage.render(this,local);page.finishRefresh();});UURemotePage.render(this,local);restoreViewport();if(done!=null)done.run();return;}
             if(MindBallPage.SETTINGS.equals(project)){heading.setText("心力球设置");page.setRefresh(pullMark,pullGlyph,"同步设置",()->{if(!PreviewMode.isBuild())MindBall.syncAsync(this);page.finishRefresh();});MindBallPage.renderSettings(this,local);}
             else{trailing.addView(circle("gear","心力球设置",()->{saveViewport();++generation;project=MindBallPage.SETTINGS;enterFrom=1;build();}));
@@ -1614,6 +1616,11 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!notificationsAllowed()){tiboTestPending=false;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},TIBO_PERMISSION);return;}
         TiboWatch.enable(this);
         if(!getSystemService(PowerManager.class).isIgnoringBatteryOptimizations(getPackageName()))tiboFix("battery");
+    }
+    /** One cloud clipboard item's text, read on the worker; never cached in {@code snapshots}. */
+    @Override public void revealClipboard(String id,java.util.function.Consumer<String> shown,java.util.function.Consumer<String> failed){
+        worker.execute(()->{try{String text=ClipboardReveal.content(read(ClipboardReveal.route(id)),id);runOnUiThread(()->{if(!isDestroyed())shown.accept(text);});}
+            catch(Exception e){runOnUiThread(()->{if(!isDestroyed())failed.accept(safeError(e));});}});
     }
     @Override public void tiboTest(){if(!notificationsAllowed()){tiboTestPending=true;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},TIBO_PERMISSION);return;}TiboWatch.test(this);}
     private boolean notificationsAllowed(){return Build.VERSION.SDK_INT<33||checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED;}

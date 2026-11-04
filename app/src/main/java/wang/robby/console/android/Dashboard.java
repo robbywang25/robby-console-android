@@ -65,14 +65,14 @@ final class Dashboard {
         out.sort(java.util.Comparator.comparingLong(e -> e.at)); return out;
     }
     /**
-     * Accounts the Token card shows, in the order given: on the page, not hidden, at most {@link #MAX_TOKEN_ROWS}.
+     * Accounts the Token card shows, in shared supplier/account weight order: on the page, not hidden, at most {@link #MAX_TOKEN_ROWS}.
      * Two accounts of one product both stay, and names are left as they arrived.
      */
     static List<JSONObject> tokenBoardAccounts(List<JSONObject> accounts, Set<String> hidden) {
         List<JSONObject> out = new ArrayList<>(); if (accounts == null) return out;
         Set<String> hide = hidden == null ? Set.of() : hidden;
-        for (JSONObject a : accounts) {
-            if (a == null || !TokensModel.shownOnPage(a) || hide.contains(a.optString("id"))) continue;
+        for (JSONObject a : TokenAccountOrder.ordered(accounts)) {
+            if (!TokensModel.shownOnPage(a) || hide.contains(a.optString("id"))) continue;
             if (out.size() >= MAX_TOKEN_ROWS) break;
             out.add(a);
         }
