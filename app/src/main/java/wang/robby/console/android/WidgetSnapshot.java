@@ -60,6 +60,24 @@ final class WidgetSnapshot {
         }
         JSONObject o = wrap(out); put(o, "total", board.size()); return o;
     }
+    static final class TokenSlots {
+        final int[] rowAt; final int shown, used;
+        TokenSlots(int[] rowAt, int shown, int used) { this.rowAt = rowAt; this.shown = shown; this.used = used; }
+    }
+    /** A multi-account supplier group starts a fresh two-column row instead of straddling another supplier. */
+    static TokenSlots tokenSlots(JSONArray rows, int capacity, boolean twoColumns) {
+        int[] slots = new int[Math.max(0, capacity)]; java.util.Arrays.fill(slots, -1);
+        int slot = 0, shown = 0, used = 0, total = rows == null ? 0 : rows.length();
+        for (int first = 0; first < total && slot < slots.length;) {
+            JSONObject row = rows.optJSONObject(first); String kind = row == null ? "" : row.optString("kind");
+            int end = first + 1;
+            while (end < total) { JSONObject next = rows.optJSONObject(end); if (next == null || !kind.equals(next.optString("kind"))) break; end++; }
+            if (twoColumns && slot % 2 == 1 && end - first > 1) slot++;
+            for (int index = first; index < end && slot < slots.length; index++) { slots[slot++] = index; shown++; used = slot; }
+            first = end;
+        }
+        return new TokenSlots(slots, shown, used);
+    }
     /** 重置日历: the next five scheduled resets of the connected accounts, as the platform, email prefix and window. */
     static JSONObject calendar(JSONObject quotas, ZoneId zone, long now) {
         if (quotas == null) return null;

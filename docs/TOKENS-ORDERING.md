@@ -50,3 +50,7 @@ card, account visibility settings and multi-account quota widget use it.
 Calendar events still sort by event time; they are events rather than an account
 catalog. Existing quota freshness, rendering and notification decisions remain
 separate from account ordering.
+
+The two-column Android quota widget starts a multi-account provider on a fresh
+row when the previous provider leaves one cell. Reserved cells do not count as
+shown accounts; the `+N` overflow count remains the number of hidden accounts.
