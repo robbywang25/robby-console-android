@@ -41,7 +41,6 @@ final class WidgetSnapshot {
     static JSONObject tokens(JSONObject quotas, Set<String> hidden) {
         if (quotas == null) return null;
         List<JSONObject> board = new ArrayList<>(Dashboard.tokenBoardAccounts(FeatureRenderer.tokenAccounts(quotas), hidden));
-        board.sort(Comparator.comparingInt(a -> TokensModel.SECTIONS.indexOf(TokensModel.section(a))));
         java.util.Map<String, Integer> count = new java.util.HashMap<>(), seen = new java.util.HashMap<>();
         for (JSONObject a : board) count.merge(TokensModel.productName(a) + "\u0000" + emailPrefix(TokensModel.boardEmail(a)), 1, Integer::sum);
         JSONArray out = new JSONArray();

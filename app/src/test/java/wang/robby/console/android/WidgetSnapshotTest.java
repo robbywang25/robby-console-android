@@ -32,13 +32,13 @@ public final class WidgetSnapshotTest {
         JSONObject snap = WidgetSnapshot.tokens(quotas(), Set.of("codex-5"));
         JSONArray rows = snap.getJSONArray("rows");
         assertEquals("six Codex (one hidden, ChatGPT 聊天 never shown) and TodayAI", 7, rows.length()); assertEquals(7, snap.getInt("total"));
-        assertEquals("the board's order, not least left first", "Codex · codex-0", WidgetSnapshot.label(rows.getJSONObject(0), false)); assertEquals(90, rows.getJSONObject(0).getLong("percent"));
+        assertEquals("shared account weights, not least left first", "Codex · codex-1", WidgetSnapshot.label(rows.getJSONObject(0), false)); assertEquals(15, rows.getJSONObject(0).getLong("percent"));
         assertEquals("named by email prefix, so not numbered", "Codex", rows.getJSONObject(5).getString("name")); assertEquals("codex-6", rows.getJSONObject(5).getString("account"));
         assertEquals("TodayAI 全球 · today-global", WidgetSnapshot.label(rows.getJSONObject(6), true));
         assertEquals("OpenAI", rows.getJSONObject(0).getString("kind")); assertEquals("TodayAI", rows.getJSONObject(6).getString("kind"));
         assertFalse("no whole email or domain", snap.toString().contains("@") || snap.toString().contains("example"));
-        assertTrue(WidgetSnapshot.low(rows.getJSONObject(1))); assertFalse(WidgetSnapshot.low(rows.getJSONObject(0)));
-        String line = WidgetSnapshot.tokenLine(rows.getJSONObject(1), BEIJING, NOW);
+        assertTrue(WidgetSnapshot.low(rows.getJSONObject(0))); assertFalse(WidgetSnapshot.low(rows.getJSONObject(1)));
+        String line = WidgetSnapshot.tokenLine(rows.getJSONObject(0), BEIJING, NOW);
         assertTrue(line, line.startsWith("Codex · codex-1  15%") && line.endsWith(" 重置"));
     }
     @Test public void tokensKeepOneKindTogetherWhateverTheServerOrder() throws Exception {

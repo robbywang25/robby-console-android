@@ -675,19 +675,19 @@ public final class FeatureRenderer {
         long now = System.currentTimeMillis(); ZoneId zone = ZoneId.systemDefault();
         List<JSONObject> all = tokenAccounts(p);
         JSONObject build = null; for (JSONObject a : all) if ("grok".equals(a.optString("id"))) build = a;
-        Map<String, List<JSONObject>> sections = new LinkedHashMap<>(); for (String s : TokensModel.SECTIONS) sections.put(s, new ArrayList<>());
-        for (JSONObject a : all) if (TokensModel.shownOnPage(a)) sections.get(TokensModel.section(a)).add(a);
+        Map<String, List<JSONObject>> sections = new LinkedHashMap<>();
+        for (JSONObject a : all) if (TokensModel.shownOnPage(a)) sections.computeIfAbsent(TokensModel.section(a), key -> new ArrayList<>()).add(a);
         int shown = 0;
         for (Map.Entry<String, List<JSONObject>> e : sections.entrySet()) {
             if (e.getValue().isEmpty()) continue;
-            e.getValue().sort(TokensModel.SLOT_ORDER); u.heading(e.getKey(), null);
+            u.heading(e.getKey(), null);
             for (JSONObject a : e.getValue()) { tokenTile(u, a, sharedPlan(a, build), e.getKey(), now, zone, p.optJSONObject("tiboReset")); shown++; }
         }
         if (shown == 0) { LinearLayout c = u.theme.card(u.root); TextView t = u.text("还没有已接入的账号", 15, false); t.setTextColor(u.theme.muted); c.addView(t); }
     }
-    /** The original nine accounts followed by the additive additionalAccounts (TodayAI), as the web combines them. */
+    /** Preserve wire lists, merge additive Gemini entries and sort only the displayed catalog. */
     static List<JSONObject> tokenAccounts(JSONObject p) {
-        List<JSONObject> out = new ArrayList<>(); for (JSONObject a : rows(p, "accounts")) out.add(a); for (JSONObject a : rows(p, "additionalAccounts")) out.add(a); return out;
+        return TokenAccountOrder.accounts(p);
     }
     /** Grok Bot signed in with Grok Build's email shares Build's subscription, as the web shows it. */
     private static String sharedPlan(JSONObject a, JSONObject build) {
@@ -701,6 +701,7 @@ public final class FeatureRenderer {
             case "Claude": return u.theme.dark ? 0xffe39a7e : 0xffb8532f;
             case "Grok": return u.theme.dark ? 0xffb19cf5 : 0xff6a4cc0;
             case "Cursor": case "TodayAI": return u.theme.dark ? 0xff6fcfab : 0xff1d7f5f;
+            case "Gemini": return u.theme.dark ? 0xffa8c7fa : 0xff356ac3;
             default: return u.theme.ink;
         }
     }

@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.49.0", "2026-11-04", "同一供应商的额度账号排在一起",
+            "Token 额度页、看板与额度小组件采用统一的供应商和账号顺序。",
+            "Gemini 的多个账号归在同一组，不会和其他供应商穿插。",
+            "顺序跟随共用权重，刷新、余额变化和数据过期不会把账号打乱。"),
         new Entry("0.48.0", "2026-10-31", "云剪贴板能看正文、能复制了",
             "云剪贴板里点开一条，再点「显示内容」，就能看到这一条的正文。",
             "正文下方有「复制」，一点就放进手机剪贴板，可以直接粘贴。",
