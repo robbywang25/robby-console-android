@@ -1,0 +1,15 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "wang.robby.console.android",
+      "sha256_cert_fingerprints": [
+        "83:D6:24:E0:E6:D4:95:98:AC:B2:06:2B:79:3A:EC:69:DD:EF:C4:F4:50:9A:6A:42:99:04:04:66:1B:3D:A5:69"
+      ]
+    }
+  }
+]

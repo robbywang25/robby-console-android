@@ -17,10 +17,13 @@ final class RefreshFailurePolicy {
         return "token".equals(phase) && status == 400 && "invalid_grant".equals(safeCode(value));
     }
     static String phase(String endpoint) {
-        if ((AuthSession.ISSUER + "/.well-known/openid-configuration").equals(endpoint)) return "discovery";
-        if ((AuthSession.ISSUER + "/api/oidc/token").equals(endpoint) || AuthSession.FEDERATED_TOKEN.equals(endpoint)) return "token";
-        if ((AuthSession.ISSUER + "/api/oidc/device-authorization").equals(endpoint)) return "device-authorization";
-        if ((AuthSession.ISSUER + "/api/oidc/revocation").equals(endpoint)) return "revocation";
+        if (AuthSession.FEDERATED_TOKEN.equals(endpoint)) return "token";
+        for (String issuer : new String[] {AuthSession.ISSUER, AuthSession.LEGACY_ISSUER}) {
+            if ((issuer + "/.well-known/openid-configuration").equals(endpoint)) return "discovery";
+            if ((issuer + "/api/oidc/token").equals(endpoint)) return "token";
+            if ((issuer + "/api/oidc/device-authorization").equals(endpoint)) return "device-authorization";
+            if ((issuer + "/api/oidc/revocation").equals(endpoint)) return "revocation";
+        }
         return "unknown";
     }
     static String diagnostic(String phase, int status, Object value) {

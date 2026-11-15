@@ -23,9 +23,11 @@ final class DevicePollPolicy {
         OAuthGuards.require(seconds > 0 && seconds <= 900);
         return (int) Math.max(5, seconds);
     }
-    static String verificationUri(String value) throws Exception {
-        OAuthGuards.endpoint(value, AuthSession.ISSUER);
-        OAuthGuards.require(value.equals(AuthSession.ISSUER + "/consent/openid/device-authorization"));
+    static String verificationUri(String value) throws Exception { return verificationUri(value, AuthSession.ISSUER); }
+    static String verificationUri(String value, String issuer) throws Exception {
+        AuthIssuerPolicy.issuer(issuer);
+        OAuthGuards.endpoint(value, issuer);
+        OAuthGuards.require(value.equals(issuer + "/consent/openid/device-authorization"));
         return value;
     }
     long delay(long now) throws Exception {

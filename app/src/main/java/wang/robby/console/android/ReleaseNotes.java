@@ -15,6 +15,10 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.50.0", "2026-11-15", "登录迁移到统一认证入口",
+            "新登录使用 auth.robby.wang 的 Passkey。",
+            "升级保留已有登录，新旧会话各自完成续期。",
+            "账户安全设置支持新入口，旧入口在迁移期间继续兼容。"),
         new Entry("0.49.0", "2026-11-04", "同一供应商的额度账号排在一起",
             "Token 额度页、看板与额度小组件采用统一的供应商和账号顺序。",
             "Gemini 的多个账号归在同一组，不会和其他供应商穿插。",

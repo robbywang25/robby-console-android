@@ -28,6 +28,17 @@ public final class AccountCenterTest {
         assertEquals(AccountCenter.SETTINGS, s.settingsUrl);
     }
 
+    @Test public void settingsAcceptOnlyTheTwoExactSecurityPagesAndDefaultToCanonical() throws Exception {
+        for(String url:new String[]{AccountCenter.SETTINGS,AccountCenter.LEGACY_SETTINGS}){
+            assertEquals(url,AccountCenter.status(new JSONObject().put("security",new JSONObject().put("settingsUrl",url))).settingsUrl);
+        }
+        for(String url:new String[]{"https://auth.robby.wang/other",AccountCenter.SETTINGS+"?rd=https://evil.example/",AccountCenter.SETTINGS+"#x",
+                AccountCenter.SETTINGS.replace("https:","http:"),AccountCenter.SETTINGS.replace("auth.robby.wang","auth.robby.wang.evil.example"),
+                AccountCenter.SETTINGS.replace("https://","https://user@"),AccountCenter.SETTINGS.replace("auth.robby.wang","auth.robby.wang:444")}){
+            assertEquals(AccountCenter.SETTINGS,AccountCenter.status(new JSONObject().put("security",new JSONObject().put("settingsUrl",url))).settingsUrl);
+        }
+    }
+
     @Test public void devicesKeepOnlyKnownAppsAndCountTheOthers() throws Exception {
         AccountCenter.Devices d = AccountCenter.devices(new JSONObject("{\"currentFound\":true,\"devices\":["
             + "{\"id\":\"00000000000000a0\",\"client\":\"android\",\"signedInAt\":\"2026-10-11T08:00:00Z\",\"lastActiveAt\":\"2026-10-20T00:13:35Z\",\"current\":true},"

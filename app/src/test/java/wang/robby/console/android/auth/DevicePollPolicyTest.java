@@ -43,7 +43,7 @@ public class DevicePollPolicyTest {
         String expected = AuthSession.ISSUER + "/consent/openid/device-authorization";
         assertEquals(expected, DevicePollPolicy.verificationUri(expected));
         for (String value : new String[] {expected + "?user_code=test", expected + "#test", expected + "/",
-                expected.replace("https:", "http:"), expected.replace("auth.god.robby.wang", "evil.example"), AuthSession.ISSUER + "/other"})
+                expected.replace("https:", "http:"), expected.replace("auth.robby.wang", "evil.example"), AuthSession.ISSUER + "/other"})
             assertThrows(Exception.class, () -> DevicePollPolicy.verificationUri(value));
     }
     @Test public void deviceRequestsUseAudienceAndNeverPutCodeIntoVerificationUrl() {

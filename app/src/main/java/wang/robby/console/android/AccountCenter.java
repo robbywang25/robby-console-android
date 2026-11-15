@@ -28,7 +28,8 @@ final class AccountCenter {
     static final String APP_SECRETS_V2 = APP_SECRETS + "?version=2";
     /** The web user center; binding Apple or WeChat starts there, since it needs the provider's own sign-in page. */
     static final String WEB = "https://god.robby.wang/account/";
-    static final String SETTINGS = "https://auth.god.robby.wang/settings/two-factor-authentication";
+    static final String SETTINGS = "https://auth.robby.wang/settings/two-factor-authentication";
+    static final String LEGACY_SETTINGS = "https://auth.god.robby.wang/settings/two-factor-authentication";
     /** Devices shown before the rest fold under one row. */
     static final int FOLD = 6;
 
@@ -80,7 +81,8 @@ final class AccountCenter {
         JSONObject sec = v.optJSONObject("security");
         if (sec != null) {
             s.totp = flag(sec, "totpBound"); s.passkeyBound = flag(sec, "passkeyBound");
-            String url = str(sec, "settingsUrl", "https://auth\\.god\\.robby\\.wang/[A-Za-z0-9/_-]{1,80}"); if (url != null) s.settingsUrl = url;
+            Object url = sec.opt("settingsUrl");
+            if (SETTINGS.equals(url) || LEGACY_SETTINGS.equals(url)) s.settingsUrl = (String) url;
             JSONArray keys = sec.optJSONArray("passkeys");
             if (keys != null) { s.passkeys = new ArrayList<>(); for (int i = 0; i < keys.length() && i < 50; i++) { Passkey p = passkey(keys.optJSONObject(i)); if (p != null) s.passkeys.add(p); } }
         }

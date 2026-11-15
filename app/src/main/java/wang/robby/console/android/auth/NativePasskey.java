@@ -31,8 +31,7 @@ final class NativePasskey {
     static final Set<String> PATHS = Set.of("/api/firstfactor/passkey", "/api/state", "/api/oidc/consent");
     static final String NO_CREDENTIAL = "这台手机上没有可用于 God 的通行密钥。可以在 Google 密码管理器同步通行密钥，或改用「通过已有设备授权」。";
     static final String UNAVAILABLE = "系统暂时无法使用通行密钥，请确认 Google 密码管理器可用后重试。";
-    static final String UNVERIFIED = "这台手机现在连不上 Google 服务，系统没法确认 God 可以使用 auth.god.robby.wang 的通行密钥。连上能访问 Google 的网络后重试，或改用网页登录。";
-    private static final Set<String> COOKIE_DOMAINS = Set.of(RP_ID, "." + RP_ID, "god.robby.wang", ".god.robby.wang", "robby.wang", ".robby.wang");
+    static final String UNVERIFIED = "这台手机现在连不上 Google 服务，系统没法确认 God 可以使用登录服务的通行密钥。连上能访问 Google 的网络后重试，或改用网页登录。";
 
     /** A challenge Authelia issued, and the Credential Manager request built only from its validated parts. */
     static final class Challenge {
@@ -40,12 +39,14 @@ final class NativePasskey {
         Challenge(String challenge, String requestJson) { this.challenge = challenge; this.requestJson = requestJson; }
     }
 
-    static Challenge challenge(JSONObject data) throws Exception {
+    static Challenge challenge(JSONObject data) throws Exception { return challenge(data, AuthSession.ISSUER); }
+    static Challenge challenge(JSONObject data, String issuer) throws Exception {
+        String expectedRp = URI.create(AuthIssuerPolicy.issuer(issuer)).getHost();
         JSONObject key = data.optJSONObject("publicKey");
         OAuthGuards.require(key != null);
         String challenge = text(key, "challenge"), rpId = text(key, "rpId"), verification = text(key, "userVerification");
         byte[] bytes = decode(challenge, 512);
-        OAuthGuards.require(RP_ID.equals(rpId) && "required".equals(verification) && bytes != null && bytes.length >= 16);
+        OAuthGuards.require(expectedRp.equals(rpId) && "required".equals(verification) && bytes != null && bytes.length >= 16);
         JSONArray allowed = key.optJSONArray("allowCredentials"), credentials = new JSONArray();
         if (allowed != null) {
             OAuthGuards.require(allowed.length() <= 64);
@@ -56,7 +57,7 @@ final class NativePasskey {
             }
         }
         long timeout = Math.max(10_000L, Math.min(300_000L, key.optLong("timeout", 60_000L)));
-        JSONObject request = new JSONObject().put("challenge", challenge).put("rpId", RP_ID).put("timeout", timeout)
+        JSONObject request = new JSONObject().put("challenge", challenge).put("rpId", expectedRp).put("timeout", timeout)
                 .put("userVerification", "required").put("allowCredentials", credentials);
         return new Challenge(challenge, request.toString());
     }
@@ -65,7 +66,9 @@ final class NativePasskey {
      * Credential Manager's authentication response to the body Authelia's passkey endpoint expects. The assertion must
      * answer this challenge, from this app's signing origin, for this relying party, with the person present and verified.
      */
-    static JSONObject assertion(String responseJson, String challenge, String origin) throws Exception {
+    static JSONObject assertion(String responseJson, String challenge, String origin) throws Exception { return assertion(responseJson, challenge, origin, AuthSession.ISSUER); }
+    static JSONObject assertion(String responseJson, String challenge, String origin, String issuer) throws Exception {
+        String expectedRp = URI.create(AuthIssuerPolicy.issuer(issuer)).getHost();
         OAuthGuards.require(responseJson != null && responseJson.length() <= 32768 && origin != null);
         JSONObject in = new JSONObject(responseJson), response = in.optJSONObject("response");
         OAuthGuards.require(response != null);
@@ -78,7 +81,7 @@ final class NativePasskey {
         JSONObject collected = new JSONObject(new String(client, StandardCharsets.UTF_8));
         OAuthGuards.require("webauthn.get".equals(text(collected, "type")) && challenge.equals(text(collected, "challenge"))
                 && origin.equals(text(collected, "origin")));
-        byte[] rpHash = MessageDigest.getInstance("SHA-256").digest(RP_ID.getBytes(StandardCharsets.UTF_8));
+        byte[] rpHash = MessageDigest.getInstance("SHA-256").digest(expectedRp.getBytes(StandardCharsets.UTF_8));
         // authenticatorData: rpIdHash (32 bytes), then flags; 0x01 user present, 0x04 user verified.
         OAuthGuards.require(MessageDigest.isEqual(Arrays.copyOf(data, 32), rpHash) && (data[32] & 0x05) == 0x05);
         JSONObject credential = new JSONObject().put("id", id).put("rawId", id).put("type", "public-key")
@@ -95,8 +98,9 @@ final class NativePasskey {
                 .encodeToString(MessageDigest.getInstance("SHA-256").digest(certificate));
     }
 
-    static String flowId(URI location) throws Exception {
-        OAuthGuards.require(sameIssuer(location) && "/consent/openid/decision".equals(location.getRawPath()));
+    static String flowId(URI location) throws Exception { return flowId(location, AuthSession.ISSUER); }
+    static String flowId(URI location, String issuer) throws Exception {
+        OAuthGuards.require(sameIssuer(location, issuer) && "/consent/openid/decision".equals(location.getRawPath()));
         Map<String, String> query = query(location);
         OAuthGuards.require(query != null && query.size() == 2 && "openid_connect".equals(query.get("flow")));
         String id = query.get("flow_id");
@@ -118,7 +122,7 @@ final class NativePasskey {
 
     /** After consent Authelia resumes the original authorization request, adding only the consent id. */
     static void resume(URI resume, URI original, String flowId) throws Exception {
-        OAuthGuards.require(sameIssuer(resume) && original.getRawPath().equals(resume.getRawPath()));
+        OAuthGuards.require(sameIssuer(resume, AuthIssuerPolicy.origin(original)) && original.getRawPath().equals(resume.getRawPath()));
         Map<String, String> before = query(original), after = query(resume);
         OAuthGuards.require(before != null && after != null && after.size() == before.size() + 1 && flowId.equals(after.get("consent_id")));
         for (Map.Entry<String, String> item : before.entrySet()) OAuthGuards.require(item.getValue().equals(after.get(item.getKey())));
@@ -126,7 +130,7 @@ final class NativePasskey {
 
     static URI authorization(String url) throws Exception {
         URI uri = new URI(url);
-        OAuthGuards.require(sameIssuer(uri) && AUTHORIZATION_PATH.equals(uri.getRawPath()) && query(uri) != null);
+        OAuthGuards.require(sameIssuer(uri, AuthIssuerPolicy.origin(uri)) && AUTHORIZATION_PATH.equals(uri.getRawPath()) && query(uri) != null);
         return uri;
     }
 
@@ -136,6 +140,13 @@ final class NativePasskey {
                 && expected.getRawPath().equals(uri.getRawPath()) && uri.getRawUserInfo() == null && uri.getRawFragment() == null;
     }
 
+    static boolean callback(URI uri, String issuer) {
+        try {
+            Map<String,String> parameters = query(uri);
+            return callback(uri) && parameters != null && AuthIssuerPolicy.issuer(issuer).equals(parameters.get("iss"));
+        } catch (Exception ignored) { return false; }
+    }
+
     /** A redirect target; relative locations resolve against the request. Never followed blindly. */
     static URI location(URI request, String location) throws Exception {
         OAuthGuards.require(location != null && !location.isEmpty() && location.length() <= 16384);
@@ -143,13 +154,18 @@ final class NativePasskey {
     }
 
     /** Keeps only Authelia's session cookie, and only when it is Secure, HttpOnly and scoped to the expected domain. */
-    static String cookie(List<String> headers, String current) throws Exception {
+    static String cookie(List<String> headers, String current) throws Exception { return cookie(headers, current, AuthSession.ISSUER); }
+    static String cookie(List<String> headers, String current, String issuer) throws Exception {
+        String rp = URI.create(AuthIssuerPolicy.issuer(issuer)).getHost();
+        Set<String> domains = AuthSession.LEGACY_ISSUER.equals(issuer)
+                ? Set.of(rp, "." + rp, "god.robby.wang", ".god.robby.wang", "robby.wang", ".robby.wang")
+                : Set.of(rp, "." + rp, "robby.wang", ".robby.wang");
         if (headers == null) return current;
         for (String header : headers) {
             for (HttpCookie cookie : HttpCookie.parse(header)) {
                 if (!COOKIE.equals(cookie.getName())) continue;
-                String domain = cookie.getDomain() == null ? RP_ID : cookie.getDomain().toLowerCase(Locale.ROOT);
-                OAuthGuards.require(cookie.getSecure() && cookie.isHttpOnly() && COOKIE_DOMAINS.contains(domain)
+                String domain = cookie.getDomain() == null ? rp : cookie.getDomain().toLowerCase(Locale.ROOT);
+                OAuthGuards.require(cookie.getSecure() && cookie.isHttpOnly() && domains.contains(domain)
                         && cookie.getValue().length() <= 8192 && OAuthGuards.safeToken(cookie.getValue(), 8192));
                 current = COOKIE + "=" + cookie.getValue();
             }
@@ -178,10 +194,10 @@ final class NativePasskey {
         return s.length() > 200 ? s.substring(0, 200) : s;
     }
 
-    static boolean sameIssuer(URI uri) {
-        URI issuer = URI.create(AuthSession.ISSUER);
-        return "https".equals(uri.getScheme()) && issuer.getHost().equals(uri.getHost()) && uri.getPort() == issuer.getPort()
-                && uri.getRawUserInfo() == null && uri.getRawFragment() == null;
+    static boolean sameIssuer(URI uri) { return sameIssuer(uri, AuthSession.ISSUER); }
+    static boolean sameIssuer(URI uri, String issuer) {
+        try { return AuthIssuerPolicy.issuer(issuer).equals(AuthIssuerPolicy.origin(uri)); }
+        catch (Exception ignored) { return false; }
     }
 
     /** Form-decoded query, as Authelia re-encodes it; null for a missing query or a repeated name. */

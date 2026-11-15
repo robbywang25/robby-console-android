@@ -49,6 +49,7 @@ public final class NativePasskeyFlow {
     private final String origin;
     private volatile boolean cancelled;
     private String cookie;
+    private String issuer;
 
     public NativePasskeyFlow(Ui ui, String origin) { this(new Https(), ui, origin); }
     NativePasskeyFlow(Transport transport, Ui ui, String origin) { this.transport = transport; this.ui = ui; this.origin = origin; }
@@ -62,21 +63,22 @@ public final class NativePasskeyFlow {
         String phase = "start";
         try {
             URI authorization = NativePasskey.authorization(authorizationUrl);
+            issuer = AuthIssuerPolicy.origin(authorization);
             phase = "challenge";
-            NativePasskey.Challenge challenge = NativePasskey.challenge(json("/api/firstfactor/passkey", null, null));
+            NativePasskey.Challenge challenge = NativePasskey.challenge(json("/api/firstfactor/passkey", null, null), issuer);
             phase = "system";
             String response = ui.assertion(challenge.requestJson);
             check();
             phase = "assertion";
-            JSONObject body = NativePasskey.assertion(response, challenge.challenge, origin);
+            JSONObject body = NativePasskey.assertion(response, challenge.challenge, origin, issuer);
             try { json("/api/firstfactor/passkey", null, body); }
             catch (Rejected rejected) { throw new Failure(REJECTED, false); }
             phase = "state";
             if (json("/api/state", null, null).optInt("authentication_level", -1) != 2) throw new Failure(VERIFICATION, false);
             phase = "authorize";
             URI first = redirect(authorization);
-            if (NativePasskey.callback(first)) return first.toString();
-            String flow = NativePasskey.flowId(first);
+            if (NativePasskey.callback(first, issuer)) return first.toString();
+            String flow = NativePasskey.flowId(first, issuer);
             phase = "consent";
             NativePasskey.consent(json("/api/oidc/consent", "flow_id=" + flow, null));
             if (!ui.consent()) throw cancelled();
@@ -89,7 +91,7 @@ public final class NativePasskeyFlow {
             NativePasskey.resume(resume, authorization, flow);
             phase = "resume";
             URI callback = redirect(resume);
-            OAuthGuards.require(NativePasskey.callback(callback));
+            OAuthGuards.require(NativePasskey.callback(callback, issuer));
             return callback.toString();
         } catch (Failure failure) {
             if (!failure.cancelled) Log.w("GodAuth", "native passkey failed: " + phase);
@@ -101,7 +103,7 @@ public final class NativePasskeyFlow {
             // Fixed phase name only; never the exception, a URL, a body or a cookie.
             Log.w("GodAuth", "native passkey rejected: " + phase);
             throw new Failure(INVALID, false);
-        } finally { cookie = null; }
+        } finally { cookie = null; issuer = null; }
     }
 
     private void check() throws Failure { if (cancelled) throw cancelled(); }
@@ -110,7 +112,7 @@ public final class NativePasskeyFlow {
     private JSONObject json(String path, String query, JSONObject body) throws Exception {
         check();
         OAuthGuards.require(NativePasskey.PATHS.contains(path));
-        URI url = new URI(AuthSession.ISSUER + path + (query == null ? "" : "?" + query));
+        URI url = new URI(issuer + path + (query == null ? "" : "?" + query));
         byte[] payload = body == null ? null : body.toString().getBytes(StandardCharsets.UTF_8);
         OAuthGuards.require(payload == null || payload.length <= 32768);
         Response response = send(url, payload);
@@ -130,7 +132,7 @@ public final class NativePasskeyFlow {
 
     /** Requests an authorization URL and returns where Authelia redirects; the redirect is validated, never followed. */
     private URI redirect(URI url) throws Exception {
-        OAuthGuards.require(NativePasskey.sameIssuer(url) && NativePasskey.AUTHORIZATION_PATH.equals(url.getRawPath()));
+        OAuthGuards.require(NativePasskey.sameIssuer(url, issuer) && NativePasskey.AUTHORIZATION_PATH.equals(url.getRawPath()));
         Response response = send(url, null);
         OAuthGuards.require(response.status == 302 || response.status == 303);
         return NativePasskey.location(url, response.location);
@@ -138,11 +140,11 @@ public final class NativePasskeyFlow {
 
     private Response send(URI url, byte[] body) throws Exception {
         check();
-        OAuthGuards.require(NativePasskey.sameIssuer(url));
+        OAuthGuards.require(NativePasskey.sameIssuer(url, issuer));
         Response response = transport.exchange(url, body, cookie);
         check();
         if (response.status == 408 || response.status == 429 || response.status >= 500) throw new Unavailable();
-        cookie = NativePasskey.cookie(response.cookies, cookie);
+        cookie = NativePasskey.cookie(response.cookies, cookie, issuer);
         return response;
     }
 

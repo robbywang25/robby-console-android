@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.ArrayList;
-import java.util.Base64;
 import java.util.function.LongSupplier;
 import javax.net.ssl.HttpsURLConnection;
 
@@ -25,7 +24,8 @@ import javax.net.ssl.HttpsURLConnection;
  * in the app's single Android process. Does not parse or trust ID-token claims.
  */
 public final class AuthSession {
-    public static final String ISSUER = "https://auth.god.robby.wang";
+    public static final String ISSUER = AuthIssuerPolicy.PRIMARY;
+    public static final String LEGACY_ISSUER = AuthIssuerPolicy.LEGACY;
     public static final String CLIENT_ID = "robby-console-android";
     public static final String AUDIENCE = "https://god.robby.wang/api/mobile/v1";
     public static final String REDIRECT_URI = "https://god.robby.wang/mobile/android/callback";
@@ -62,10 +62,27 @@ public final class AuthSession {
     private static final Object STATE_LOCK = new Object();
     private static final Object REFRESH_LOCK = new Object();
     private static long generation;
-    private final EncryptedStore store;
+    interface Store {
+        JSONObject read() throws Exception;
+        void write(JSONObject value) throws Exception;
+        void clear();
+    }
+    interface Transport { JSONObject request(URI endpoint, Map<String, String> form, boolean empty, boolean deviceErrors) throws Exception; }
+    private final Store store;
+    private final Transport transport;
     private volatile Discovery cachedDiscovery;
 
-    public AuthSession(Context context) { store = new EncryptedStore(context.getApplicationContext()); }
+    public AuthSession(Context context) {
+        EncryptedStore encrypted = new EncryptedStore(context.getApplicationContext());
+        store = new Store() {
+            public JSONObject read() throws Exception { return encrypted.read(); }
+            public void write(JSONObject value) throws Exception { encrypted.write(value); }
+            public void clear() { encrypted.clear(); }
+        };
+        transport = AuthSession::httpsRequest;
+    }
+    // Synthetic tests exercise routing and preservation without Android storage or live credentials.
+    AuthSession(Store store, Transport transport) { this.store = store; this.transport = transport; }
 
     public String authorizationUrl() throws Exception {
         return authorizationUrl(beginAuthorization());
@@ -109,7 +126,7 @@ public final class AuthSession {
             JSONObject response = request(discovery.deviceAuthorization, OAuthRequests.deviceAuthorization(), false);
             String code = string(response, "device_code"), user = string(response, "user_code");
             OAuthGuards.require(OAuthGuards.safeToken(code, 4096) && user.matches("[A-Za-z0-9][A-Za-z0-9-]{3,63}"));
-            String verification = DevicePollPolicy.verificationUri(string(response, "verification_uri"));
+            String verification = DevicePollPolicy.verificationUri(string(response, "verification_uri"), discovery.issuer);
             int seconds = DevicePollPolicy.lifetime(response.opt("expires_in"));
             int interval = DevicePollPolicy.interval(response.has("interval") ? response.get("interval") : null);
             synchronized (STATE_LOCK) { OAuthGuards.require(generation == expected); }
@@ -136,7 +153,7 @@ public final class AuthSession {
                 grant.policy.timeout(monotonicNow());
                 return false;
             }
-            result = token(response);
+            result = token(response, null, false, grant.discovery.issuer);
             grant.policy.delay(monotonicNow()); // Reject success arriving after the device-code deadline.
             synchronized (STATE_LOCK) {
                 OAuthGuards.require(generation == grant.reservation && grant.code != null);
@@ -178,7 +195,7 @@ public final class AuthSession {
             synchronized (STATE_LOCK) { OAuthGuards.require(expected == generation); }
             Discovery discovery = discovery();
             String verifier = OAuthGuards.randomSecret(), state = OAuthGuards.randomSecret();
-            JSONObject pending = new JSONObject().put("verifier", verifier).put("state", state)
+            JSONObject pending = new JSONObject().put("verifier", verifier).put("state", state).put("issuer", discovery.issuer)
                     .put("created_at", System.currentTimeMillis());
             synchronized (STATE_LOCK) {
                 OAuthGuards.require(expected == generation);
@@ -210,17 +227,21 @@ public final class AuthSession {
     }
 
     public void handleCallback(Uri uri) throws Exception {
+        handleCallbackValue(uri == null ? null : uri.toString());
+    }
+    void handleCallbackValue(String callback) throws Exception {
         Token result = null;
         Discovery discovery = null;
         boolean federated = false;
         try {
             final long expected;
-            final String code, verifier;
+            final String code, verifier, expectedIssuer;
             synchronized (STATE_LOCK) {
                 JSONObject saved = readOrReset(), pending = saved.optJSONObject("pending");
                 OAuthGuards.require(pending != null);
                 federated = federated(pending);
-                code = OAuthGuards.callback(uri == null ? null : uri.toString(), REDIRECT_URI, federated ? FEDERATED_ISSUER : ISSUER,
+                expectedIssuer = federated ? FEDERATED_ISSUER : AuthIssuerPolicy.pendingIssuer(pending);
+                code = OAuthGuards.callback(callback, REDIRECT_URI, expectedIssuer,
                         string(pending, "state"), pending.getLong("created_at"), System.currentTimeMillis());
                 verifier = string(pending, "verifier");
                 OAuthGuards.require(verifier.matches("[A-Za-z0-9_-]{43}"));
@@ -231,7 +252,7 @@ public final class AuthSession {
             }
             if (federated) result = token(request(URI.create(FEDERATED_TOKEN), parameters("grant_type", "authorization_code", "code", code,
                     "code_verifier", verifier, "client_id", CLIENT_ID, "redirect_uri", REDIRECT_URI), false), null, true);
-            else { discovery = discovery(); result = token(request(discovery.token, OAuthRequests.code(code, verifier), false)); }
+            else { discovery = discovery(expectedIssuer); result = token(request(discovery.token, OAuthRequests.code(code, verifier), false), null, false, expectedIssuer); }
             synchronized (STATE_LOCK) {
                 OAuthGuards.require(generation == expected);
                 store.write(new JSONObject().put("session", result.json));
@@ -270,7 +291,7 @@ public final class AuthSession {
                 }
                 if (federated(current)) updated = token(request(URI.create(FEDERATED_TOKEN), parameters("grant_type", "refresh_token",
                         "refresh_token", string(current, "refresh_token"), "client_id", CLIENT_ID), false), current, true);
-                else { discovery = discovery(); updated = token(request(discovery.token, OAuthRequests.refresh(string(current, "refresh_token")), false), current); }
+                else { discovery = discovery(AuthIssuerPolicy.sessionIssuer(current)); updated = token(request(discovery.token, OAuthRequests.refresh(string(current, "refresh_token")), false), current, false, discovery.issuer); }
                 String access = updated.access;
                 synchronized (STATE_LOCK) {
                     OAuthGuards.require(expected == generation);
@@ -341,20 +362,25 @@ public final class AuthSession {
 
     /** Synchronous local invalidation; returned job only performs best-effort remote revocation. */
     Runnable clearLocal() {
-        String refresh = null, access = null; boolean federated = false;
+        String refresh = null, access = null, issuer = null; boolean federated = false;
         synchronized (STATE_LOCK) {
             generation++;
             try {
                 JSONObject session = store.read().optJSONObject("session");
-                if (session != null) { refresh = string(session, "refresh_token"); access = string(session, "access_token"); federated = federated(session); }
+                if (session != null) {
+                    federated = federated(session);
+                    if (!federated) validateStored(session);
+                    issuer = federated ? null : AuthIssuerPolicy.sessionIssuer(session);
+                    refresh = string(session, "refresh_token"); access = string(session, "access_token");
+                }
             } catch (Exception ignored) { /* Removal still proceeds if keystore is unavailable. */ }
             store.clear();
         }
-        final String refreshToRevoke = refresh, accessToRevoke = access;
+        final String refreshToRevoke = refresh, accessToRevoke = access, issuerToRevoke = issuer;
         if (federated) return () -> revokeFederated(refreshToRevoke);
         return () -> {
             if (refreshToRevoke != null || accessToRevoke != null) {
-                try { revoke(discovery(), refreshToRevoke, accessToRevoke); } catch (Exception ignored) { }
+                try { revoke(discovery(issuerToRevoke), refreshToRevoke, accessToRevoke); } catch (Exception ignored) { }
             }
         };
     }
@@ -378,13 +404,14 @@ public final class AuthSession {
         OAuthGuards.require(OAuthGuards.safeToken(string(token, "access_token"), 32768)
                 && OAuthGuards.safeToken(string(token, "refresh_token"), 32768)
                 && (federated(token) ? FEDERATED_SCOPES.equals(string(token, "scope")) : acceptedScope(string(token, "scope"))) && token.getLong("expires_at") > 0);
+        if (!federated(token)) validateTokenClaims(string(token, "access_token"), AuthIssuerPolicy.sessionIssuer(token));
     }
-    private static Token token(JSONObject body) throws Exception {
-        return token(body, null);
-    }
-    private static Token token(JSONObject body, JSONObject previous) throws Exception { return token(body, previous, false); }
     private static Token token(JSONObject body, JSONObject previous, boolean federated) throws Exception {
+        return token(body, previous, federated, federated ? FEDERATED_ISSUER : previous == null ? ISSUER : AuthIssuerPolicy.sessionIssuer(previous));
+    }
+    private static Token token(JSONObject body, JSONObject previous, boolean federated, String expectedIssuer) throws Exception {
         try {
+            if (!federated) AuthIssuerPolicy.issuer(expectedIssuer);
             String access = TokenResponsePolicy.field(body.has("access_token"), body.opt("access_token"), null, "access_token");
             TokenResponsePolicy.require(OAuthGuards.safeToken(access, 32768), "access_token");
             String refresh = TokenResponsePolicy.field(body.has("refresh_token"), body.opt("refresh_token"),
@@ -400,10 +427,11 @@ public final class AuthSession {
             TokenResponsePolicy.require(expiry instanceof Integer || expiry instanceof Long, "expires_in");
             long seconds = ((Number) expiry).longValue();
             TokenResponsePolicy.require(seconds >= 60 && seconds <= 86400, "expires_in");
-            validateTokenClaims(access, federated ? FEDERATED_ISSUER : ISSUER);
+            validateTokenClaims(access, expectedIssuer);
             JSONObject saved = new JSONObject().put("access_token", access).put("refresh_token", refresh)
                     .put("scope", expected).put("expires_at", System.currentTimeMillis() + seconds * 1000L);
             if (federated) saved.put("kind", "federated");
+            else saved.put("issuer", expectedIssuer);
             return new Token(saved, access, refresh);
         } catch (TokenResponsePolicy.Invalid failure) {
             Log.w("GodAuth", TokenResponsePolicy.diagnostic(failure.reason));
@@ -414,21 +442,7 @@ public final class AuthSession {
         }
     }
     private static void validateTokenClaims(String access, String issuer) throws TokenResponsePolicy.Invalid {
-        final JSONObject claims;
-        try {
-            String[] parts = access.split("\\.", -1);
-            TokenResponsePolicy.require(parts.length == 3, "jwt_format");
-            byte[][] decoded = new byte[3][];
-            for (int i = 0; i < 3; i++) {
-                TokenResponsePolicy.require(parts[i].matches("[A-Za-z0-9_-]+"), "jwt_format");
-                decoded[i] = Base64.getUrlDecoder().decode(parts[i]);
-                TokenResponsePolicy.require(Base64.getUrlEncoder().withoutPadding().encodeToString(decoded[i]).equals(parts[i]), "jwt_format");
-            }
-            JSONObject header = new JSONObject(new String(decoded[0], StandardCharsets.UTF_8));
-            TokenResponsePolicy.require("RS256".equals(header.opt("alg"))
-                    && ("at+jwt".equals(header.opt("typ")) || "application/at+jwt".equals(header.opt("typ"))), "jwt_format");
-            claims = new JSONObject(new String(decoded[1], StandardCharsets.UTF_8));
-        } catch (Exception ignored) { throw new TokenResponsePolicy.Invalid("jwt_format"); }
+        final JSONObject claims = AuthIssuerPolicy.claims(access);
         Object audience = claims.opt("aud");
         if (audience instanceof JSONArray) {
             JSONArray array = (JSONArray) audience;
@@ -438,28 +452,30 @@ public final class AuthSession {
         }
         TokenResponsePolicy.claims(issuer, claims.opt("iss"), claims.opt("client_id"), audience);
     }
-    private Discovery discovery() throws Exception {
+    private Discovery discovery() throws Exception { return discovery(ISSUER); }
+    private Discovery discovery(String issuer) throws Exception {
+        AuthIssuerPolicy.issuer(issuer);
         Discovery cached = cachedDiscovery;
-        if (cached != null && System.currentTimeMillis() >= cached.created
+        if (cached != null && issuer.equals(cached.issuer) && System.currentTimeMillis() >= cached.created
                 && System.currentTimeMillis() - cached.created < 600_000L) return cached;
-        JSONObject body = request(URI.create(ISSUER + "/.well-known/openid-configuration"), null, false);
-        OAuthGuards.require(ISSUER.equals(string(body, "issuer"))
+        JSONObject body = request(URI.create(issuer + "/.well-known/openid-configuration"), null, false);
+        OAuthGuards.require(issuer.equals(string(body, "issuer"))
                 && Boolean.TRUE.equals(body.opt("authorization_response_iss_parameter_supported"))
                 && contains(body, "code_challenge_methods_supported", "S256")
                 && contains(body, "response_types_supported", "code")
                 && contains(body, "grant_types_supported", "authorization_code")
                 && contains(body, "grant_types_supported", "refresh_token")
                 && contains(body, "token_endpoint_auth_methods_supported", "none"));
-        URI authorization = OAuthGuards.endpoint(string(body, "authorization_endpoint"), ISSUER);
-        URI token = OAuthGuards.endpoint(string(body, "token_endpoint"), ISSUER);
+        URI authorization = OAuthGuards.endpoint(string(body, "authorization_endpoint"), issuer);
+        URI token = OAuthGuards.endpoint(string(body, "token_endpoint"), issuer);
         URI revocation = body.has("revocation_endpoint")
-                ? OAuthGuards.endpoint(string(body, "revocation_endpoint"), ISSUER) : null;
+                ? OAuthGuards.endpoint(string(body, "revocation_endpoint"), issuer) : null;
         URI device = null;
         if (body.has("device_authorization_endpoint") && contains(body, "grant_types_supported", DevicePollPolicy.GRANT)) {
-            device = OAuthGuards.endpoint(string(body, "device_authorization_endpoint"), ISSUER);
-            OAuthGuards.require(device.toString().equals(ISSUER + "/api/oidc/device-authorization"));
+            device = OAuthGuards.endpoint(string(body, "device_authorization_endpoint"), issuer);
+            OAuthGuards.require(device.toString().equals(issuer + "/api/oidc/device-authorization"));
         }
-        cachedDiscovery = new Discovery(authorization, token, revocation, device);
+        cachedDiscovery = new Discovery(issuer, authorization, token, revocation, device);
         return cachedDiscovery;
     }
     private static boolean contains(JSONObject body, String key, String value) throws Exception {
@@ -472,7 +488,7 @@ public final class AuthSession {
         OAuthGuards.require(value instanceof String);
         return (String) value;
     }
-    private static void revoke(Discovery discovery, String refresh, String access) {
+    private void revoke(Discovery discovery, String refresh, String access) {
         if (discovery == null || discovery.revocation == null) return;
         for (String hint : new String[] {"refresh_token", "access_token"}) {
             String token = "refresh_token".equals(hint) ? refresh : access;
@@ -481,19 +497,22 @@ public final class AuthSession {
                     "token_type_hint", hint), true); } catch (Exception ignored) { }
         }
     }
-    private static JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse) throws Exception {
+    private JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse) throws Exception {
         return request(endpoint, form, emptyResponse, false);
     }
     /** Best effort, like Authelia's revocation: the login service drops the refresh token's row. */
-    private static void revokeFederated(String refresh) {
+    private void revokeFederated(String refresh) {
         if (refresh == null) return;
         try { request(URI.create(FEDERATED_REVOKE), parameters("token", refresh, "client_id", CLIENT_ID), true); } catch (Exception ignored) { }
     }
-    private static JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse, boolean deviceErrors) throws Exception {
+    private JSONObject request(URI endpoint, Map<String, String> form, boolean emptyResponse, boolean deviceErrors) throws Exception {
         String target = endpoint.toString();
         // Authelia's endpoints, or exactly the login service's token and revocation endpoints.
         if (target.equals(FEDERATED_TOKEN) || target.equals(FEDERATED_REVOKE)) OAuthGuards.endpoint(target, "https://god.robby.wang");
-        else OAuthGuards.endpoint(target, ISSUER);
+        else OAuthGuards.endpoint(target, AuthIssuerPolicy.origin(endpoint));
+        return transport.request(endpoint, form, emptyResponse, deviceErrors);
+    }
+    private static JSONObject httpsRequest(URI endpoint, Map<String, String> form, boolean emptyResponse, boolean deviceErrors) throws Exception {
         HttpsURLConnection connection = (HttpsURLConnection) endpoint.toURL().openConnection();
         connection.setInstanceFollowRedirects(false);
         connection.setConnectTimeout(15000); connection.setReadTimeout(20000);
@@ -595,10 +614,11 @@ public final class AuthSession {
         }
     }
     private static final class Discovery {
+        final String issuer;
         final URI authorization, token, revocation, deviceAuthorization;
         final long created = System.currentTimeMillis();
-        Discovery(URI authorization, URI token, URI revocation, URI deviceAuthorization) {
-            this.authorization = authorization; this.token = token; this.revocation = revocation; this.deviceAuthorization = deviceAuthorization;
+        Discovery(String issuer, URI authorization, URI token, URI revocation, URI deviceAuthorization) {
+            this.issuer = issuer; this.authorization = authorization; this.token = token; this.revocation = revocation; this.deviceAuthorization = deviceAuthorization;
         }
     }
     private static final class Token {

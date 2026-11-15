@@ -21,7 +21,7 @@ import java.util.concurrent.CompletableFuture;
 /**
  * The platform Credential Manager (Android 14+) asked for a Passkey assertion, without AndroidX. The bundle keys are the
  * public Jetpack protocol constants that providers such as Google Password Manager read; Credential Manager also checks
- * auth.god.robby.wang's Digital Asset Links (delegate_permission/common.get_login_creds) before any provider answers.
+ * the selected authentication domain's Digital Asset Links (delegate_permission/common.get_login_creds) before any provider answers.
  */
 // No androidx.annotation in this framework-only app, so @RequiresApi is unavailable; every caller checks SDK_INT >= 34.
 @SuppressLint("UseRequiresApi")

@@ -16,7 +16,7 @@ public final class NativePasskeyTest {
     static final String ORIGIN = "android:apk-key-hash:g9Yk4ObUlZissgYreTrsad3vxPRQmmpCmQQEZhs9pWk";
     static final String CHALLENGE = b64("a challenge of 32 random bytes!!".getBytes(StandardCharsets.UTF_8));
     static final String FLOW = "3f2b8c1e-4d5a-4b6c-8e7f-9a0b1c2d3e4f";
-    static final String AUTHORIZE = "https://auth.god.robby.wang/api/oidc/authorization?client_id=robby-console-android"
+    static final String AUTHORIZE = "https://auth.robby.wang/api/oidc/authorization?client_id=robby-console-android"
             + "&redirect_uri=https%3A%2F%2Fgod.robby.wang%2Fmobile%2Fandroid%2Fcallback&response_type=code"
             + "&scope=openid+offline_access&state=s1&code_challenge=c1&code_challenge_method=S256";
 
@@ -37,9 +37,23 @@ public final class NativePasskeyTest {
         return new JSONObject().put("id", "Y3JlZC0x").put("rawId", "Y3JlZC0x").put("type", "public-key")
                 .put("authenticatorAttachment", "platform").put("response", inner).put("clientExtensionResults", new JSONObject()).toString();
     }
-    static String valid() throws Exception { return response("auth.god.robby.wang", 0x05, "webauthn.get", CHALLENGE, ORIGIN, "dXNlcg"); }
+    static String valid() throws Exception { return response("auth.robby.wang", 0x05, "webauthn.get", CHALLENGE, ORIGIN, "dXNlcg"); }
     static void rejects(ThrowingRunnable check) { try { check.run(); fail("accepted"); } catch (Exception expected) { } }
     interface ThrowingRunnable { void run() throws Exception; }
+
+    @Test public void transitionKeepsChallengeAssertionCookieAndCallbackBoundToTheSelectedIssuer() throws Exception {
+        for(String issuer:List.of(AuthSession.ISSUER,AuthSession.LEGACY_ISSUER)){
+            String rp=URI.create(issuer).getHost(),other=issuer.equals(AuthSession.ISSUER)?AuthSession.LEGACY_ISSUER:AuthSession.ISSUER;
+            assertEquals(rp,new JSONObject(NativePasskey.challenge(challengeData(rp,"required",CHALLENGE),issuer).requestJson).getString("rpId"));
+            rejects(()->NativePasskey.challenge(challengeData(URI.create(other).getHost(),"required",CHALLENGE),issuer));
+            NativePasskey.assertion(response(rp,0x05,"webauthn.get",CHALLENGE,ORIGIN,"dXNlcg"),CHALLENGE,ORIGIN,issuer);
+            rejects(()->NativePasskey.assertion(response(URI.create(other).getHost(),0x05,"webauthn.get",CHALLENGE,ORIGIN,"dXNlcg"),CHALLENGE,ORIGIN,issuer));
+            assertEquals("authelia_robby_session=synthetic",NativePasskey.cookie(List.of("authelia_robby_session=synthetic; Secure; HttpOnly; Domain="+rp),null,issuer));
+            rejects(()->NativePasskey.cookie(List.of("authelia_robby_session=synthetic; Secure; HttpOnly; Domain="+URI.create(other).getHost()),null,issuer));
+            String callback=AuthSession.REDIRECT_URI+"?code=synthetic&state=s1&iss="+java.net.URLEncoder.encode(issuer,"UTF-8");
+            assertTrue(NativePasskey.callback(URI.create(callback),issuer));assertFalse(NativePasskey.callback(URI.create(callback),other));
+        }
+    }
 
     @Test public void serverOriginIsTheReleaseCertificate() throws Exception {
         // Authelia's webauthn.experimental_opaque_origins holds exactly this value for the release signing certificate.
@@ -51,16 +65,16 @@ public final class NativePasskeyTest {
     }
 
     @Test public void challengeBecomesASystemRequestOnlyForThisRelyingParty() throws Exception {
-        NativePasskey.Challenge c = NativePasskey.challenge(challengeData("auth.god.robby.wang", "required", CHALLENGE));
+        NativePasskey.Challenge c = NativePasskey.challenge(challengeData("auth.robby.wang", "required", CHALLENGE));
         JSONObject request = new JSONObject(c.requestJson);
         assertEquals(CHALLENGE, c.challenge);
-        assertEquals("auth.god.robby.wang", request.getString("rpId"));
+        assertEquals("auth.robby.wang", request.getString("rpId"));
         assertEquals("required", request.getString("userVerification"));
         assertEquals(0, request.getJSONArray("allowCredentials").length());
         rejects(() -> NativePasskey.challenge(challengeData("god.robby.wang", "required", CHALLENGE)));
-        rejects(() -> NativePasskey.challenge(challengeData("auth.god.robby.wang", "preferred", CHALLENGE)));
-        rejects(() -> NativePasskey.challenge(challengeData("auth.god.robby.wang", "required", b64(new byte[15]))));
-        rejects(() -> NativePasskey.challenge(challengeData("auth.god.robby.wang", "required", CHALLENGE + "=")));
+        rejects(() -> NativePasskey.challenge(challengeData("auth.robby.wang", "preferred", CHALLENGE)));
+        rejects(() -> NativePasskey.challenge(challengeData("auth.robby.wang", "required", b64(new byte[15]))));
+        rejects(() -> NativePasskey.challenge(challengeData("auth.robby.wang", "required", CHALLENGE + "=")));
         rejects(() -> NativePasskey.challenge(new JSONObject()));
     }
 
@@ -74,19 +88,19 @@ public final class NativePasskeyTest {
         assertEquals("platform", credential.getString("authenticatorAttachment"));
         rejects(() -> NativePasskey.assertion(valid(), CHALLENGE, "android:apk-key-hash:other"));
         rejects(() -> NativePasskey.assertion(valid(), b64(new byte[32]), ORIGIN));
-        rejects(() -> NativePasskey.assertion(response("auth.god.robby.wang", 0x05, "webauthn.create", CHALLENGE, ORIGIN, "dXNlcg"), CHALLENGE, ORIGIN));
-        rejects(() -> NativePasskey.assertion(response("auth.god.robby.wang", 0x01, "webauthn.get", CHALLENGE, ORIGIN, "dXNlcg"), CHALLENGE, ORIGIN));
+        rejects(() -> NativePasskey.assertion(response("auth.robby.wang", 0x05, "webauthn.create", CHALLENGE, ORIGIN, "dXNlcg"), CHALLENGE, ORIGIN));
+        rejects(() -> NativePasskey.assertion(response("auth.robby.wang", 0x01, "webauthn.get", CHALLENGE, ORIGIN, "dXNlcg"), CHALLENGE, ORIGIN));
         rejects(() -> NativePasskey.assertion(response("evil.example", 0x05, "webauthn.get", CHALLENGE, ORIGIN, "dXNlcg"), CHALLENGE, ORIGIN));
-        rejects(() -> NativePasskey.assertion(response("auth.god.robby.wang", 0x05, "webauthn.get", CHALLENGE, ORIGIN, null), CHALLENGE, ORIGIN));
+        rejects(() -> NativePasskey.assertion(response("auth.robby.wang", 0x05, "webauthn.get", CHALLENGE, ORIGIN, null), CHALLENGE, ORIGIN));
         rejects(() -> NativePasskey.assertion(new JSONObject(valid()).put("rawId", "b3RoZXI").toString(), CHALLENGE, ORIGIN));
     }
 
     @Test public void consentRedirectCarriesOnlyTheFlow() throws Exception {
-        assertEquals(FLOW, NativePasskey.flowId(URI.create("https://auth.god.robby.wang/consent/openid/decision?flow=openid_connect&flow_id=" + FLOW)));
+        assertEquals(FLOW, NativePasskey.flowId(URI.create("https://auth.robby.wang/consent/openid/decision?flow=openid_connect&flow_id=" + FLOW)));
         rejects(() -> NativePasskey.flowId(URI.create("https://evil.example/consent/openid/decision?flow=openid_connect&flow_id=" + FLOW)));
-        rejects(() -> NativePasskey.flowId(URI.create("https://auth.god.robby.wang/consent/openid/decision?flow=openid_connect&flow_id=" + FLOW + "&x=1")));
-        rejects(() -> NativePasskey.flowId(URI.create("https://auth.god.robby.wang/consent/openid/decision?flow=openid_connect&flow_id=not-a-uuid")));
-        rejects(() -> NativePasskey.flowId(URI.create("https://auth.god.robby.wang/?flow=openid_connect&flow_id=" + FLOW)));
+        rejects(() -> NativePasskey.flowId(URI.create("https://auth.robby.wang/consent/openid/decision?flow=openid_connect&flow_id=" + FLOW + "&x=1")));
+        rejects(() -> NativePasskey.flowId(URI.create("https://auth.robby.wang/consent/openid/decision?flow=openid_connect&flow_id=not-a-uuid")));
+        rejects(() -> NativePasskey.flowId(URI.create("https://auth.robby.wang/?flow=openid_connect&flow_id=" + FLOW)));
     }
 
     static JSONObject consent() throws Exception {

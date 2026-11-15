@@ -11,23 +11,28 @@ import org.junit.Test;
 
 /** The whole native ceremony against a scripted Authelia: what is sent, in which order, and how each failure ends. */
 public final class NativePasskeyFlowTest {
-    static final String CALLBACK = "https://god.robby.wang/mobile/android/callback?code=abc&iss=https%3A%2F%2Fauth.god.robby.wang&state=s1";
+    static final String CALLBACK = "https://god.robby.wang/mobile/android/callback?code=abc&iss=https%3A%2F%2Fauth.robby.wang&state=s1";
     static final String SET_COOKIE = "authelia_robby_session=sess1; Domain=robby.wang; Path=/; Secure; HttpOnly";
 
     /** A scripted Authelia; each field changes one answer. */
     static final class Server implements NativePasskeyFlow.Transport {
         final List<String> log = new ArrayList<>();
+        final String issuer;
+        String challengeRp;
         int verifyStatus = 200, level = 2, challengeStatus = 200;
         boolean consentFirst = true;
-        String consentLocation = "https://auth.god.robby.wang/consent/openid/decision?flow=openid_connect&flow_id=" + NativePasskeyTest.FLOW;
+        String consentLocation = "https://auth.robby.wang/consent/openid/decision?flow=openid_connect&flow_id=" + NativePasskeyTest.FLOW;
         JSONObject assertion;
+        Server() { this(AuthSession.ISSUER); }
+        Server(String issuer) { this.issuer=issuer;challengeRp=URI.create(issuer).getHost();consentLocation=consentLocation.replace(AuthSession.ISSUER,issuer); }
 
         @Override public NativePasskeyFlow.Response exchange(URI url, byte[] json, String cookie) throws Exception {
+            assertEquals(issuer,AuthIssuerPolicy.origin(url));
             String path = url.getRawPath(), method = json == null ? "GET" : "POST";
             log.add(method + " " + path + (cookie == null ? "" : " +cookie"));
             if (path.equals("/api/firstfactor/passkey") && json == null) {
                 if (challengeStatus != 200) return new NativePasskeyFlow.Response(challengeStatus, "text/html", null, List.of(), new byte[0]);
-                return ok(NativePasskeyTest.challengeData("auth.god.robby.wang", "required", NativePasskeyTest.CHALLENGE), List.of(SET_COOKIE));
+                return ok(NativePasskeyTest.challengeData(challengeRp, "required", NativePasskeyTest.CHALLENGE), List.of(SET_COOKIE));
             }
             if (path.equals("/api/firstfactor/passkey")) {
                 assertion = new JSONObject(new String(json, StandardCharsets.UTF_8));
@@ -38,12 +43,12 @@ public final class NativePasskeyFlowTest {
             if (path.equals("/api/state")) return ok(new JSONObject().put("authentication_level", level), List.of());
             if (path.equals("/api/oidc/authorization")) {
                 boolean resumed = url.getRawQuery().contains("consent_id=");
-                String location = resumed || !consentFirst ? CALLBACK : consentLocation;
+                String location = resumed || !consentFirst ? CALLBACK.replace("auth.robby.wang",URI.create(issuer).getHost()) : consentLocation;
                 return new NativePasskeyFlow.Response(302, "text/html", location, List.of(), new byte[0]);
             }
             if (path.equals("/api/oidc/consent") && json == null) return ok(NativePasskeyTest.consent(), List.of());
             if (path.equals("/api/oidc/consent"))
-                return ok(new JSONObject().put("redirect_uri", NativePasskeyTest.AUTHORIZE + "&consent_id=" + NativePasskeyTest.FLOW), List.of());
+                return ok(new JSONObject().put("redirect_uri", NativePasskeyTest.AUTHORIZE.replace(AuthSession.ISSUER,issuer) + "&consent_id=" + NativePasskeyTest.FLOW), List.of());
             throw new AssertionError("unexpected " + path);
         }
         static NativePasskeyFlow.Response ok(JSONObject data, List<String> cookies) throws Exception {
@@ -57,7 +62,7 @@ public final class NativePasskeyFlowTest {
         @Override public String assertion(String requestJson) throws Exception {
             request = requestJson;
             if (cancelSheet) throw NativePasskeyFlow.cancelled();
-            return NativePasskeyTest.valid();
+            return NativePasskeyTest.response(new JSONObject(requestJson).getString("rpId"),0x05,"webauthn.get",NativePasskeyTest.CHALLENGE,NativePasskeyTest.ORIGIN,"dXNlcg");
         }
         @Override public boolean consent() { return allow; }
     }
@@ -74,7 +79,7 @@ public final class NativePasskeyFlowTest {
         assertEquals(List.of("GET /api/firstfactor/passkey", "POST /api/firstfactor/passkey +cookie", "GET /api/state +cookie",
                 "GET /api/oidc/authorization +cookie", "GET /api/oidc/consent +cookie", "POST /api/oidc/consent +cookie",
                 "GET /api/oidc/authorization +cookie"), server.log);
-        assertEquals("auth.god.robby.wang", new JSONObject(person.request).getString("rpId"));
+        assertEquals("auth.robby.wang", new JSONObject(person.request).getString("rpId"));
         assertEquals("Y3JlZC0x", server.assertion.getJSONObject("response").getString("id"));
         // The callback itself is never requested: the coordinator validates and exchanges it with PKCE.
         assertFalse(server.log.stream().anyMatch(line -> line.contains("/mobile/android/callback")));
@@ -110,5 +115,24 @@ public final class NativePasskeyFlowTest {
     @Test public void onlyTheIssuersAuthorizationEndpointIsAccepted() {
         try { new NativePasskeyFlow(new Server(), new Person(), NativePasskeyTest.ORIGIN).run("https://evil.example/api/oidc/authorization?x=1"); fail(); }
         catch (NativePasskeyFlow.Failure failure) { assertEquals(NativePasskeyFlow.INVALID, failure.getMessage()); }
+    }
+
+    @Test public void explicitLegacyAuthorizationUsesOnlyLegacyRpEndpointsAndConsent() throws Exception {
+        Server server=new Server(AuthSession.LEGACY_ISSUER);Person person=new Person();
+        new NativePasskeyFlow(server,person,NativePasskeyTest.ORIGIN).run(NativePasskeyTest.AUTHORIZE.replace(AuthSession.ISSUER,AuthSession.LEGACY_ISSUER));
+        assertEquals("auth.god.robby.wang",new JSONObject(person.request).getString("rpId"));
+        assertEquals(7,server.log.size());
+    }
+
+    @Test public void credentialRpAndConsentCannotSwitchBetweenTheTwoAllowedIssuers() throws Exception {
+        for(String issuer:List.of(AuthSession.ISSUER,AuthSession.LEGACY_ISSUER)){
+            String other=issuer.equals(AuthSession.ISSUER)?AuthSession.LEGACY_ISSUER:AuthSession.ISSUER;
+            Server wrongRp=new Server(issuer);wrongRp.challengeRp=URI.create(other).getHost();Person person=new Person();
+            assertThrows(NativePasskeyFlow.Failure.class,()->new NativePasskeyFlow(wrongRp,person,NativePasskeyTest.ORIGIN).run(NativePasskeyTest.AUTHORIZE.replace(AuthSession.ISSUER,issuer)));
+            assertNull(person.request);assertEquals(1,wrongRp.log.size());
+            Server wrongConsent=new Server(issuer);wrongConsent.consentLocation=other+"/consent/openid/decision?flow=openid_connect&flow_id="+NativePasskeyTest.FLOW;
+            assertThrows(NativePasskeyFlow.Failure.class,()->new NativePasskeyFlow(wrongConsent,new Person(),NativePasskeyTest.ORIGIN).run(NativePasskeyTest.AUTHORIZE.replace(AuthSession.ISSUER,issuer)));
+            assertFalse(wrongConsent.log.stream().anyMatch(line->line.contains("/api/oidc/consent")));
+        }
     }
 }
