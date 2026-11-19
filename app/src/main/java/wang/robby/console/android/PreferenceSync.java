@@ -125,6 +125,46 @@ final class PreferenceSync {
         }
         return out;
     }
+    /**
+     * Keys another client (God iOS, a newer Android) wrote that this build does not know, plus their {@link #EDITED}
+     * times. They ride along unchanged on every upload so this phone never deletes them. Values that would fail the
+     * server's shape rules here (forbidden words anywhere in the tree, nesting deeper than 4) are left out.
+     */
+    static JSONObject foreign(JSONObject prefs) {
+        JSONObject out = new JSONObject();
+        if (prefs == null) return out;
+        for (Iterator<String> it = prefs.keys(); it.hasNext(); ) {
+            String key = it.next();
+            if (KEYS.contains(key) || EDITED.equals(key) || forbidden(key) || prefs.isNull(key)) continue;
+            Object raw = prefs.opt(key);
+            if (depth(raw) > 4 || forbiddenTree(raw)) continue;
+            put(out, key, raw);
+        }
+        JSONObject times = prefs.optJSONObject(EDITED), kept = new JSONObject();
+        if (times != null) for (Iterator<String> it = times.keys(); it.hasNext(); ) {
+            String key = it.next(); Object v = times.opt(key);
+            if (KEYS.contains(key) || forbidden(key)) continue;
+            if (v instanceof Number n && n.doubleValue() == n.longValue() && n.longValue() > 0) put(kept, key, n.longValue());
+        }
+        if (kept.length() > 0) put(out, EDITED, kept);
+        return out;
+    }
+    /** What this phone keeps of a server document: its own keys, normalized, and every {@link #foreign} key as sent. */
+    static JSONObject keep(JSONObject prefs) { return withForeign(document(read(prefs)), prefs); }
+    /** {@code doc} with the {@link #foreign} keys and edit times of {@code from} added; keys this build knows are never overwritten. */
+    static JSONObject withForeign(JSONObject doc, JSONObject from) {
+        JSONObject extra = foreign(from);
+        if (extra.length() == 0) return doc;
+        JSONObject out; try { out = new JSONObject(doc.toString()); } catch (org.json.JSONException e) { throw new IllegalStateException(e); }
+        for (Iterator<String> it = extra.keys(); it.hasNext(); ) { String key = it.next(); if (!EDITED.equals(key)) put(out, key, extra.opt(key)); }
+        JSONObject times = extra.optJSONObject(EDITED);
+        if (times != null) {
+            JSONObject merged = out.optJSONObject(EDITED);
+            if (merged == null) { merged = new JSONObject(); put(out, EDITED, merged); }
+            for (Iterator<String> it = times.keys(); it.hasNext(); ) { String key = it.next(); put(merged, key, times.opt(key)); }
+        }
+        return fit(out);
+    }
     static long epochMillis(String iso) {
         if (iso == null) return 0;
         try { return java.time.Instant.parse(iso).toEpochMilli(); } catch (RuntimeException e) { return 0; }
@@ -251,7 +291,7 @@ final class PreferenceSync {
         /** A dirty key saved without a time (before 0.33.1) counts as older than any server copy. */
         synchronized void restore(int version, String updatedAt, JSONObject base, Set<String> dirtyKeys, boolean pendingFlag, Map<String, ?> collected, Map<String, Long> editedTimes) {
             knownVersion = Math.max(0, version); this.updatedAt = updatedAt == null || updatedAt.isEmpty() ? null : updatedAt;
-            this.base = base == null ? new JSONObject() : document(read(base));
+            this.base = base == null ? new JSONObject() : keep(base);
             dirty.clear(); if (dirtyKeys != null) for (String k : dirtyKeys) if (KEYS.contains(k)) dirty.add(k);
             local.clear(); if (collected != null) for (String key : KEYS) if (collected.containsKey(key) && collected.get(key) != null) {
                 Object n = normalize(key, collected.get(key)); if (n != null) local.put(key, n);
@@ -297,6 +337,7 @@ final class PreferenceSync {
         synchronized Map<String, Object> local() { return new LinkedHashMap<>(local); }
         synchronized Set<String> dirty() { return new LinkedHashSet<>(dirty); }
         synchronized Map<String, Long> edited() { return new LinkedHashMap<>(edited); }
+        synchronized JSONObject base() { try { return new JSONObject(base.toString()); } catch (org.json.JSONException e) { throw new IllegalStateException(e); } }
 
         private void arm() { dueAt = clock.millis() + QUIET_MS; scheduler.cancel(fire); scheduler.schedule(fire, QUIET_MS); }
         private void onFire() {
@@ -334,25 +375,28 @@ final class PreferenceSync {
             }
             if (r.version > knownVersion) {
                 Map<String, Object> changed = applyRemote(r.preferences, r.updatedAt);
-                knownVersion = r.version; updatedAt = r.updatedAt; base = document(read(r.preferences));
+                knownVersion = r.version; updatedAt = r.updatedAt; base = keep(r.preferences);
                 pending = !dirty.isEmpty();
                 if (pending && canWrite) return held(Job.put(epoch, knownVersion, uploadDocument(), false, changed));
                 return endFlight(changed);
             }
+            // Same version, same document: refresh the base so a copy saved before 0.50.1, which dropped other
+            // clients' keys, does not delete them on the next upload.
+            if (r.version == knownVersion) base = keep(r.preferences);
             if (pending && canWrite) return held(Job.put(epoch, knownVersion, uploadDocument(), false, null));
             return endFlight(null);
         }
         private Job finishPut(Response r, JSONObject sent, boolean retried) {
             if (r.status == 200 && r.preferences != null) {
                 Map<String, Object> changed = applyRemote(r.preferences, r.updatedAt);
-                knownVersion = r.version; updatedAt = r.updatedAt; base = document(read(r.preferences));
+                knownVersion = r.version; updatedAt = r.updatedAt; base = keep(r.preferences);
                 adoptTrim(sent, changed); retainDirty(sent); pending = !dirty.isEmpty();
                 return endFlight(changed);
             }
             if (r.status == 409 && r.preferences != null && !retried) {
                 Map<String, Object> changed = applyRemote(r.preferences, r.updatedAt);
                 knownVersion = r.version; if (r.updatedAt != null) updatedAt = r.updatedAt;
-                base = document(read(r.preferences)); pending = true;
+                base = keep(r.preferences); pending = true;
                 return held(Job.put(epoch, knownVersion, conflictDocument(), true, changed));
             }
             pending = true;
@@ -381,21 +425,21 @@ final class PreferenceSync {
             if (job.kind == Job.PUT) runner.execute(() -> put(job.ticket, job.expect, job.doc, job.retried));
             else if (job.kind == Job.GET) runner.execute(() -> get(job.ticket));
         }
-        /** Ordinary upload: last server base, then every value stored on this phone. */
+        /** Ordinary upload: last server base (unknown keys included), then every value stored on this phone. */
         private JSONObject uploadDocument() {
             Map<String, Object> merged = new LinkedHashMap<>(read(base));
             merged.putAll(local);
             for (String key : dirty) if (!local.containsKey(key)) merged.remove(key);
-            return document(merged, edited);
+            return withForeign(document(merged, edited), base);
         }
-        /** 409 retry: server document, plus only the keys changed here since the last sync. */
+        /** 409 retry: server document (unknown keys included), plus only the keys changed here since the last sync. */
         private JSONObject conflictDocument() {
             Map<String, Object> merged = new LinkedHashMap<>(read(base));
             for (String key : dirty) {
                 if (local.containsKey(key)) merged.put(key, local.get(key));
                 else merged.remove(key);
             }
-            return document(merged, edited);
+            return withForeign(document(merged, edited), base);
         }
         /** A trimmed recent-use list is the value this phone keeps, so the upload counts as synced. */
         private void adoptTrim(JSONObject sent, Map<String, Object> changed) {

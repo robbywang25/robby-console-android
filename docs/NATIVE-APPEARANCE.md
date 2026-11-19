@@ -893,3 +893,16 @@ PR 审查（Codex）指出了四处问题，合入前已全部修好：半透明
 - 正式包：签名后覆盖安装到 Flip（0.45.0 → 0.47.0），安装文件 SHA256 1f5bd8d3…eaf31 与构建一致，签名 83d624e0…3da569，启动无崩溃。
 
 未验证：手指画圈摩擦的手感和音量（adb 每个触摸事件要启动一次进程，模拟太慢，需要本人试）；熄屏后到点响钵（这次 Flip 被 Mac 的保活脚本唤醒，没能长时间熄屏）；来电时环境音是否停下；Find 上的安装（离线）。
+
+## v0.50.1：同步设置时保留其他客户端的键（2026-11-18）
+
+God iOS 开始把三个额度日历开关（`quotaCalendarFiveHour`、`quotaCalendarHideExpired`、`quotaCalendarWeeklyOnly`）写进账号设置文档。安卓的上传文档原来只保留自己的 `KEYS`，每上传一次就把它们和对应的 `editedAt` 删掉。
+
+- `PreferenceSync.foreign` 取出服务器文档里安卓不认识的键，以及这些键的 `editedAt` 条目；`keep` 是本机保存的 base：自己的键照旧整形，未知键原样保留。普通上传和 409 重试都在安卓自己的文档上用 `withForeign` 叠回这些键，已知键永远以安卓为准。
+- 未知键沿用 `read` 的形状规则：键名或值里有 signature/avatar/token/secret/password、嵌套超过 4 层、值为 null 的都不保留；叠加后仍走 `fit`，超过 16 KiB 时先裁最近使用记录。
+- 升级兼容：旧版存下的 base 没有未知键，而版本号没变时原来不会刷新 base。现在拉到同版本文档时也用它重建 base，避免升级后第一次上传仍然删键。
+- 读取、合并和按编辑时间取胜的规则不变；UI 不变。
+
+验证：`check.sh` 通过（350 项 JVM 测试，0 失败；`PreferenceSyncTest` 新增 4 项：普通上传和重启后保留 iOS 的三个键与 `editedAt`、409 重试保留它们、未知键的形状规则且不覆盖已知键、同版本拉取刷新旧 base；lint debug/release 0 错误），Release 为正式证书签名，SHA256 `c2ab10a6…16987c`。
+
+未验证：Find 当时连不上（局域网和 Tailscale `100.79.223.102:5555` 都超时），正式包没有安装；和 iOS 之间的真实双向同步没有跑过。
