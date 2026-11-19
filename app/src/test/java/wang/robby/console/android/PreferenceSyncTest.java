@@ -705,6 +705,176 @@ public final class PreferenceSyncTest {
         assertEquals(Set.of("glassLevel"), sync.dirty());
     }
 
+    /** Keys God iOS syncs that this build does not know, as the server stores them. */
+    private static JSONObject withIosKeys(JSONObject prefs, long at) throws Exception {
+        JSONObject times = prefs.optJSONObject(PreferenceSync.EDITED);
+        if (times == null) { times = new JSONObject(); prefs.put(PreferenceSync.EDITED, times); }
+        times.put("quotaCalendarFiveHour", at).put("quotaCalendarHideExpired", at).put("quotaCalendarWeeklyOnly", at);
+        return prefs.put("quotaCalendarFiveHour", true).put("quotaCalendarHideExpired", false).put("quotaCalendarWeeklyOnly", true);
+    }
+    private static void assertIosKeys(JSONObject sent, long at) throws Exception {
+        assertTrue(sent.getBoolean("quotaCalendarFiveHour"));
+        assertFalse(sent.getBoolean("quotaCalendarHideExpired"));
+        assertTrue(sent.getBoolean("quotaCalendarWeeklyOnly"));
+        JSONObject times = sent.getJSONObject(PreferenceSync.EDITED);
+        assertEquals(at, times.getLong("quotaCalendarFiveHour"));
+        assertEquals(at, times.getLong("quotaCalendarHideExpired"));
+        assertEquals(at, times.getLong("quotaCalendarWeeklyOnly"));
+    }
+
+    @Test public void anOrdinaryUploadKeepsKeysAnotherClientWrote() throws Exception {
+        Manual time = new Manual();
+        Net net = new Net();
+        PreferenceSync.Sync sync = ready(time, net);
+        sync.setReady(true, true);
+        net.nextGet = PreferenceSync.Response.ok(4, "2026-11-18T00:00:00Z", withIosKeys(new JSONObject().put("glassLevel", 10)
+            .put(PreferenceSync.EDITED, new JSONObject().put("glassLevel", 1_000L)), 5_000L));
+        sync.foreground();
+        assertFalse(sync.local().containsKey("quotaCalendarFiveHour"));
+        sync.edit("glassLevel", 70);
+        net.nextPut = PreferenceSync.Response.fail(500);
+        time.advance(PreferenceSync.QUIET_MS);
+        assertEquals(1, net.puts);
+        assertEquals(70, net.lastPrefs.getInt("glassLevel"));
+        assertEquals(time.now - PreferenceSync.QUIET_MS, net.lastPrefs.getJSONObject(PreferenceSync.EDITED).getLong("glassLevel"));
+        assertIosKeys(net.lastPrefs, 5_000L);
+
+        // The base survives a restart through the persisted snapshot.
+        String[] saved = {null};
+        PreferenceSync.Sync again = new PreferenceSync.Sync(time, time, time, net, new PreferenceSync.Listener() {
+            public void applied(Map<String, Object> changed) {}
+            public void persisted(PreferenceSync.Snapshot snap) { saved[0] = snap.baseJson; }
+        });
+        again.restore(4, "2026-11-18T00:00:00Z", sync.base(), Set.of(), false, Map.of("glassLevel", 10));
+        again.setReady(true, true);
+        again.edit("glassLevel", 20);
+        assertIosKeys(new JSONObject(saved[0]), 5_000L);
+        time.advance(PreferenceSync.QUIET_MS);
+        assertEquals(20, net.lastPrefs.getInt("glassLevel"));
+        assertIosKeys(net.lastPrefs, 5_000L);
+    }
+
+    @Test public void aConflictRetryKeepsKeysAnotherClientWrote() throws Exception {
+        Manual time = new Manual();
+        Net net = new Net();
+        PreferenceSync.Sync sync = ready(time, net);
+        sync.restore(3, "2026-10-22T00:00:00Z", new JSONObject().put("glassLevel", 10), Set.of(), false, Map.of("glassLevel", 10));
+        sync.setReady(true, true);
+        sync.edit("glassLevel", 60);
+        JSONObject current = new JSONObject().put("schemaVersion", 1).put("version", 4).put("updatedAt", "2026-10-22T01:00:00Z")
+            .put("preferences", withIosKeys(new JSONObject().put("glassLevel", 20), 7_000L));
+        net.nextPut = PreferenceSync.conflict(new JSONObject().put("error", "version_conflict").put("current", current));
+        net.afterPut = PreferenceSync.Response.fail(500);
+        time.advance(PreferenceSync.QUIET_MS);
+        assertEquals(2, net.puts);
+        assertFalse(net.sent.get(0).has("quotaCalendarFiveHour"));
+        assertEquals(4, net.lastExpected);
+        assertEquals(60, net.lastPrefs.getInt("glassLevel"));
+        assertIosKeys(net.lastPrefs, 7_000L);
+    }
+
+    @Test public void foreignKeysPassTheSameShapeRulesAndNeverOverrideKnownOnes() throws Exception {
+        JSONObject deep = new JSONObject().put("a", new JSONObject().put("b", new JSONObject().put("c", new JSONObject().put("d", new JSONObject().put("e", 1)))));
+        JSONObject prefs = new JSONObject().put("glassLevel", 30).put("futureList", new JSONArray().put(1).put("x"))
+            .put("avatarUrl", "x").put("nested", new JSONObject().put("apiToken", "x")).put("tooDeep", deep).put("cleared", JSONObject.NULL)
+            .put("deviceCode", "x").put("cutoutLeft", 3).put("session", new JSONObject().put("id", 1))
+            .put(PreferenceSync.EDITED, new JSONObject().put("glassLevel", 9L).put("futureList", 4L).put("orphan", 6L).put("bad", -1).put("tokenAt", 3L).put("cutoutLeft", 5L));
+        JSONObject kept = PreferenceSync.foreign(prefs);
+        assertEquals(3, kept.length());
+        assertTrue(kept.has("cleared"));
+        assertTrue(kept.isNull("cleared"));
+        assertEquals(List.of(1, "x"), List.of(kept.getJSONArray("futureList").get(0), kept.getJSONArray("futureList").get(1)));
+        JSONObject times = kept.getJSONObject(PreferenceSync.EDITED);
+        assertEquals(2, times.length());
+        assertEquals(4L, times.getLong("futureList"));
+        assertEquals(6L, times.getLong("orphan"));
+        JSONObject sent = PreferenceSync.withForeign(PreferenceSync.document(Map.of("glassLevel", 50), Map.of("glassLevel", 99L)), prefs);
+        assertEquals(50, sent.getInt("glassLevel"));
+        assertEquals(99L, sent.getJSONObject(PreferenceSync.EDITED).getLong("glassLevel"));
+        assertEquals(4L, sent.getJSONObject(PreferenceSync.EDITED).getLong("futureList"));
+        assertTrue(PreferenceSync.read(sent).keySet().stream().allMatch(PreferenceSync.KEYS::contains));
+        assertTrue(sent.has("cleared") && sent.isNull("cleared"));
+        assertFalse(sent.has("deviceCode") || sent.has("cutoutLeft") || sent.has("session"));
+        assertFalse(sent.getJSONObject(PreferenceSync.EDITED).has("cutoutLeft"));
+    }
+
+    @Test public void aBaseSavedBeforeThisFixWaitsForAPullBeforeUploading() throws Exception {
+        Manual time = new Manual();
+        Net net = new Net();
+        PreferenceSync.Snapshot[] seen = new PreferenceSync.Snapshot[1];
+        PreferenceSync.Sync sync = new PreferenceSync.Sync(time, time, time, net, new PreferenceSync.Listener() {
+            public void applied(Map<String, Object> changed) {}
+            public void persisted(PreferenceSync.Snapshot snap) { seen[0] = snap; }
+        });
+        // What 0.50.0 saved: the server had the iOS keys, the stored base does not.
+        sync.restore(4, "2026-10-22T00:00:00Z", new JSONObject().put("glassLevel", 10), Set.of(), false, Map.of("glassLevel", 10), Map.of(), false);
+        sync.setReady(true, true);
+        sync.edit("glassLevel", 30);
+        assertFalse(seen[0].baseFull);
+        net.nextGet = PreferenceSync.Response.fail(0);
+        time.advance(PreferenceSync.QUIET_MS);
+        assertEquals(1, net.gets);
+        assertEquals(0, net.puts);
+        assertTrue(sync.pending());
+
+        net.nextGet = PreferenceSync.Response.ok(4, "2026-10-22T00:00:00Z", withIosKeys(new JSONObject().put("glassLevel", 10), 5_000L));
+        net.nextPut = PreferenceSync.Response.fail(500);
+        sync.edit("glassLevel", 40);
+        time.advance(PreferenceSync.QUIET_MS);
+        assertEquals(2, net.gets);
+        assertEquals(1, net.puts);
+        assertEquals(40, net.lastPrefs.getInt("glassLevel"));
+        assertIosKeys(net.lastPrefs, 5_000L);
+        assertTrue(seen[0].baseFull);
+    }
+
+    @Test public void anEmptyAccountDocumentIsSeededWithoutAnOldServerCopy() throws Exception {
+        Manual time = new Manual();
+        Net net = new Net();
+        PreferenceSync.Sync sync = ready(time, net);
+        sync.restore(4, "2026-10-22T00:00:00Z", withIosKeys(new JSONObject().put("glassLevel", 10), 5_000L), Set.of(), false, Map.of("glassLevel", 10));
+        sync.setReady(true, true);
+        net.nextGet = PreferenceSync.Response.ok(0, null, new JSONObject());
+        sync.foreground();
+        assertEquals(1, net.puts);
+        assertEquals(0, net.lastExpected);
+        assertEquals(10, net.lastPrefs.getInt("glassLevel"));
+        assertFalse(net.lastPrefs.has("quotaCalendarFiveHour"));
+        assertFalse(net.lastPrefs.has(PreferenceSync.EDITED) && net.lastPrefs.getJSONObject(PreferenceSync.EDITED).has("quotaCalendarFiveHour"));
+    }
+
+    @Test public void aFullServerDocumentStillTakesAnEditByDroppingUnchangedLocalCopies() throws Exception {
+        Manual time = new Manual();
+        Net net = new Net();
+        PreferenceSync.Sync sync = ready(time, net);
+        JSONObject base = new JSONObject().put("glassLevel", 10).put(PreferenceSync.EDITED, new JSONObject().put("glassLevel", 1_000L));
+        for (int i = 0; base.length() < PreferenceSync.MAX_KEYS; i++) base.put("future" + i, i);
+        assertEquals(PreferenceSync.MAX_KEYS, base.length());
+        sync.restore(4, "2026-10-22T00:00:00Z", base, Set.of(), false, Map.of("glassLevel", 10, "board", List.of("clocks")));
+        sync.setReady(true, true);
+        sync.edit("glassLevel", 90);
+        net.nextPut = PreferenceSync.Response.fail(500);
+        time.advance(PreferenceSync.QUIET_MS);
+        assertEquals(1, net.puts);
+        assertTrue(PreferenceSync.sendable(net.lastPrefs));
+        assertEquals(90, net.lastPrefs.getInt("glassLevel"));
+        assertFalse(net.lastPrefs.has("board"));
+        assertEquals(125, net.lastPrefs.getInt("future125"));
+    }
+
+    @Test public void aSameVersionPullRefreshesABaseThatLostForeignKeys() throws Exception {
+        Manual time = new Manual();
+        Net net = new Net();
+        PreferenceSync.Sync sync = ready(time, net);
+        sync.restore(4, "2026-11-18T00:00:00Z", new JSONObject().put("glassLevel", 10), Set.of("glassLevel"), true, Map.of("glassLevel", 40), Map.of("glassLevel", time.now));
+        sync.setReady(true, true);
+        net.nextGet = PreferenceSync.Response.ok(4, "2026-11-18T00:00:00Z", withIosKeys(new JSONObject().put("glassLevel", 10), 5_000L));
+        sync.foreground();
+        assertEquals(1, net.puts);
+        assertEquals(40, net.lastPrefs.getInt("glassLevel"));
+        assertIosKeys(net.lastPrefs, 5_000L);
+    }
+
     @Test public void thePollerPullsEveryMinuteOnlyWhileRunning() {
         Manual time = new Manual();
         int[] pulls = {0};

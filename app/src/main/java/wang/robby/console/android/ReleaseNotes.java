@@ -15,6 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.50.1", "2026-11-18", "iPhone 上的设置不再被安卓清掉",
+            "在 iPhone 上调整的额度日历显示选项，安卓同步时会原样保留。",
+            "其他手机新增的设置，这台安卓暂时不认识，也会原样保留。"),
         new Entry("0.50.0", "2026-11-15", "登录迁移到统一认证入口",
             "新登录使用 auth.robby.wang 的 Passkey。",
             "升级保留已有登录，新旧会话各自完成续期。",
