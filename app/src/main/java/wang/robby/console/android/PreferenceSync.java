@@ -23,7 +23,7 @@ import java.util.Set;
  */
 final class PreferenceSync {
     private PreferenceSync() {}
-    static final int SCHEMA = 1, MAX_BYTES = 16384;
+    static final int SCHEMA = 1, MAX_BYTES = 16384, MAX_KEYS = 128;
     static final long QUIET_MS = 3_000L, POLL_MS = 60_000L;
     /**
      * Reserved document key: when each setting was last changed, {key: epoch ms}. Two phones merge key by key and
@@ -52,7 +52,7 @@ final class PreferenceSync {
         "creditBase", "creditFired", "marketReadAt",
         "enabledAt", "round", "pendingTest", "more",
         "hideStatusBar", "prefSyncVersion", "prefSyncUpdatedAt", "prefSyncBase", "prefSyncDirty", "prefSyncPending",
-        "prefSyncAskNotify", "prefSyncEdited");
+        "prefSyncAskNotify", "prefSyncEdited", "prefSyncBaseFull");
 
     static final class Recent {
         final String id; final double score; final long at;
@@ -128,22 +128,24 @@ final class PreferenceSync {
     /**
      * Keys another client (God iOS, a newer Android) wrote that this build does not know, plus their {@link #EDITED}
      * times. They ride along unchanged on every upload so this phone never deletes them. Values that would fail the
-     * server's shape rules here (forbidden words anywhere in the tree, nesting deeper than 4) are left out.
+     * server's shape rules here (forbidden words anywhere in the tree, nesting deeper than 4) and {@link #LOCAL_ONLY} names
+     * are left out; an explicit null is kept, since another client may tell it apart from a missing key.
      */
     static JSONObject foreign(JSONObject prefs) {
         JSONObject out = new JSONObject();
         if (prefs == null) return out;
         for (Iterator<String> it = prefs.keys(); it.hasNext(); ) {
             String key = it.next();
-            if (KEYS.contains(key) || EDITED.equals(key) || forbidden(key) || prefs.isNull(key)) continue;
+            if (KEYS.contains(key) || LOCAL_ONLY.contains(key) || EDITED.equals(key) || forbidden(key)) continue;
             Object raw = prefs.opt(key);
+            if (raw == null || raw == JSONObject.NULL) { put(out, key, JSONObject.NULL); continue; }
             if (depth(raw) > 4 || forbiddenTree(raw)) continue;
             put(out, key, raw);
         }
         JSONObject times = prefs.optJSONObject(EDITED), kept = new JSONObject();
         if (times != null) for (Iterator<String> it = times.keys(); it.hasNext(); ) {
             String key = it.next(); Object v = times.opt(key);
-            if (KEYS.contains(key) || forbidden(key)) continue;
+            if (KEYS.contains(key) || LOCAL_ONLY.contains(key) || forbidden(key)) continue;
             if (v instanceof Number n && n.doubleValue() == n.longValue() && n.longValue() > 0) put(kept, key, n.longValue());
         }
         if (kept.length() > 0) put(out, EDITED, kept);
@@ -256,9 +258,9 @@ final class PreferenceSync {
     interface Runner { void execute(Runnable task); }
     interface Transport { Response get() throws Exception; Response put(int expectedVersion, JSONObject preferences) throws Exception; }
     static final class Snapshot {
-        final int version; final String updatedAt, baseJson; final Set<String> dirty; final boolean pending; final Map<String, Long> edited;
-        Snapshot(int version, String updatedAt, String baseJson, Set<String> dirty, boolean pending, Map<String, Long> edited) {
-            this.version = version; this.updatedAt = updatedAt; this.baseJson = baseJson; this.dirty = dirty; this.pending = pending; this.edited = edited;
+        final int version; final String updatedAt, baseJson; final Set<String> dirty; final boolean pending, baseFull; final Map<String, Long> edited;
+        Snapshot(int version, String updatedAt, String baseJson, Set<String> dirty, boolean pending, Map<String, Long> edited, boolean baseFull) {
+            this.version = version; this.updatedAt = updatedAt; this.baseJson = baseJson; this.dirty = dirty; this.pending = pending; this.edited = edited; this.baseFull = baseFull;
         }
     }
     interface Listener { void applied(Map<String, Object> changed); void persisted(Snapshot snap); }
@@ -278,6 +280,11 @@ final class PreferenceSync {
         private JSONObject base = new JSONObject();
         private int knownVersion; private String updatedAt;
         private boolean pending, online, canWrite, inFlight, followUp, pullQueued;
+        /**
+         * The base was saved before 0.50.1 and lacks other clients' keys, so the next upload waits for a successful
+         * pull that replaces it.
+         */
+        private boolean baseStale;
         private long dueAt;
         /** Bumped on sign-out so a response already in flight cannot write the old account's cursor back. */
         private int epoch;
@@ -290,6 +297,10 @@ final class PreferenceSync {
         }
         /** A dirty key saved without a time (before 0.33.1) counts as older than any server copy. */
         synchronized void restore(int version, String updatedAt, JSONObject base, Set<String> dirtyKeys, boolean pendingFlag, Map<String, ?> collected, Map<String, Long> editedTimes) {
+            restore(version, updatedAt, base, dirtyKeys, pendingFlag, collected, editedTimes, true);
+        }
+        /** {@code baseFull} is false for a base saved before 0.50.1, which dropped other clients' keys. */
+        synchronized void restore(int version, String updatedAt, JSONObject base, Set<String> dirtyKeys, boolean pendingFlag, Map<String, ?> collected, Map<String, Long> editedTimes, boolean baseFull) {
             knownVersion = Math.max(0, version); this.updatedAt = updatedAt == null || updatedAt.isEmpty() ? null : updatedAt;
             this.base = base == null ? new JSONObject() : keep(base);
             dirty.clear(); if (dirtyKeys != null) for (String k : dirtyKeys) if (KEYS.contains(k)) dirty.add(k);
@@ -298,6 +309,7 @@ final class PreferenceSync {
             }
             edited.clear(); if (editedTimes != null) for (Map.Entry<String, Long> e : editedTimes.entrySet()) if (KEYS.contains(e.getKey()) && e.getValue() != null && e.getValue() > 0) edited.put(e.getKey(), e.getValue());
             pending = pendingFlag || !dirty.isEmpty();
+            baseStale = knownVersion > 0 && !baseFull;
         }
         synchronized void setReady(boolean online, boolean canWrite) {
             this.online = online; this.canWrite = canWrite;
@@ -309,7 +321,7 @@ final class PreferenceSync {
          */
         synchronized void signOut() {
             epoch++;
-            knownVersion = 0; updatedAt = null; base = new JSONObject();
+            knownVersion = 0; updatedAt = null; base = new JSONObject(); baseStale = false;
             dirty.clear(); edited.clear(); pending = false; followUp = false; pullQueued = false;
             scheduler.cancel(fire);
             persist();
@@ -352,9 +364,12 @@ final class PreferenceSync {
                     if (wait > QUIET_MS) arm(); else scheduler.schedule(fire, wait);
                     return;
                 }
-                inFlight = true; followUp = false; ticket = epoch; expect = knownVersion; doc = uploadDocument();
+                inFlight = true; followUp = false; ticket = epoch; expect = knownVersion;
+                doc = baseStale ? null : uploadDocument();
             }
-            runner.execute(() -> put(ticket, expect, doc, false));
+            // A pull that succeeds refreshes the base and uploads the pending edits itself; one that fails keeps them pending.
+            if (doc == null) runner.execute(() -> get(ticket));
+            else runner.execute(() -> put(ticket, expect, doc, false));
         }
         private void get(int ticket) {
             Response r; try { r = transport.get(); } catch (Exception e) { r = Response.fail(0); }
@@ -368,7 +383,10 @@ final class PreferenceSync {
         }
         private Job finishGet(Response r) {
             if (r.status != 200 || r.preferences == null) return endFlight(null);
+            baseStale = false;
             if (r.version == 0) {
+                // An empty account document: seed it from this phone alone, never from an older server copy.
+                base = new JSONObject();
                 if (!local.isEmpty()) pending = true;
                 if (!local.isEmpty() && canWrite) return held(Job.put(epoch, 0, uploadDocument(), false, null));
                 return endFlight(null);
@@ -381,19 +399,21 @@ final class PreferenceSync {
                 return endFlight(changed);
             }
             // Same version, same document: refresh the base so a copy saved before 0.50.1, which dropped other
-            // clients' keys, does not delete them on the next upload.
-            if (r.version == knownVersion) base = keep(r.preferences);
+            // clients' keys, does not delete them on the next upload. An older version is the server's copy too.
+            base = keep(r.preferences);
             if (pending && canWrite) return held(Job.put(epoch, knownVersion, uploadDocument(), false, null));
             return endFlight(null);
         }
         private Job finishPut(Response r, JSONObject sent, boolean retried) {
             if (r.status == 200 && r.preferences != null) {
+                baseStale = false;
                 Map<String, Object> changed = applyRemote(r.preferences, r.updatedAt);
                 knownVersion = r.version; updatedAt = r.updatedAt; base = keep(r.preferences);
                 adoptTrim(sent, changed); retainDirty(sent); pending = !dirty.isEmpty();
                 return endFlight(changed);
             }
             if (r.status == 409 && r.preferences != null && !retried) {
+                baseStale = false;
                 Map<String, Object> changed = applyRemote(r.preferences, r.updatedAt);
                 knownVersion = r.version; if (r.updatedAt != null) updatedAt = r.updatedAt;
                 base = keep(r.preferences); pending = true;
@@ -430,7 +450,9 @@ final class PreferenceSync {
             Map<String, Object> merged = new LinkedHashMap<>(read(base));
             merged.putAll(local);
             for (String key : dirty) if (!local.containsKey(key)) merged.remove(key);
-            return withForeign(document(merged, edited), base);
+            JSONObject doc = withForeign(document(merged, edited), base);
+            // Values this phone holds but never changed can push a full server document over a cap; send only the edits then.
+            return sendable(doc) ? doc : conflictDocument();
         }
         /** 409 retry: server document (unknown keys included), plus only the keys changed here since the last sync. */
         private JSONObject conflictDocument() {
@@ -477,7 +499,7 @@ final class PreferenceSync {
             dirty.clear(); dirty.addAll(keep);
         }
         private Snapshot snapshot() {
-            return new Snapshot(knownVersion, updatedAt, base.toString(), new LinkedHashSet<>(dirty), pending, new LinkedHashMap<>(edited));
+            return new Snapshot(knownVersion, updatedAt, base.toString(), new LinkedHashSet<>(dirty), pending, new LinkedHashMap<>(edited), !baseStale);
         }
     }
 
@@ -647,6 +669,8 @@ final class PreferenceSync {
         if (raw instanceof Collection<?> c) { List<String> parts = new ArrayList<>(); for (Object item : c) parts.add(String.valueOf(item)); return String.join(",", parts); }
         return null;
     }
+    /** Within the server's byte and top-level key caps. */
+    static boolean sendable(JSONObject prefs) { return prefs.length() <= MAX_KEYS && fits(prefs); }
     private static boolean fits(JSONObject prefs) {
         return requestBody(Integer.MAX_VALUE, prefs).toString().getBytes(StandardCharsets.UTF_8).length <= MAX_BYTES;
     }

@@ -107,7 +107,7 @@ final class PreferenceSyncHub {
             try { base = new JSONObject(ui.getString("prefSyncBase", "{}")); } catch (org.json.JSONException e) { base = new JSONObject(); }
             Set<String> dirty = new LinkedHashSet<>();
             for (String key : ui.getString("prefSyncDirty", "").split(",")) if (!key.isEmpty()) dirty.add(key);
-            sync.restore(ui.getInt("prefSyncVersion", 0), ui.getString("prefSyncUpdatedAt", null), base, dirty, ui.getBoolean("prefSyncPending", false), current(app), edited(ui.getString("prefSyncEdited", "{}")));
+            sync.restore(ui.getInt("prefSyncVersion", 0), ui.getString("prefSyncUpdatedAt", null), base, dirty, ui.getBoolean("prefSyncPending", false), current(app), edited(ui.getString("prefSyncEdited", "{}")), ui.getBoolean("prefSyncBaseFull", false));
             return sync;
         }
     }
@@ -167,6 +167,7 @@ final class PreferenceSyncHub {
                 .putString("prefSyncBase", snap.baseJson)
                 .putString("prefSyncDirty", String.join(",", snap.dirty))
                 .putBoolean("prefSyncPending", snap.pending)
+                .putBoolean("prefSyncBaseFull", snap.baseFull)
                 .putString("prefSyncEdited", new JSONObject(snap.edited).toString()).apply();
             // A sync that changed no setting still moves the "synced at" line.
             if (moved && main != null) main.post(() -> { MainActivity activity = ui.get(); if (activity != null) activity.onPreferencesApplied(); });
