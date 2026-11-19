@@ -15,6 +15,9 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.51.0", "2026-11-19", "熄屏时番茄钟也会准时响钵",
+            "专注或休息结束时，即使手机熄屏、God 在后台，颂钵也会按时响起。",
+            "番茄钟计时期间，状态栏会显示闹钟图标；点系统的下一个闹钟会打开颂钵。"),
         new Entry("0.50.1", "2026-11-18", "iPhone 上的设置不再被安卓清掉",
             "在 iPhone 上调整的额度日历显示选项，安卓同步时会原样保留。",
             "其他手机新增的设置，这台安卓暂时不认识，也会原样保留。"),

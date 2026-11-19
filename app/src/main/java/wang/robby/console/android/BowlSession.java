@@ -185,15 +185,17 @@ final class BowlSession {
         alarm(app);
     }
     /**
-     * An exact alarm at the end of the running phase wakes the service to chime even in Doze; no timer, no alarm. After
-     * a reboot only the alarm is set again: Android 15 does not let a media service start from boot.
+     * An alarm clock at the end of the running phase wakes the service to chime even in Doze; no timer, no alarm. A plain
+     * exact alarm is not enough: HyperOS freezes God a few seconds after the screen goes off and holds its exact alarms
+     * until the screen comes back ("cached alarm"), while alarm clocks are delivered on time. After a reboot only the
+     * alarm is set again: Android 15 does not let a media service start from boot.
      */
     static void alarm(Context c) {
         AlarmManager alarms = c.getSystemService(AlarmManager.class);
         PendingIntent p = PendingIntent.getForegroundService(c, ACTION_TICK.hashCode(), new Intent(c, BowlService.class).setAction(ACTION_TICK), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         Pomodoro.State st = Pomodoro.State.parse(prefs(c).getString("timer", ""));
         if (!st.running) { alarms.cancel(p); return; }
-        if (Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, st.endsAt, p);
+        if (Build.VERSION.SDK_INT < 31 || alarms.canScheduleExactAlarms()) alarms.setAlarmClock(new AlarmManager.AlarmClockInfo(st.endsAt, openPage(c)), p);
         else alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, st.endsAt, p);
     }
     static void channels(Context c) {
