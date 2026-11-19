@@ -914,3 +914,18 @@ God iOS 开始把三个额度日历开关（`quotaCalendarFiveHour`、`quotaCale
 验证：`check.sh` 通过（353 项 JVM 测试，0 失败；`PreferenceSyncTest` 新增 7 项：普通上传和重启后保留 iOS 的三个键与 `editedAt`、409 重试保留它们、未知键的形状规则（含 null 与 `LOCAL_ONLY`）且不覆盖已知键、同版本拉取刷新旧 base、旧版 base 先拉取再上传、版本 0 只用本机设置、满额文档仍能上传编辑；lint debug/release 0 错误），Release 为正式证书签名，SHA256 `c2ab10a6…16987c`。
 
 未验证：Find 当时连不上（局域网和 Tailscale 连接都超时），正式包没有安装；和 iOS 之间的真实双向同步没有跑过。
+
+## v0.51.0：熄屏时番茄钟准时响钵（2026-11-19）
+
+0.47.0 没验到的「熄屏后到点响钵」在 MIX Flip（HyperOS）上补测时失败了。熄屏约 5 秒后，God 被冻结（`GreezeManager: FZ uid … reason=screen off`），前台服务也挡不住。`setExactAndAllowWhileIdle` 设的 `BOWL_TICK` 到点时被扣下（`cached alarm!`），直到亮屏才补发。补发时阶段已结束超过 60 秒，所以颂钵不响，只是跳到了下一段。
+
+- `BowlSession.alarm` 改用 `setAlarmClock`，show intent 打开颂钵页。计时期间状态栏有闹钟图标。没有精确闹钟权限时仍回退到 `setAndAllowWhileIdle`。
+- 计时状态、阶段推进、补发时只在 60 秒内响钵，以及前台服务和通知，都不变。
+
+验证：`check.sh` 通过（353 项 JVM 测试，0 失败；lint debug/release 0 错误）。在 Flip 上对比修改前后：都用预览版把计时设为 70～75 秒后结束，然后熄屏。
+- 修改前（0.50.1）：到点时只有 `cached alarm!`，状态不变；亮屏后才跳到短休息，没有响钵。
+- 修改后：`dumpsys alarm` 的 Alarm clock 里有这个闹钟。到点那一刻 GreezeManager 以 alarm 原因解冻 God（`THAW uid … reason : alarm`），计时器跳到短休息，AudioTrack 开始播放，屏幕一直熄灭。
+- 画圈唱钵：用 adb 沿钵口画了 3 圈，每转四分之一圈都有一下 TEXTURE_TICK 触感，AudioTrack 开始播放。
+- 正式包：签名后覆盖安装到 Flip（0.50.1 → 0.51.0），安装文件 SHA256 `2d4a04e3…88f2c3ed` 与构建一致，启动无崩溃。
+
+未验证：来电时环境音是否停下；Find 上的安装；熄屏响钵在 ColorOS 上的表现。
