@@ -227,7 +227,7 @@ final class MindBallPage {
         String summary = tl == null ? "" : tl.optString("summary"); if (!summary.isEmpty()) { TextView s = t.text(summary, 14, false); s.setTextColor(t.ink); s.setPadding(0, t.dp(6), 0, t.dp(2)); c.addView(s); }
         List<String> meta = new ArrayList<>();
         if (day.optLong("summarizedAt") > 0) meta.add("整理于 " + MindBall.clock(day.optLong("summarizedAt")) + (tl.optString("model").isEmpty() ? "" : " · " + tl.optString("model")));
-        int fresh = 0; if (segs != null) for (int i = 0; i < segs.length(); i++) if (segs.optJSONObject(i).optLong("end") > day.optLong("summarizedThrough")) fresh++;
+        int fresh = MindBall.pendingSummarySegments(day);
         if (fresh > 0 && tl != null) meta.add(fresh + " 段新录音尚未整理");
         if (tl != null && tl.optBoolean("truncated")) meta.add("回复过长，时间线可能不完整");
         if (!meta.isEmpty()) { TextView m = t.text(String.join(" · ", meta), 12, false); m.setTextColor(t.faint); m.setPadding(0, t.dp(4), 0, 0); c.addView(m); }
