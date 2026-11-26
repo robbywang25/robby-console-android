@@ -262,7 +262,7 @@ public final class FeatureRenderer {
             case "observer": return api(p) && p.optJSONObject("metrics") != null && p.optJSONArray("sites") != null;
             case "umami": return api(p) && p.optJSONArray("sites") != null;
             case "market": return api(p) && p.optJSONArray("watchlist") != null;
-            case "engineering": return api(p) && p.optJSONArray("repositoryIndex") != null && p.optJSONArray("items") != null;
+            case "engineering": return (api(p) || (version(p, 2) && "2026-11-26".equals(p.opt("apiVersion")))) && p.optJSONArray("repositoryIndex") != null && p.optJSONArray("items") != null;
             case "clipboard": return api(p) && p.optJSONArray("items") != null && p.optJSONObject("sourceStatus") != null;
             case "secrets": return api(p) && p.optJSONArray("services") != null;
             case "tokens": case "quota-calendar": return version(p, 1) && p.optJSONArray("accounts") != null;
@@ -702,6 +702,7 @@ public final class FeatureRenderer {
             case "Grok": return u.theme.dark ? 0xffb19cf5 : 0xff6a4cc0;
             case "Cursor": case "TodayAI": return u.theme.dark ? 0xff6fcfab : 0xff1d7f5f;
             case "Gemini": return u.theme.dark ? 0xffa8c7fa : 0xff356ac3;
+            case "Antigravity": return u.theme.dark ? 0xffc4b5fd : 0xff7c3aed;
             default: return u.theme.ink;
         }
     }

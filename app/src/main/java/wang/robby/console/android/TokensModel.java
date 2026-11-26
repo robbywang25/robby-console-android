@@ -162,11 +162,11 @@ final class TokensModel {
     // ---- The tokens.robby.wang 账号额度 tile (renderOverview), field by field ----
 
     /** The page's sections in the web's order; accounts never move between them when their readings change. */
-    static final List<String> SECTIONS = List.of("OpenAI", "Claude", "Grok", "Cursor", "TodayAI", "Gemini", "其他");
+    static final List<String> SECTIONS = List.of("OpenAI", "Claude", "Grok", "Cursor", "TodayAI", "Gemini", "Antigravity", "其他");
     private static final Map<String, String> PRODUCT_NAMES = Map.of("codex", "Codex", "claude", "Claude", "grok", "Grok Build", "grok-bot", "Grok Bot",
-            "cursor", "Cursor", "today-cn", "TodayAI 中国版", "today-global", "TodayAI 全球版", "chatgpt-dots", "ChatGPT Dots", "chatgpt-chat", "ChatGPT 聊天");
+            "cursor", "Cursor", "today-cn", "TodayAI 中国版", "today-global", "TodayAI 全球版", "antigravity", "Antigravity", "chatgpt-dots", "ChatGPT Dots", "chatgpt-chat", "ChatGPT 聊天");
     private static final Map<String, String> IDENTITY_PRODUCTS = Map.of("codex", "ChatGPT", "claude", "Claude", "grok", "Grok Build", "grok-bot", "Grok Bot",
-            "cursor", "Cursor", "today-cn", "TodayAI 中国版", "today-global", "TodayAI 全球版");
+            "cursor", "Cursor", "today-cn", "TodayAI 中国版", "today-global", "TodayAI 全球版", "antigravity", "Antigravity");
     private static final Map<String, String> CLAUDE_CARDS = Map.of("full", "完整重置卡", "five_hour", "5 小时重置卡", "weekly", "每周重置卡");
     private static final DateTimeFormatter SHORT = DateTimeFormatter.ofPattern("MM/dd HH:mm"), LONG = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
@@ -183,6 +183,7 @@ final class TokensModel {
             case "cursor": return "Cursor";
             case "today": return "TodayAI";
             case "google": return "Gemini";
+            case "antigravity": return "Antigravity";
             default: return "其他";
         }
     }
@@ -190,10 +191,27 @@ final class TokensModel {
     static final Comparator<JSONObject> SLOT_ORDER = TokenAccountOrder.ACCOUNT_ORDER;
     static String productName(JSONObject a) {
         String name = PRODUCT_NAMES.get(String.valueOf(a.opt("product")));
+        if ("antigravity".equals(a.opt("product"))) return "Antigravity";
         if ("gemini-web".equals(a.opt("product"))) return "Gemini";
         if ("gemini-cli".equals(a.opt("product"))) return "Gemini CLI";
         if ("gemini-api".equals(a.opt("product"))) return "Gemini API";
         return name != null ? name : a.opt("label") instanceof String ? (String) a.opt("label") : "Agent";
+    }
+    static String category(JSONObject a) {
+        String supplied = a == null ? "" : a.optString("category", "");
+        if ("coding".equals(supplied) || "chat".equals(supplied) || "api".equals(supplied)) return supplied;
+        String product = a == null ? "" : String.valueOf(a.opt("product"));
+        if ("gemini-api".equals(product)) return "api";
+        if (List.of("chatgpt-dots", "chatgpt-chat", "today-cn", "today-global", "gemini-web").contains(product)) return "chat";
+        return "coding";
+    }
+    static boolean isUnsubscribed(JSONObject a) {
+        return a != null && Boolean.TRUE.equals(a.opt("unsubscribed"));
+    }
+    static String widgetPriority(JSONObject a) {
+        if (a == null) return null;
+        String p = a.optString("widgetPriority", "");
+        return List.of("pinned", "normal", "low", "hidden").contains(p) ? p : null;
     }
     private static String clean(Object v) { return v instanceof String ? ((String) v).replaceAll("[\\u0000-\\u001f\\u007f-\\u009f]", " ").trim() : ""; }
     private static String meaningful(Object v) { String s = clean(v); return !s.isEmpty() && !s.matches("(?iu).*((账号|账户)\\s*[一二三四五六七八九十百零〇\\d]+|\\baccount\\s*[-#]?\\s*\\d+\\b).*") ? s : ""; }

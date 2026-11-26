@@ -40,10 +40,14 @@ final class QuotaCalendar {
     }
 
     static Model build(List<JSONObject> accounts, ZoneId zone, long now) {
+        return build(accounts, zone, now, false);
+    }
+
+    static Model build(List<JSONObject> accounts, ZoneId zone, long now, boolean codingOnly) {
         List<Event> events = new ArrayList<>(); int shown = 0, missingAccounts = 0, missingWindows = 0;
         Set<String> seenAccounts = new HashSet<>();
         for (JSONObject a : accounts) {
-            if (!TokensModel.shownOnPage(a) || !seenAccounts.add(a.optString("id") + "\u0000" + a.optString("product"))) continue;
+            if (!TokensModel.shownOnPage(a) || (codingOnly && !"coding".equals(TokensModel.category(a))) || !seenAccounts.add(a.optString("id") + "\u0000" + a.optString("product"))) continue;
             shown++;
             JSONArray windows = a.optJSONArray("windows"), history = a.optJSONArray("resetHistory");
             if (windows == null || windows.length() == 0) missingAccounts++;

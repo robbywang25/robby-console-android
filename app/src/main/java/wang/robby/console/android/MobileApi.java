@@ -22,7 +22,7 @@ public final class MobileApi {
             throw new IllegalArgumentException("接口地址无效");
         String route = path.split("\\?",2)[0];
         boolean known = FeatureCatalog.all().stream().anyMatch(f -> f.path.equals(route));
-        if (!known && !route.equals("travel-ledger/current/snapshot") && !route.equals("tokens/tibo/alerts") && !ledgerRoute(route) && !AccountCenter.readRoute(route) && !AccountCenter.writeRoute(route) && !route.matches("clipboard/[a-f0-9]{32}/reveal"))
+        if (!known && !route.equals("travel-ledger/current/snapshot") && !route.equals("tokens/tibo/alerts") && !route.equals(AccountCenter.BOOTSTRAP) && !route.equals(AccountCenter.TOKENS_CATALOG) && !route.equals(AccountCenter.ENGINEERING_V2) && !ledgerRoute(route) && !AccountCenter.readRoute(route) && !AccountCenter.writeRoute(route) && !route.matches("clipboard/[a-f0-9]{32}/reveal"))
             throw new IllegalArgumentException("接口未登记");
         return path;
     }
@@ -38,6 +38,15 @@ public final class MobileApi {
         try { JSONObject result=request("GET",path,null,token);timing(path,started,signed);return result; }
         catch (ApiError error) { if (!retryWithFreshToken(error)) throw error; }
         return request("GET",path,null,auth.accessToken(true));
+    }
+
+    /** Prefer `/api/mobile/v1/engineering/v2` and fall back to legacy `engineering` on 404/503. */
+    public JSONObject getEngineering() throws Exception {
+        try { return get(AccountCenter.ENGINEERING_V2); }
+        catch (ApiError error) {
+            if (error.status == 404 || error.status == 503) return get("engineering");
+            throw error;
+        }
     }
     /** Route and milliseconds only (sign-in vs the read itself); never the token, query or data. */
     private static void timing(String path,long started,long signed){

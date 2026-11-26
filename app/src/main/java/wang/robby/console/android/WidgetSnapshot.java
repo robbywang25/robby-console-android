@@ -40,7 +40,17 @@ final class WidgetSnapshot {
      */
     static JSONObject tokens(JSONObject quotas, Set<String> hidden) {
         if (quotas == null) return null;
-        List<JSONObject> board = new ArrayList<>(Dashboard.tokenBoardAccounts(FeatureRenderer.tokenAccounts(quotas), hidden));
+        java.util.Map<String, JSONObject> catalogByID = TokenAccountOrder.catalogEntries(quotas);
+        List<JSONObject> rawBoard = new ArrayList<>();
+        for (JSONObject a : Dashboard.tokenBoardAccounts(FeatureRenderer.tokenAccounts(quotas), hidden)) {
+            JSONObject cat = catalogByID.get(a.optString("id"));
+            String priority = TokensModel.widgetPriority(a);
+            if (priority == null && cat != null) priority = TokensModel.widgetPriority(cat);
+            boolean unsub = a.has("unsubscribed") ? TokensModel.isUnsubscribed(a) : TokensModel.isUnsubscribed(cat);
+            if ("hidden".equals(priority) || (priority == null && unsub)) continue;
+            rawBoard.add(a);
+        }
+        List<JSONObject> board = new ArrayList<>(rawBoard);
         java.util.Map<String, Integer> count = new java.util.HashMap<>(), seen = new java.util.HashMap<>();
         for (JSONObject a : board) count.merge(TokensModel.productName(a) + "\u0000" + emailPrefix(TokensModel.boardEmail(a)), 1, Integer::sum);
         JSONArray out = new JSONArray();

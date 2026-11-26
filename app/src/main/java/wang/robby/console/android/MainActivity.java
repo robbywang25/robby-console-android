@@ -1580,7 +1580,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private Button button(String label,Runnable action){return theme.button(label,action);}
     private GradientDrawable round(int color,int radius){return theme.shape(color,radius);}
     private boolean loggedIn(){return PreviewMode.isBuild()?PreviewMode.loggedIn():auth.hasSession();}
-    private JSONObject read(String path)throws Exception{return PreviewMode.isBuild()?PreviewMode.data(path):api.get(path);}
+    private JSONObject read(String path)throws Exception{return PreviewMode.isBuild()?PreviewMode.data(path):"engineering".equals(path)?api.getEngineering():api.get(path);}
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
     /**
      * Token 额度 needs god.mobile.tokens.read, requested since 0.10.1. Sessions stored before then fail the exact-scope

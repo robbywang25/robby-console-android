@@ -133,6 +133,8 @@ final class TokensPages {
             case "claude": return t.dark ? 0xffe39a7e : 0xffb8532f;
             case "grok": case "grok-bot": return t.dark ? 0xffb19cf5 : 0xff6a4cc0;
             case "cursor": case "today-cn": case "today-global": return t.dark ? 0xff6fcfab : 0xff1d7f5f;
+            case "gemini-web": case "gemini-cli": case "gemini-api": return t.dark ? 0xffa8c7fa : 0xff356ac3;
+            case "antigravity": return t.dark ? 0xffc4b5fd : 0xff7c3aed;
             default: return t.muted;
         }
     }

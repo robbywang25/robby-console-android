@@ -13,17 +13,20 @@ final class TokenAccountOrder {
     private TokenAccountOrder() {}
     private static final Map<String, Integer> PROVIDERS = Map.of(
         "openai", 100, "anthropic", 200, "xai", 300, "cursor", 400,
-        "today", 500, "google", 600, "other", 900);
+        "today", 500, "google", 600, "antigravity", 650, "other", 900);
     private static final Map<String, Integer> ACCOUNTS = Map.ofEntries(
         Map.entry("codex-1", 100), Map.entry("codex-2", 200), Map.entry("chatgpt-dots", 300), Map.entry("chatgpt-chat", 400),
         Map.entry("claude-1", 100), Map.entry("claude-2", 200), Map.entry("grok", 100), Map.entry("grok-bot", 200),
         Map.entry("cursor", 100), Map.entry("today-cn", 100), Map.entry("today-global", 200),
-        Map.entry("gemini-web", 100), Map.entry("gemini-web-2", 200), Map.entry("gemini-cli", 300),
-        Map.entry("gemini-cli-2", 400), Map.entry("gemini-api", 500), Map.entry("gemini-api-2", 600));
+        Map.entry("gemini-web", 100), Map.entry("gemini-web-3", 150), Map.entry("gemini-web-2", 200), Map.entry("gemini-cli", 300),
+        Map.entry("gemini-cli-2", 400), Map.entry("gemini-api", 500), Map.entry("gemini-api-2", 600),
+        Map.entry("antigravity", 100));
 
     static String providerKey(JSONObject account) {
         String product = account.optString("product").toLowerCase(Locale.ROOT);
         String provider = account.optString("provider").toLowerCase(Locale.ROOT);
+        String id = account.optString("id").toLowerCase(Locale.ROOT);
+        if (product.equals("antigravity") || provider.equals("antigravity") || id.equals("antigravity")) return "antigravity";
         if (List.of("gemini-cli", "gemini-web", "gemini-api").contains(product) || provider.equals("google")) return "google";
         if (List.of("today-cn", "today-global").contains(product) || provider.equals("todayai")) return "today";
         if (product.equals("cursor") || provider.equals("cursor")) return "cursor";
@@ -65,6 +68,21 @@ final class TokenAccountOrder {
             }
         }
         return ordered(new ArrayList<>(unique.values()));
+    }
+
+    /** Lookup additive `catalog.entries` keyed by account id without mutating wire account objects. */
+    static Map<String, JSONObject> catalogEntries(JSONObject payload) {
+        Map<String, JSONObject> map = new LinkedHashMap<>();
+        JSONObject catalog = payload == null ? null : payload.optJSONObject("catalog");
+        org.json.JSONArray entries = catalog == null ? null : catalog.optJSONArray("entries");
+        if (entries == null) return map;
+        for (int i = 0; i < entries.length() && i < 1000; i++) {
+            JSONObject entry = entries.optJSONObject(i);
+            if (entry == null) continue;
+            String id = entry.optString("id", "");
+            if (!id.isEmpty()) map.putIfAbsent(id, entry);
+        }
+        return map;
     }
 
     /** Sort provider groups first, including disagreement fallback, then accounts; never use quota state or locale. */

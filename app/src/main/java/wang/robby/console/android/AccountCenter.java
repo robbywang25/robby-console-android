@@ -16,6 +16,7 @@ import java.util.List;
 final class AccountCenter {
     private AccountCenter() {}
     static final String STATUS = "account/status", DEVICES = "account/devices";
+    static final String BOOTSTRAP = "bootstrap", TOKENS_CATALOG = "tokens/catalog", ENGINEERING_V2 = "engineering/v2";
     static final String EMAIL_SEND = "account/email/send", EMAIL_VERIFY = "account/email/verify";
     static final String UNBIND = "account/social/unbind", REVOKE_OTHERS = "account/devices/revoke-others";
     /** The personal signature, saved with the avatar's scope (god.mobile.profile.write). */
@@ -27,7 +28,7 @@ final class AccountCenter {
     /** The same document with the 米家 lamp; the only query a write may carry. */
     static final String APP_SECRETS_V2 = APP_SECRETS + "?version=2";
     /** The web user center; binding Apple or WeChat starts there, since it needs the provider's own sign-in page. */
-    static final String WEB = "https://god.robby.wang/account/";
+    static final String WEB = "https://account.robby.wang/";
     static final String SETTINGS = "https://auth.robby.wang/settings/two-factor-authentication";
     static final String LEGACY_SETTINGS = "https://auth.god.robby.wang/settings/two-factor-authentication";
     /** Devices shown before the rest fold under one row. */
