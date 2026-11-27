@@ -32,6 +32,8 @@ final class Dashboard {
         new Card("tokens", "Token 额度", "各账号最紧张的额度与重置倒计时", "gauge", "tokens/quotas", "tokens", true),
         new Card("calendar", "重置日历", "接下来的几次额度重置", "calendar", "tokens/quotas", "quota-calendar", true),
         new Card("wechat", "微信消息", "今天的消息、近 7 天日均与最活跃会话", "chat", "wechat/digest", "wechat-messages", false),
+        new Card("dispatch", "AI 调度总控", "宿主机在线状态、认领与阻塞", "code", AccountCenter.DISPATCH_OVERVIEW, "agent-dispatch", true),
+        new Card("sentinel", "基础设施哨兵", "服务器、存储、域名与余额告警", "server", AccountCenter.INFRA_SENTINEL, "infra-sentinel", true),
         // No read: the clocks are drawn on the phone from the zones chosen in 编辑看板.
         new Card("clocks", "时区时钟", "Tibo、北京等时区的当前时间", "history", null, null, true)
     );
@@ -50,6 +52,7 @@ final class Dashboard {
 
     /** 重置日历 on 总览 lists the resets in a day range, chosen in 编辑看板: 今天, or the next 3, 7, 14 or 30 days. */
     static final String CALENDAR_DAYS = "boardCalendarDays";
+    static final String CALENDAR_CODING_ONLY = "quotaCalendarCodingOnly";
     static final List<Integer> CALENDAR_RANGES = List.of(1, 3, 7, 14, 30);
     static final int CALENDAR_DEFAULT = 7, CALENDAR_MAX_ROWS = 12;
     static int calendarDays(String saved) {
@@ -57,6 +60,12 @@ final class Dashboard {
         return CALENDAR_DEFAULT;
     }
     static int calendarDays(android.content.Context c) { return calendarDays(c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getString(CALENDAR_DAYS, null)); }
+    static boolean calendarCodingOnly(android.content.Context c) {
+        return c != null && c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).getBoolean(CALENDAR_CODING_ONLY, false);
+    }
+    static void setCalendarCodingOnly(android.content.Context c, boolean on) {
+        if (c != null) c.getSharedPreferences("god-ui", android.content.Context.MODE_PRIVATE).edit().putBoolean(CALENDAR_CODING_ONLY, on).apply();
+    }
     static String calendarRange(int days) { return days == 1 ? "今天" : "未来 " + days + " 天"; }
     /** Resets still ahead of {@code now} whose local day is within {@code days} days counting today, soonest first. */
     static List<QuotaCalendar.Event> calendarWithin(List<QuotaCalendar.Event> events, long now, java.time.LocalDate today, int days) {
@@ -69,10 +78,16 @@ final class Dashboard {
      * Two accounts of one product both stay, and names are left as they arrived.
      */
     static List<JSONObject> tokenBoardAccounts(List<JSONObject> accounts, Set<String> hidden) {
+        return tokenBoardAccounts(accounts, null, hidden);
+    }
+    static List<JSONObject> tokenBoardAccounts(List<JSONObject> accounts, java.util.Map<String, JSONObject> catalog, Set<String> hidden) {
         List<JSONObject> out = new ArrayList<>(); if (accounts == null) return out;
         Set<String> hide = hidden == null ? Set.of() : hidden;
         for (JSONObject a : TokenAccountOrder.ordered(accounts)) {
-            if (!TokensModel.shownOnPage(a) || hide.contains(a.optString("id"))) continue;
+            JSONObject cat = catalog == null ? null : catalog.get(a.optString("id"));
+            if (!TokensModel.shownOnPage(a, cat) || hide.contains(a.optString("id"))) continue;
+            Object we = a.has("widgetEligible") ? a.opt("widgetEligible") : (cat == null ? null : cat.opt("widgetEligible"));
+            if (Boolean.FALSE.equals(we)) continue;
             if (out.size() >= MAX_TOKEN_ROWS) break;
             out.add(a);
         }

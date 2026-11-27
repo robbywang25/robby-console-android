@@ -131,12 +131,12 @@ public final class ConsoleTheme {
         ImageView v=new ImageView(context);v.setImageResource(asset);v.setImageTintList(ColorStateList.valueOf(selected?ink:muted));v.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);v.setLayoutParams(new LinearLayout.LayoutParams(dp(size),dp(size)));return v;
     }
     public static String symbol(String id){return switch(id){
-        case "总览","overview"->"grid";case "洞察","observer","umami","posthog","openai"->"chart";
+        case "总览","overview"->"grid";case "洞察","observer","umami","openai"->"chart";
         case "资产","domains"->"globe";case "tokens"->"gauge";case "quota-calendar"->"calendar";case "tibo"->"bell";case "工具"->"tools";case "功能"->"features";case "设置"->"me";
-        case "travel-ledger"->"ledger";case "clipboard"->"clipboard";case "infrastructure"->"server";
+        case "travel-ledger"->"ledger";case "clipboard"->"clipboard";case "infrastructure","infra-sentinel","sentinel"->"server";
         case "status","site-maintenance"->"pulse";case "market","okx"->"trend";
-        case "engineering"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog","wechat-messages"->"chat";
-        case "prompts","visit-insight-reports"->"document";case "deepseek"->"chip";case "mindball"->"mic";case "uu-remote"->"desktop";case "mijia-light"->"bulb";case "singing-bowl"->"bowl";case "secrets","wechat-login-audit"->"shield";default->"grid";};}
+        case "engineering","agent-dispatch","dispatch"->"code";case "image-workshop"->"image";case "wechat-cards","wechat-publishing","miniprogram-catalog","wechat-messages"->"chat";
+        case "prompts","prompt-cheatsheet","visit-insight-reports"->"document";case "deepseek"->"chip";case "mindball"->"mic";case "uu-remote"->"desktop";case "mijia-light"->"bulb";case "singing-bowl"->"bowl";case "secrets","wechat-login-audit"->"shield";default->"grid";};}
     /** Visible tab names. "设置" stays the internal identity so saved navigation keeps working. */
     public static String tabLabel(String group){return "设置".equals(group)?"我":group;}
     /**

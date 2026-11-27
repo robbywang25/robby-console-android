@@ -15,6 +15,13 @@ final class ReleaseNotes {
         Entry(String version, String date, String headline, String... items) { this.version = version; this.date = date; this.headline = headline; this.items = List.of(items); }
     }
     static final List<Entry> ALL = List.of(
+        new Entry("0.52.0", "2026-11-27", "额度全量视图与四大移动控制面",
+            "Token 额度支持按服务商、邮箱和续费台账切换，可预测耗尽时间与设备状态。",
+            "重置日历与桌面小组件新增「只看 Coding」筛选并跨端同步，补齐 Gemini/Agy。",
+            "云剪贴板支持新建私密条目、切换公开状态和移入回收站。",
+            "源码与工程新增仓库筛选和提交详情展开，支持直达 GitHub。",
+            "新增 AI 调度总控、基础设施哨兵、提示词速查表，心力球支持一键投递 Flobo。",
+            "恢复 Umami 访问统计，移除 PostHog，并增加超两小时数据陈旧提示。"),
         new Entry("0.51.0", "2026-11-19", "熄屏时番茄钟也会准时响钵",
             "专注或休息结束时，即使手机熄屏、God 在后台，颂钵也会按时响起。",
             "番茄钟计时期间，状态栏会显示闹钟图标；点系统的下一个闹钟会打开颂钵。"),

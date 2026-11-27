@@ -35,6 +35,11 @@ final class WechatDigestText {
         if (stale(d.generatedAt, now)) line += " · 数据可能不是最新";
         return line;
     }
+    /** Explicit amber staleness banner text when digest generation is older than 2 hours, or null while current. */
+    static String staleBanner(WechatDigest.Doc d, Instant now) {
+        if (d == null || !stale(d.generatedAt, now)) return null;
+        return "微信消息统计已超过 2 小时未同步（生成于 " + ago(d.generatedAt, now) + "），当前展示最近一次归档。";
+    }
     /** messages/7, one decimal, half up. A zero fraction is omitted: 7 → "1", 8 → "1.1". */
     static String dailyAverage(long messages) {
         long tenths = (messages * 10 + 3) / 7;

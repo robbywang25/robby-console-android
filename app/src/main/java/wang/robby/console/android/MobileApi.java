@@ -35,16 +35,21 @@ public final class MobileApi {
     public JSONObject get(String path) throws Exception {
         checkedPath(path);
         long started=android.os.SystemClock.elapsedRealtime();String token=auth.accessToken();long signed=android.os.SystemClock.elapsedRealtime();
-        try { JSONObject result=request("GET",path,null,token);timing(path,started,signed);return result; }
+        try { JSONObject result=request("GET",path,null,token,null);timing(path,started,signed);return result; }
         catch (ApiError error) { if (!retryWithFreshToken(error)) throw error; }
-        return request("GET",path,null,auth.accessToken(true));
+        return request("GET",path,null,auth.accessToken(true),null);
     }
 
-    /** Prefer `/api/mobile/v1/engineering/v2` and fall back to legacy `engineering` on 404/503. */
+    /** Prefer `/api/mobile/v1/engineering/v2` (or bootstrap-configured path) and fall back to legacy `engineering` on 404/503. */
     public JSONObject getEngineering() throws Exception {
-        try { return get(AccountCenter.ENGINEERING_V2); }
+        return getEngineering(null);
+    }
+    /** Resolve engineering endpoint from {@code bootstrap} when present, falling back to legacy {@code engineering}. */
+    public JSONObject getEngineering(Bootstrap bootstrap) throws Exception {
+        String route = bootstrap == null ? AccountCenter.ENGINEERING_V2 : bootstrap.route(bootstrap.engineeringPath, AccountCenter.ENGINEERING_V2);
+        try { return get(route); }
         catch (ApiError error) {
-            if (error.status == 404 || error.status == 503) return get("engineering");
+            if (!"engineering".equals(route) && (error.status == 404 || error.status == 503)) return get("engineering");
             throw error;
         }
     }
@@ -87,32 +92,51 @@ public final class MobileApi {
             throw new ApiError(status,code,switch(status){case 401->"会话已失效，请重新登录";case 403->"需要重新登录一次，授权 God 保存头像";case 413->"头像文件过大";case 415,422->"头像格式不受支持";case 429->"请求较多，请稍后再试";default->status>=500?"服务暂不可用，请稍后重试":"服务器未返回预期结果";});
         }finally{c.disconnect();}
     }
-    /** How many response bytes may be read. A preferences 409 carries the current document plus its wrapper. */
+    /** How many response bytes may be read. Engineering and reveal routes allow 1 MiB; snapshot allows 2 MiB; 409 carries conflict wrappers. */
     static int responseLimit(int status, String path) {
-        if (status == 200) return path != null && path.startsWith("travel-ledger/current/snapshot") ? 2097152 : path != null && path.endsWith("/reveal") ? 1048576 : 524288;
-        if (status == 409 && AccountCenter.PREFERENCES.equals(path)) return 24576;
+        String route = path == null ? "" : path.split("\\?", 2)[0];
+        if (status == 200 || status == 201) {
+            if (route.startsWith("travel-ledger/current/snapshot")) return 2097152;
+            if (route.endsWith("/reveal") || route.startsWith("engineering")) return 1048576;
+            return 524288;
+        }
+        if (status == 409 && (AccountCenter.PREFERENCES.equals(route) || route.startsWith("clipboard/"))) return 24576;
         return 16384;
     }
+    /** Lowercase UUID v4 required by backend idempotent POST endpoints (`mobile-http-helpers.js`). */
+    static String newIdempotencyKey() {
+        return UUID.randomUUID().toString().toLowerCase(java.util.Locale.ROOT);
+    }
     public JSONObject post(String path,JSONObject body) throws Exception {
+        return post(path, body, null);
+    }
+    public JSONObject post(String path,JSONObject body,String idempotencyKey) throws Exception {
         checkedPath(path);
         if(!writable(path))throw new IllegalArgumentException("写入接口未登记");
-        return request("POST",path,body,auth.accessToken());
+        return request("POST",path,body,auth.accessToken(),idempotencyKey);
     }
     /** Writes go only to registered routes; the lamp's versioned app-secrets path is the one write with a query. */
     static boolean writable(String path){return path.matches("travel-ledger/(entry-writes|people-writes)/(prepare|commit|resolve)")||AccountCenter.writeRoute(path)||AccountCenter.APP_SECRETS_V2.equals(path);}
-    private JSONObject request(String method,String path,JSONObject body,String accessToken) throws Exception {
+    private JSONObject request(String method,String path,JSONObject body,String accessToken,String idempotencyKey) throws Exception {
         checkedPath(path);
+        String route = path.split("\\?", 2)[0];
         URL url = new URL("https://god.robby.wang/api/mobile/v1/" + path);
         HttpURLConnection c = (HttpURLConnection) url.openConnection();
         c.setInstanceFollowRedirects(false); c.setConnectTimeout(12000); c.setReadTimeout(25000); c.setRequestMethod(method);
         c.setRequestProperty("Authorization", "Bearer " + accessToken);
         c.setRequestProperty("Accept", "application/json"); c.setRequestProperty("Cache-Control", "no-store");
-        c.setRequestProperty("X-Request-ID",UUID.randomUUID().toString()); c.setUseCaches(false);
+        c.setRequestProperty("X-Request-ID",UUID.randomUUID().toString());
+        if (idempotencyKey != null && !idempotencyKey.isEmpty() && "POST".equals(method)) {
+            if (!idempotencyKey.matches("[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}"))
+                throw new IllegalArgumentException("Idempotency-Key 须为小写 UUID v4");
+            c.setRequestProperty("Idempotency-Key", idempotencyKey);
+        }
+        c.setUseCaches(false);
         // A fully read response leaves the connection in the pool, so the next read skips the TCP and TLS handshake
         // (most of a read's time from the phone); anything that did not finish cleanly is disconnected instead.
         boolean reusable=false;
         try {
-            if(body!=null){byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);if(bytes.length>16384)throw new IOException("提交内容过大");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json; charset=utf-8");c.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=c.getOutputStream()){out.write(bytes);}}
+            if(body!=null){byte[] bytes=body.toString().getBytes(StandardCharsets.UTF_8);int maxBody="POST".equals(method)&&AccountCenter.CLIPBOARD_CREATE.equals(route)?1_310_720:16384;if(bytes.length>maxBody)throw new IOException("提交内容过大");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json; charset=utf-8");c.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=c.getOutputStream()){out.write(bytes);}}
             int status = c.getResponseCode();
             int max=responseLimit(status, path);
             String type = c.getContentType();JSONObject result=null;
@@ -124,7 +148,7 @@ public final class MobileApi {
                 }
             }
             // Ledger routes name the refusal in "code", the account routes in "error".
-            if(status!=200){String code=result==null?"http_error":result.optString("code",result.optString("error","http_error"));if(!code.matches("[a-z0-9_]{1,80}"))code="http_error";
+            if(status!=200&&!(status==201&&"POST".equals(method))){String code=result==null?"http_error":result.optString("code",result.optString("error","http_error"));if(!code.matches("[a-z0-9_]{1,80}"))code="http_error";
                 throw new ApiError(status,code,switch(status){case 401->"会话已失效，请重新登录";case 403->"当前账号没有此功能的权限";case 404->"此移动接口尚未启用";case 409->"数据已变化，请刷新后重试";case 429->"请求较多，请稍后刷新";default->status>=500?"服务暂不可用，请稍后重试":"服务器未返回预期结果";},result);}
             if(result==null)throw new IOException("接口返回格式不匹配");reusable=true;return result;
         } finally { if(!reusable)c.disconnect(); }

@@ -208,6 +208,7 @@ final class PreferenceSyncHub {
                     case "board" -> { ui.putString("dashboard", String.join(",", strings(e.getValue()))); uiTouch = true; }
                     case "clocks" -> { ui.putString(Dashboard.CLOCKS, String.join("\n", strings(e.getValue()))); uiTouch = true; }
                     case "calendarDays" -> { ui.putString(Dashboard.CALENDAR_DAYS, String.valueOf(e.getValue())); uiTouch = true; }
+                    case "quotaCalendarCodingOnly" -> { ui.putBoolean(Dashboard.CALENDAR_CODING_ONLY, (Boolean) e.getValue()); uiTouch = true; }
                     case "hiddenQuotaCards" -> { ui.putString(Dashboard.HIDDEN_TOKENS, String.join(",", strings(e.getValue()))); uiTouch = true; }
                     case "glassOn" -> { ui.putBoolean(ConsoleTheme.GLASS_ON, (Boolean) e.getValue()); uiTouch = true; }
                     case "glassLevel" -> { ui.putInt(ConsoleTheme.GLASS_LEVEL, ((Number) e.getValue()).intValue()); uiTouch = true; }

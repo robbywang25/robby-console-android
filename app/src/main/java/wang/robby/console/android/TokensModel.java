@@ -170,10 +170,31 @@ final class TokensModel {
     private static final Map<String, String> CLAUDE_CARDS = Map.of("full", "完整重置卡", "five_hour", "5 小时重置卡", "weekly", "每周重置卡");
     private static final DateTimeFormatter SHORT = DateTimeFormatter.ofPattern("MM/dd HH:mm"), LONG = DateTimeFormatter.ofPattern("yyyy/MM/dd HH:mm");
 
-    /** Only connected-or-once-connected accounts, never the two ChatGPT entries the web keeps out of the quota grid. */
+    /** Only connected-or-once-connected accounts, never the two ChatGPT entries or empty secondary slots. */
     static boolean shownOnPage(JSONObject a) {
+        return shownOnPage(a, null);
+    }
+    static boolean shownOnPage(JSONObject a, JSONObject catalogEntry) {
+        if (a == null) return false;
+        Object defVis = a.has("defaultVisible") ? a.opt("defaultVisible") : catalogEntry == null ? null : catalogEntry.opt("defaultVisible");
+        if (defVis instanceof Boolean) return (Boolean) defVis;
         String product = String.valueOf(a.opt("product"));
         return !"not_configured".equals(a.opt("status")) && !"chatgpt-dots".equals(product) && !"chatgpt-chat".equals(product);
+    }
+    static boolean calendarEligible(JSONObject a, JSONObject catalogEntry) {
+        if (a == null) return false;
+        Object cal = a.has("calendarEligible") ? a.opt("calendarEligible") : catalogEntry == null ? null : catalogEntry.opt("calendarEligible");
+        if (cal instanceof Boolean) return (Boolean) cal;
+        return shownOnPage(a, catalogEntry) && !"api".equals(category(a, catalogEntry));
+    }
+    static boolean renewalEligible(JSONObject a, JSONObject catalogEntry) {
+        if (a == null) return false;
+        Object ren = a.has("renewalEligible") ? a.opt("renewalEligible") : catalogEntry == null ? null : catalogEntry.opt("renewalEligible");
+        if (ren instanceof Boolean) return (Boolean) ren;
+        String product = String.valueOf(a.opt("product")), id = a.optString("id", "");
+        return !"chatgpt-dots".equals(product) && !"chatgpt-chat".equals(product)
+            && !"chatgpt-dots".equals(id) && !"chatgpt-chat".equals(id)
+            && !"api".equals(category(a, catalogEntry));
     }
     static String section(JSONObject a) {
         switch (TokenAccountOrder.providerKey(a)) {
@@ -190,15 +211,45 @@ final class TokensModel {
     /** Shared account weight, then the original source ID with ordinal comparison. */
     static final Comparator<JSONObject> SLOT_ORDER = TokenAccountOrder.ACCOUNT_ORDER;
     static String productName(JSONObject a) {
-        String name = PRODUCT_NAMES.get(String.valueOf(a.opt("product")));
-        if ("antigravity".equals(a.opt("product"))) return "Antigravity";
-        if ("gemini-web".equals(a.opt("product"))) return "Gemini";
-        if ("gemini-cli".equals(a.opt("product"))) return "Gemini CLI";
-        if ("gemini-api".equals(a.opt("product"))) return "Gemini API";
-        return name != null ? name : a.opt("label") instanceof String ? (String) a.opt("label") : "Agent";
+        return productName(a, null);
+    }
+    static String productName(JSONObject a, JSONObject catalogEntry) {
+        if (a == null) return "Agent";
+        String product = String.valueOf(a.opt("product"));
+        String label = clean(a.opt("label"));
+        String svc = catalogEntry == null ? clean(a.opt("serviceLabel")) : clean(catalogEntry.opt("serviceLabel"));
+        if ("gemini-cli".equals(product) && ("Antigravity CLI".equals(label) || "Antigravity CLI".equals(svc))) {
+            return "Antigravity CLI";
+        }
+        Integer num = accountNumber(a, catalogEntry);
+        if ("antigravity".equals(product)) {
+            return num != null && num > 0 ? "Antigravity " + num : "Antigravity";
+        }
+        if ("gemini-web".equals(product)) {
+            return num != null && num > 0 ? "Gemini " + num : "Gemini";
+        }
+        if ("gemini-cli".equals(product)) return "Gemini CLI";
+        if ("gemini-api".equals(product)) return "Gemini API";
+        String name = PRODUCT_NAMES.get(product);
+        return name != null ? name : !label.isEmpty() ? label : "Agent";
+    }
+    static Integer accountNumber(JSONObject a, JSONObject catalogEntry) {
+        Object raw = a != null && a.opt("accountNumber") instanceof Number ? a.opt("accountNumber")
+            : catalogEntry != null && catalogEntry.opt("accountNumber") instanceof Number ? catalogEntry.opt("accountNumber")
+            : null;
+        if (raw instanceof Number n && n.intValue() > 0) return n.intValue();
+        String id = a == null ? "" : a.optString("id", "");
+        if ("gemini-web".equals(id)) return 1;
+        if ("gemini-web-3".equals(id)) return 2;
+        if ("gemini-web-2".equals(id)) return 3;
+        return null;
     }
     static String category(JSONObject a) {
-        String supplied = a == null ? "" : a.optString("category", "");
+        return category(a, null);
+    }
+    static String category(JSONObject a, JSONObject catalogEntry) {
+        String supplied = a != null ? a.optString("category", "") : "";
+        if (supplied.isEmpty() && catalogEntry != null) supplied = catalogEntry.optString("category", "");
         if ("coding".equals(supplied) || "chat".equals(supplied) || "api".equals(supplied)) return supplied;
         String product = a == null ? "" : String.valueOf(a.opt("product"));
         if ("gemini-api".equals(product)) return "api";
@@ -206,12 +257,81 @@ final class TokensModel {
         return "coding";
     }
     static boolean isUnsubscribed(JSONObject a) {
-        return a != null && Boolean.TRUE.equals(a.opt("unsubscribed"));
+        return isUnsubscribed(a, null);
+    }
+    static boolean isUnsubscribed(JSONObject a, JSONObject catalogEntry) {
+        if (a != null && a.has("unsubscribed") && a.opt("unsubscribed") instanceof Boolean b) return b;
+        return catalogEntry != null && Boolean.TRUE.equals(catalogEntry.opt("unsubscribed"));
     }
     static String widgetPriority(JSONObject a) {
         if (a == null) return null;
         String p = a.optString("widgetPriority", "");
         return List.of("pinned", "normal", "low", "hidden").contains(p) ? p : null;
+    }
+    static String subscriptionBadge(JSONObject a, JSONObject catalogEntry) {
+        String state = a != null ? a.optString("subscriptionState", "") : "";
+        if (state.isEmpty() && catalogEntry != null) state = catalogEntry.optString("subscriptionState", "");
+        switch (state) {
+            case "trial": return "试用中";
+            case "canceled_active": return "已取消(未到期)";
+            case "expired": return "已过期";
+            case "free": return "免费版";
+            case "included": return "已含订阅";
+            case "internal": return "内部账号";
+            default: return isUnsubscribed(a, catalogEntry) ? "未订阅" : null;
+        }
+    }
+    static final long STALE_BANNER_MS = 2 * 3600_000L;
+    /** True when the Tokens snapshot's generatedAt is missing or older than 2 hours. */
+    static boolean isPayloadStale(JSONObject payload, long nowMs) {
+        if (payload == null) return false;
+        long gen = at(payload.opt("generatedAt"));
+        return gen > 0 && (nowMs - gen > STALE_BANNER_MS || gen > nowMs + 60_000L);
+    }
+    static String staleBannerText(JSONObject payload, long nowMs, ZoneId zone) {
+        if (!isPayloadStale(payload, nowMs)) return null;
+        long gen = at(payload.opt("generatedAt"));
+        long mins = Math.max(120, (nowMs - gen) / 60_000L);
+        String age = mins >= 1440 ? (mins / 1440) + " 天前" : (mins / 60) + " 小时前";
+        return "额度数据已超过 2 小时未更新（采集于 " + shortTime(gen, zone) + " · " + age + "），以下仅为最近缓存";
+    }
+    /** Renewal ledger helpers (`续费台账`). */
+    static String renewalStatusText(JSONObject renewal, String fallbackState) {
+        String status = renewal == null ? "" : renewal.optString("status", "");
+        if (status.isEmpty()) status = fallbackState == null ? "" : fallbackState;
+        switch (status) {
+            case "active": return "订阅中";
+            case "trial": return "试用中";
+            case "included": return "已含订阅";
+            case "internal": return "内部账号";
+            case "canceled":
+            case "canceled_active": return "已取消";
+            case "expired": return "已到期";
+            case "free": return "免费版";
+            default: return "未登记";
+        }
+    }
+    static String formatUsdMinor(long minor) {
+        return "US$" + new java.text.DecimalFormat(minor % 100 == 0 ? "#,##0" : "#,##0.00").format(minor / 100.0);
+    }
+    static String renewalAmountText(JSONObject a, JSONObject renewal) {
+        if (renewal != null) {
+            Object minor = renewal.opt("amountMinor");
+            String currency = renewal.optString("currency", "USD");
+            String interval = renewal.optString("interval", "month");
+            String suffix = "year".equals(interval) ? "/年" : "one_time".equals(interval) ? " 买断" : "/月";
+            if (minor instanceof Number && ((Number) minor).longValue() > 0 && "USD".equals(currency)) {
+                String base = formatUsdMinor(((Number) minor).longValue()) + suffix;
+                Object post = renewal.opt("postTrialAmountMinor");
+                if ("trial".equals(renewal.opt("status")) && post instanceof Number && ((Number) post).longValue() > 0) {
+                    base += "（试用到期后 " + formatUsdMinor(((Number) post).longValue()) + suffix + "）";
+                }
+                return base;
+            }
+            if ("included".equals(renewal.opt("status"))) return "已含订阅";
+            if ("free".equals(renewal.opt("status"))) return "免费";
+        }
+        return monthly(a);
     }
     private static String clean(Object v) { return v instanceof String ? ((String) v).replaceAll("[\\u0000-\\u001f\\u007f-\\u009f]", " ").trim() : ""; }
     private static String meaningful(Object v) { String s = clean(v); return !s.isEmpty() && !s.matches("(?iu).*((账号|账户)\\s*[一二三四五六七八九十百零〇\\d]+|\\baccount\\s*[-#]?\\s*\\d+\\b).*") ? s : ""; }

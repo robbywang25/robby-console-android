@@ -18,12 +18,13 @@ import wang.robby.console.android.auth.DeviceAuthorization;
 import wang.robby.console.android.auth.NativePasskeyFlow;
 
 /** Native client. No embedded web content, demo balances, or service credentials. */
-public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host, MindBallPage.Host, ClipboardReveal.Host {
+public class MainActivity extends Activity implements AuthCoordinator.Listener, FeatureRenderer.Opener, TokensPages.Host, MindBallPage.Host, ClipboardReveal.Host, ClipboardActions.Host, DispatchPage.Host {
     private int INK, MUTED, ACCENT, BG; private ConsoleTheme theme;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     /** 看板 reads run side by side (overview, Token 额度, …) instead of queueing behind one another. */
     private final ExecutorService boardReads=Executors.newFixedThreadPool(3);
     private AuthSession auth; private AuthCoordinator coordinator; private MobileApi api; private LedgerActions ledger;
+    private volatile Bootstrap bootstrap = Bootstrap.defaults(); private long bootstrapCheckedAt;
     private String ledgerCursor=null; private final Deque<String> ledgerPages=new ArrayDeque<>();
     private FrameLayout root,leading; private LinearLayout content,trailing; private GlassPane nav; private TextView heading,session;
     private static final List<String> TABS=List.of("总览","功能","设置");
@@ -115,7 +116,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         PreviewMode.configure(this,getIntent());
         super.onCreate(state);
         theme=new ConsoleTheme(this);INK=theme.ink;MUTED=theme.muted;ACCENT=theme.accent;BG=theme.canvas;
-        try { coordinator=AuthCoordinator.get(this);auth=coordinator.session(); api=new MobileApi(auth);ledger=new LedgerActions(this,new LedgerActions.Transport(){public JSONObject get(String path)throws Exception{return read(path);}public JSONObject post(String path,JSONObject body)throws Exception{if(PreviewMode.isBuild())throw new IllegalStateException("界面预览不执行写入");if(auth.isFederated())throw new IllegalStateException("用 Google 登录时只能查看，记账请改用 Passkey 登录");return api.post(path,body);}},()->{ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature f=find("travel-ledger");if(f!=null)showFeature(f,true);}); }
+        try { coordinator=AuthCoordinator.get(this);auth=coordinator.session(); api=new MobileApi(auth); bootstrap=Bootstrap.cached(this); ledger=new LedgerActions(this,new LedgerActions.Transport(){public JSONObject get(String path)throws Exception{return read(path);}public JSONObject post(String path,JSONObject body)throws Exception{if(PreviewMode.isBuild())throw new IllegalStateException("界面预览不执行写入");if(auth.isFederated())throw new IllegalStateException("用 Google 登录时只能查看，记账请改用 Passkey 登录");return api.post(path,body);}},()->{ledgerCursor=null;ledgerPages.clear();FeatureCatalog.Feature f=find("travel-ledger");if(f!=null)showFeature(f,true);}); }
         catch(Exception e) { new AlertDialog.Builder(this).setMessage("无法打开设备安全存储，请检查屏幕锁定设置").setCancelable(false).setPositiveButton("关闭",(d,w)->finish()).show(); return; }
         if(state!=null) { group=state.getString("group","总览");if(FeatureCatalog.SECTIONS.contains(group))group="功能"; selectedId=state.getString("feature"); project=state.getString("project");navigation.rememberOffset(routeKey(),state.getInt("scroll",0)); }
         build();
@@ -186,6 +187,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         // The avatar follows the server: fetch it at most every 10 minutes (and send anything waiting).
         // A change waiting for a session that may now write (after signing in again) goes at once.
         if(loggedIn()&&(avatarCheckedAt==0||SystemClock.elapsedRealtime()-avatarCheckedAt>10*60_000L||Avatar.pending(this)!=null&&auth.hasScope(AuthSession.PROFILE_WRITE)))syncAvatar(false);
+        if(loggedIn()&&!PreviewMode.isBuild()&&(bootstrapCheckedAt==0||SystemClock.elapsedRealtime()-bootstrapCheckedAt>15*60_000L))syncBootstrap();
         // The red dots mean a newer release is ready, so look quietly, at most every 30 minutes, without opening 关于.
         if(!updateChecking&&!updateBusy()&&(updateCheckedAt==0||SystemClock.elapsedRealtime()-updateCheckedAt>30*60_000L))checkUpdate();}
     @Override protected void onPause(){resumed=false;PreferenceSyncHub.stopPolling();ticker.removeCallbacks(pageTick);ticker.removeCallbacks(boardTick);
@@ -536,7 +538,17 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(ids.isEmpty()){TextView t=text("还没有添加卡片",14,MUTED,false);t.setGravity(Gravity.CENTER);t.setPadding(dp(12),dp(14),dp(12),dp(14));on.addView(t);}
         if(ids.contains("clocks")){section("时区时钟卡片");LinearLayout zones=groupCard();clockRows(zones);}
         if(ids.contains("calendar")){section("重置日历卡片");LinearLayout range=groupCard();int days=Dashboard.calendarDays(this);
-            featureRow("显示范围 · "+Dashboard.calendarRange(days),"总览列出这段时间内的全部重置","calendar",range,this::calendarRangeMenu);}
+            featureRow("显示范围 · "+Dashboard.calendarRange(days),"总览列出这段时间内的全部重置","calendar",range,this::calendarRangeMenu);
+            View divider=new View(this);divider.setBackgroundColor(theme.line);LinearLayout.LayoutParams dlp=new LinearLayout.LayoutParams(-1,dp(.5f));dlp.setMargins(dp(62),0,dp(14),0);range.addView(divider,dlp);
+            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(12),dp(8),dp(8),dp(8));row.setMinimumHeight(dp(60));
+            row.addView(theme.tile("code",36),new LinearLayout.LayoutParams(dp(36),dp(36)));
+            LinearLayout labels=new LinearLayout(this);labels.setOrientation(LinearLayout.VERTICAL);labels.setPadding(dp(14),0,dp(6),0);
+            labels.addView(text("只看 Coding 账号",15,INK,false));
+            TextView sub=text("隐藏 Chat/API 类账号的重置事件（与 iOS/网页同步）",12,MUTED,false);sub.setPadding(0,dp(2),0,0);labels.addView(sub);
+            row.addView(labels,new LinearLayout.LayoutParams(0,-2,1));
+            Switch toggle=new Switch(this);toggle.setChecked(Dashboard.calendarCodingOnly(this));toggle.setContentDescription("重置日历只看 Coding 账号");toggle.setMinimumHeight(dp(48));
+            toggle.setOnCheckedChangeListener((b,checked)->{Dashboard.setCalendarCodingOnly(this,checked);PreferenceSyncHub.note(this,"quotaCalendarCodingOnly");JSONObject q=snapshots.get("tokens/quotas");if(q!=null)GodWidget.observe(this,"tokens/quotas",q);else GodWidgets.refreshAll(this);});
+            row.addView(toggle);range.addView(row);}
         if(ids.contains("tokens")){section("Token 额度卡片");LinearLayout accounts=groupCard();JSONObject cached=snapshots.get("tokens/quotas");
             if(cached!=null)tokenToggles(accounts,cached);
             else{TextView wait=text("正在读取账号…",14,MUTED,false);wait.setPadding(dp(12),dp(14),dp(12),dp(14));accounts.addView(wait);int epoch=generation;
@@ -819,7 +831,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
         if(!resumed){if(done!=null)done.run();return;}
         int epoch=++generation;
         worker.execute(()->{if(epoch!=generation){if(done!=null)runOnUiThread(done);return;}try{JSONObject data=read(key);runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;saveViewport();if(!key.startsWith("travel-ledger/"))snapshots.put(key,data);GodWidget.observe(this,key,data);result.removeAllViews();session.setText(idleSession());render(f,result,data);restoreViewport();}finally{if(done!=null)done.run();}});}
-        catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);String why=explain(f.path,e);TextView warning=text(why,15,WechatDigest.UNAVAILABLE.equals(why)?MUTED:theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();}finally{if(done!=null)done.run();}});}});
+        catch(Exception e){runOnUiThread(()->{try{if(epoch!=generation||isDestroyed())return;if("prompt-cheatsheet".equals(f.id)){result.removeAllViews();PromptCheatsheetPage.renderFallback(this,result,explain(f.path,e));restoreViewport();return;}if(!loggedIn()){navigation.clear();viewportReady=false;ledgerCursor=null;ledgerPages.clear();snapshots.clear();ledger.close();selectedId=null;project=null;group="总览";build();error("请重新登录",safeError(e));return;}if(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==401){snapshots.clear();result.removeAllViews();session.setText("会话需要重新验证");}else if(cached==null)result.removeAllViews();LinearLayout c=theme.card(result);String why=explain(f.path,e);TextView warning=text(why,15,WechatDigest.UNAVAILABLE.equals(why)?MUTED:theme.danger,false);warning.setPadding(0,0,0,dp(12));c.addView(warning);c.addView(button("重试",()->showFeature(f,true)),new LinearLayout.LayoutParams(-1,-2));restoreViewport();}finally{if(done!=null)done.run();}});}});
     }
     private void render(FeatureCatalog.Feature f,LinearLayout result,JSONObject data) {
         try{
@@ -1178,7 +1190,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private void loadAccountStatus(Runnable done){
         final int gen=generation;
         boardReads.execute(()->{AccountCenter.Status s=null;Exception failure=null;
-            try{s=AccountCenter.status(read(AccountCenter.STATUS));}catch(Exception e){failure=e;}
+            try{s=AccountCenter.status(read(AccountCenter.STATUS),bootstrap);}catch(Exception e){failure=e;}
             final AccountCenter.Status got=s;final Exception error=failure;
             runOnUiThread(()->{if(isDestroyed())return;if(got!=null){accountStatus=got;adoptSignature(got);}
                 if(got!=null&&got.displayName!=null&&profileName!=null&&profileName.isAttachedToWindow())profileName.setText(got.displayName);
@@ -1286,7 +1298,7 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
             if(!x.available&&x.links.isEmpty()){featureRow(x.label,"暂未开放",symbol,social,null);continue;}
             for(int i=0;i<x.links.size();i++){AccountCenter.Link l=x.links.get(i);final int n=i+1;
                 featureRow(x.label+" 账号 "+n,"已绑定"+(l.boundAt==null?"":" · "+AccountCenter.day(l.boundAt))+(l.id==null?"":" · 点按解除"),symbol,social,l.id==null?null:()->unbind(x,l,n));}
-            if(x.available&&x.links.size()<x.limit)featureRow(x.links.isEmpty()?"绑定 "+x.label+" 账号":"再绑定一个 "+x.label+" 账号",(x.links.isEmpty()?"":"最多 "+x.limit+" 个 · ")+"在网页个人中心完成",symbol,social,()->openAccountWeb(AccountCenter.WEB));
+            if(x.available&&x.links.size()<x.limit)featureRow(x.links.isEmpty()?"绑定 "+x.label+" 账号":"再绑定一个 "+x.label+" 账号",(x.links.isEmpty()?"":"最多 "+x.limit+" 个 · ")+"在网页个人中心完成",symbol,social,()->openAccountWeb(bootstrap!=null?bootstrap.accountWeb:AccountCenter.WEB));
         }
         accountSection(parent,"联系方式");LinearLayout contact=groupCard(parent);
         if(s.unavailable.contains("email")||s.emailBound==null)featureRow("邮箱","暂时读不到，下拉可重试","mail",contact,null);
@@ -1580,7 +1592,14 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     private Button button(String label,Runnable action){return theme.button(label,action);}
     private GradientDrawable round(int color,int radius){return theme.shape(color,radius);}
     private boolean loggedIn(){return PreviewMode.isBuild()?PreviewMode.loggedIn():auth.hasSession();}
-    private JSONObject read(String path)throws Exception{return PreviewMode.isBuild()?PreviewMode.data(path):"engineering".equals(path)?api.getEngineering():api.get(path);}
+    private JSONObject read(String path)throws Exception{return PreviewMode.isBuild()?PreviewMode.data(path):"engineering".equals(path)?api.getEngineering(bootstrap):api.get(path);}
+    private void syncBootstrap(){
+        bootstrapCheckedAt=SystemClock.elapsedRealtime();
+        updater.execute(()->{
+            try{JSONObject raw=api.get(AccountCenter.BOOTSTRAP);Bootstrap.save(this,raw);bootstrap=Bootstrap.parse(raw);}
+            catch(Exception ignored){bootstrap=Bootstrap.cached(this);}
+        });
+    }
     private int dp(float n){return Math.round(n*getResources().getDisplayMetrics().density);}
     /**
      * Token 额度 needs god.mobile.tokens.read, requested since 0.10.1. Sessions stored before then fail the exact-scope
@@ -1621,6 +1640,62 @@ public class MainActivity extends Activity implements AuthCoordinator.Listener, 
     @Override public void revealClipboard(String id,java.util.function.Consumer<String> shown,java.util.function.Consumer<String> failed){
         worker.execute(()->{try{String text=ClipboardReveal.content(read(ClipboardReveal.route(id)),id);runOnUiThread(()->{if(!isDestroyed())shown.accept(text);});}
             catch(Exception e){runOnUiThread(()->{if(!isDestroyed())failed.accept(safeError(e));});}});
+    }
+    @Override public void clipboardCreate(String content,int ttlDays,Runnable onDone,java.util.function.Consumer<String> onError){
+        if(PreviewMode.isBuild()){onError.accept("界面预览不写入真实云端剪贴板。");return;}
+        if(federatedSession()){onError.accept(ClipboardActions.federatedNotice());return;}
+        worker.execute(()->{
+            try{api.post(AccountCenter.CLIPBOARD_CREATE,ClipboardActions.createBody(content,ttlDays),MobileApi.newIdempotencyKey());
+                runOnUiThread(()->{if(isDestroyed())return;snapshots.remove("clipboard");onDone.run();toast("已创建私密剪贴内容");FeatureCatalog.Feature f=find("clipboard");if(f!=null&&"clipboard".equals(selectedId))showFeature(f,true);});}
+            catch(Exception e){runOnUiThread(()->{if(!isDestroyed())onError.accept(ClipboardActions.explainError(e));});}
+        });
+    }
+    @Override public void clipboardToggleVisibility(JSONObject itemMeta,boolean makePublic,Runnable onDone,java.util.function.Consumer<String> onError){
+        if(PreviewMode.isBuild()){onError.accept("界面预览不修改真实可见性。");return;}
+        if(federatedSession()){onError.accept(ClipboardActions.federatedNotice());return;}
+        String id=itemMeta==null?"":itemMeta.optString("id","");
+        worker.execute(()->{
+            try{JSONObject src=ClipboardActions.hasCasFields(itemMeta)?itemMeta:ClipboardActions.findItemById(api.get(AccountCenter.CLIPBOARD_MUTATION_STATE),id);
+                if(!ClipboardActions.hasCasFields(src))throw new IllegalStateException("未找到该条目的版本信息，请下拉刷新");
+                int rev=src.optInt("revision",-1);String hash=src.optString("contentHash","");
+                api.post(ClipboardActions.visibilityRoute(id),ClipboardActions.visibilityBody(id,rev,hash,makePublic),MobileApi.newIdempotencyKey());
+                runOnUiThread(()->{if(isDestroyed())return;snapshots.remove("clipboard");onDone.run();FeatureCatalog.Feature f=find("clipboard");if(f!=null&&"clipboard".equals(selectedId))showFeature(f,true);});}
+            catch(Exception e){runOnUiThread(()->{if(!isDestroyed())onError.accept(ClipboardActions.explainError(e));});}
+        });
+    }
+    @Override public void clipboardTrash(JSONObject itemMeta,Runnable onDone,java.util.function.Consumer<String> onError){
+        if(PreviewMode.isBuild()){onError.accept("界面预览不执行回收站操作。");return;}
+        if(federatedSession()){onError.accept(ClipboardActions.federatedNotice());return;}
+        String id=itemMeta==null?"":itemMeta.optString("id","");
+        worker.execute(()->{
+            try{JSONObject src=ClipboardActions.hasCasFields(itemMeta)?itemMeta:ClipboardActions.findItemById(api.get(AccountCenter.CLIPBOARD_TRASH_STATE),id);
+                if(!ClipboardActions.hasCasFields(src))src=ClipboardActions.findItemById(api.get(AccountCenter.CLIPBOARD_MUTATION_STATE),id);
+                if(!ClipboardActions.hasCasFields(src))throw new IllegalStateException("未找到该条目的版本信息，请下拉刷新");
+                int rev=src.optInt("revision",-1);String hash=src.optString("contentHash","");
+                boolean isPub=src.has("isPublic")?Boolean.TRUE.equals(src.opt("isPublic")):Boolean.TRUE.equals(itemMeta.opt("isPublic"));
+                api.post(ClipboardActions.trashRoute(id),ClipboardActions.trashBody(id,rev,hash,isPub),MobileApi.newIdempotencyKey());
+                runOnUiThread(()->{if(isDestroyed())return;snapshots.remove("clipboard");onDone.run();FeatureCatalog.Feature f=find("clipboard");if(f!=null&&"clipboard".equals(selectedId))showFeature(f,true);});}
+            catch(Exception e){runOnUiThread(()->{if(!isDestroyed())onError.accept(ClipboardActions.explainError(e));});}
+        });
+    }
+    @Override public void dispatchControl(JSONObject body,Runnable onDone,java.util.function.Consumer<String> onError){
+        if(PreviewMode.isBuild()){onError.accept("界面预览不向调度器发送控制指令。");return;}
+        if(federatedSession()){onError.accept("用 Google 登录时仅限只读，控制调度请改用 Passkey 登录。");return;}
+        worker.execute(()->{
+            try{api.post(AccountCenter.DISPATCH_CONTROL,body,MobileApi.newIdempotencyKey());
+                runOnUiThread(()->{if(isDestroyed())return;snapshots.remove(AccountCenter.DISPATCH_OVERVIEW);onDone.run();FeatureCatalog.Feature f=find("agent-dispatch");if(f!=null&&"agent-dispatch".equals(selectedId))showFeature(f,true);});}
+            catch(Exception e){runOnUiThread(()->{if(!isDestroyed())onError.accept(safeError(e));});}
+        });
+    }
+    @Override public void mindBallSendToFlobo(String roundId,String content,Runnable onSent,java.util.function.Consumer<String> onError){
+        if(PreviewMode.isBuild()){onError.accept("界面预览不向 Flobo 投递卡片。");return;}
+        if(!loggedIn()||federatedSession()){onError.accept(federatedSession()?"用 Google 登录时仅限只读，请改用 Passkey 登录后投递。":"请先登录后再投递到 Flobo。");return;}
+        worker.execute(()->{
+            try{api.post(AccountCenter.FLOBO_QUICK_MEMO,MindBallPage.quickMemoBody(content),MobileApi.newIdempotencyKey());
+                MindBall.prefs(this).edit().putBoolean(MindBallPage.roundPrefKey(roundId),true).apply();
+                runOnUiThread(()->{if(isDestroyed())return;onSent.run();toast("已入 Flobo");});}
+            catch(Exception e){runOnUiThread(()->{if(!isDestroyed())onError.accept(e instanceof MobileApi.ApiError&&((MobileApi.ApiError)e).status==403?"当前登录没有 Flobo 写入授权（403）。":safeError(e));});}
+        });
     }
     @Override public void tiboTest(){if(!notificationsAllowed()){tiboTestPending=true;requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS},TIBO_PERMISSION);return;}TiboWatch.test(this);}
     private boolean notificationsAllowed(){return Build.VERSION.SDK_INT<33||checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)==android.content.pm.PackageManager.PERMISSION_GRANTED;}

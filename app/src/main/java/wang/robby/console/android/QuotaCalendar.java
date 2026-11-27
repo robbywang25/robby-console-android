@@ -39,15 +39,25 @@ final class QuotaCalendar {
         List<Event> in(YearMonth month) { List<Event> out = new ArrayList<>(); for (Event e : events) if (YearMonth.from(e.day).equals(month)) out.add(e); return out; }
     }
 
+    static Model build(JSONObject payload, ZoneId zone, long now, boolean codingOnly) {
+        return build(TokenAccountOrder.accounts(payload), TokenAccountOrder.catalogEntries(payload), zone, now, codingOnly);
+    }
+
     static Model build(List<JSONObject> accounts, ZoneId zone, long now) {
-        return build(accounts, zone, now, false);
+        return build(accounts, null, zone, now, false);
     }
 
     static Model build(List<JSONObject> accounts, ZoneId zone, long now, boolean codingOnly) {
+        return build(accounts, null, zone, now, codingOnly);
+    }
+
+    static Model build(List<JSONObject> accounts, Map<String, JSONObject> catalog, ZoneId zone, long now, boolean codingOnly) {
         List<Event> events = new ArrayList<>(); int shown = 0, missingAccounts = 0, missingWindows = 0;
         Set<String> seenAccounts = new HashSet<>();
-        for (JSONObject a : accounts) {
-            if (!TokensModel.shownOnPage(a) || (codingOnly && !"coding".equals(TokensModel.category(a))) || !seenAccounts.add(a.optString("id") + "\u0000" + a.optString("product"))) continue;
+        if (accounts != null) for (JSONObject a : accounts) {
+            if (a == null) continue;
+            JSONObject cat = catalog == null ? null : catalog.get(a.optString("id"));
+            if (!TokensModel.calendarEligible(a, cat) || (codingOnly && !"coding".equals(TokensModel.category(a, cat))) || !seenAccounts.add(a.optString("id") + "\u0000" + a.optString("product"))) continue;
             shown++;
             JSONArray windows = a.optJSONArray("windows"), history = a.optJSONArray("resetHistory");
             if (windows == null || windows.length() == 0) missingAccounts++;
@@ -66,7 +76,7 @@ final class QuotaCalendar {
                 if (at <= 0) { missingWindows++; continue; }
                 String groupName = GROUPS.getOrDefault(group, "");
                 String full = groupName.isEmpty() || groupName.equals(label) ? label : label.isEmpty() ? groupName : groupName + " " + label;
-                events.add(new Event(TokensModel.displayName(a), TokensModel.boardEmail(a), TokensModel.productName(a), full.isEmpty() ? "额度" : full, a.optString("product"),
+                events.add(new Event(TokensModel.displayName(a), TokensModel.boardEmail(a), TokensModel.productName(a, cat), full.isEmpty() ? "额度" : full, a.optString("product"),
                     at <= now ? EXPIRED : current ? SCHEDULED : STALE, at, Instant.ofEpochMilli(at).atZone(zone).toLocalDate()));
             }
         }

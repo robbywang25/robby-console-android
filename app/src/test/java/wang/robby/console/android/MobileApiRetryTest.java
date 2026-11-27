@@ -18,6 +18,12 @@ public final class MobileApiRetryTest {
         assertEquals(16384, MobileApi.responseLimit(409, AccountCenter.SIGNATURE));
         assertEquals(16384, MobileApi.responseLimit(400, AccountCenter.PREFERENCES));
         assertEquals(524288, MobileApi.responseLimit(200, AccountCenter.PREFERENCES));
+        assertEquals(1048576, MobileApi.responseLimit(200, "engineering"));
+        assertEquals(1048576, MobileApi.responseLimit(200, "engineering/v2"));
         assertEquals(2097152, MobileApi.responseLimit(200, "travel-ledger/current/snapshot"));
+    }
+    @Test public void idempotencyKeysAreLowercaseUuidV4() {
+        String key = MobileApi.newIdempotencyKey();
+        assertTrue(key.matches("[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}"));
     }
 }

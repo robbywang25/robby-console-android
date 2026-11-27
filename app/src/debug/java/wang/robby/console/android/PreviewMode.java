@@ -111,7 +111,13 @@ final class PreviewMode {
    case "claude-2"->order.put(extraAccount("claude-3","Anthropic","claude","Claude","demo-claude@example.com",12,2,now));
    case "grok"->{order.put(extraAccount("grok-bot","xAI","grok-bot","Grok Bot","demo-grok@example.com",88,20,now));order.put(extraAccount("cursor","Cursor","cursor","Cursor","demo-cursor@example.com",52,200,now));}
    default->{}}}
+  order.put(extraAccount("gemini-web","Google","gemini-web","Gemini 1","demo-gem1@example.com",75,18,now).put("accountNumber",1).put("category","chat").put("renewal",new JSONObject().put("status","active").put("amountMinor",2000).put("currency","USD").put("interval","month").put("nextDate","2026-12-10").put("autoRenew",true)));
+  order.put(extraAccount("gemini-web-3","Google","gemini-web","Gemini 2","demo-gem2@example.com",50,24,now).put("accountNumber",2).put("category","chat").put("renewal",new JSONObject().put("status","trial").put("amountMinor",0).put("postTrialAmountMinor",2000).put("currency","USD").put("interval","month").put("nextDate","2026-12-03").put("autoRenew",true)));
+  order.put(extraAccount("gemini-web-2","Google","gemini-web","Gemini 3","demo-gem3@example.com",90,30,now).put("accountNumber",3).put("category","chat").put("widgetPriority","hidden").put("unsubscribed",true).put("renewal",new JSONObject().put("status","free").put("amountMinor",0).put("currency","USD").put("autoRenew",false)));
+  order.put(extraAccount("antigravity","Antigravity","antigravity","Antigravity 2","demo-agy@example.com",62,14,now).put("accountNumber",2).put("category","coding").put("widgetPriority","pinned").put("renewal",new JSONObject().put("status","active").put("amountMinor",9999).put("currency","USD").put("interval","month").put("nextDate","2026-12-15").put("autoRenew",true).put("channel","App Store")));
   out.put("accounts",order);
+  out.getJSONArray("accounts").getJSONObject(0).put("insights",new JSONObject().put("burnPerHour",4.2).put("unit","percentage-points").put("minutesLeft",140).put("runsOutAt",now.plusSeconds(140*60L).toString()).put("beforeReset",true).put("resetsAt",now.plusSeconds(12*3600L).toString()).put("cyclePace",new JSONObject().put("status","ahead")));
+  out.getJSONArray("accounts").getJSONObject(0).put("renewal",new JSONObject().put("status","active").put("amountMinor",20000).put("currency","USD").put("interval","month").put("nextDate","2026-12-01").put("autoRenew",true).put("channel","Stripe"));
   return out;
  }
  private static JSONObject extraAccount(String id,String provider,String product,String label,String email,double left,long resetHours,java.time.Instant now)throws Exception{
@@ -190,6 +196,46 @@ final class PreviewMode {
  }
  if(path.equals("tokens/quotas"))return tokens();
  if(path.equals("tokens/tibo"))return tibo();
+ if(path.equals("tokens/catalog"))return new JSONObject().put("schemaVersion",1).put("catalogVersion",1).put("generatedAt",time).put("entries",new org.json.JSONArray().put(new JSONObject().put("id","codex-1").put("category","coding")).put(new JSONObject().put("id","antigravity").put("accountNumber",2).put("category","coding").put("widgetPriority","pinned")));
+ if(path.startsWith("tokens/devices"))return new JSONObject("""
+  {"schemaVersion":1,"generatedAt":"NOW","summary":{"accounts":7,"readyAccounts":4,"onlineDevices":2,"workingAgents":3,"workingSessions":4},
+   "byAccount":{
+    "codex-1":{"status":"ready","updatedAt":"NOW","summary":{"onlineDevices":1,"workingAgents":2,"workingSessions":3},"truncated":false,"devices":[{"id":"dev-mac","name":"Robby Mac mini (Preview)","platform":"macos","loginStatus":"logged_in","status":"online","observedAt":"NOW","agents":[{"id":"a1","name":"Codex CLI","product":"codex","status":"working","observedAt":"NOW","statusBasis":"活跃终端进程","sessions":2},{"id":"a2","name":"Codex App","product":"codex","status":"idle","observedAt":"NOW","statusBasis":"桌面窗口在线","sessions":1}]}]},
+    "antigravity":{"status":"ready","updatedAt":"NOW","summary":{"onlineDevices":1,"workingAgents":1,"workingSessions":1},"truncated":false,"devices":[{"id":"dev-mbp","name":"MacBook Pro","platform":"macos","loginStatus":"logged_in","status":"online","observedAt":"NOW","agents":[{"id":"a3","name":"Antigravity","product":"antigravity","status":"working","observedAt":"NOW","statusBasis":"会话心跳","sessions":1}]}]}
+   }}
+  """.replace("NOW",time));
+ if(path.equals("bootstrap"))return new JSONObject().put("schemaVersion",1).put("generatedAt",time).put("urls",new JSONObject().put("godWeb","https://god.robby.wang/").put("accountWeb","https://account.robby.wang/").put("tokensWeb","https://token.robby.wang/").put("floboWeb","https://flobo.robby.wang/")).put("capabilities",new JSONObject());
+ if(path.equals("engineering/v2")||path.equals("engineering"))return new JSONObject("""
+  {"schemaVersion":2,"apiVersion":"2026-11-26","generatedAt":"NOW","coverage":{"truncated":false,"returnedItems":2},
+   "repositoryIndex":[{"repository":"robbywang25/god","name":"god","description":"God 控制台主仓","state":"active","url":"https://github.com/robbywang25/god"},{"repository":"robbywang25/robby-console-android","name":"robby-console-android","description":"God Android 客户端","state":"active","url":"https://github.com/robbywang25/robby-console-android"}],
+   "items":[{"id":"e1","repository":"robbywang25/robby-console-android","sha":"1234567abcdef","timestamp":"NOW","type":"feature","summary":"升级 0.52.0 全量移动端契约","description":"接入 bootstrap、Token 三视图预测、云剪贴板写入与四大新功能。","commitUrl":"https://github.com/robbywang25/robby-console-android/commit/1234567"},
+            {"id":"e2","repository":"robbywang25/god","sha":"abcdef1234567","timestamp":"NOW","type":"api","summary":"上线 dispatch 与 sentinel 移动接口","description":"支持调度器暂停恢复与基础设施哨兵告警汇总。","commitUrl":"https://github.com/robbywang25/god/commit/abcdef1"}]}
+  """.replace("NOW",time));
+ if(path.equals("dispatch/overview"))return new JSONObject("""
+  {"schemaVersion":1,"generatedAt":"NOW","status":"ready","partial":false,"webUrl":"https://flobo.robby.wang/",
+   "dispatcher":{"online":true,"running":true,"paused":false,"host":"mac-mini-01","version":"1.4.2","mode":"auto","queue":1,"seenAt":"NOW"},
+   "summary":{"totalAgents":4,"onlineAgents":3,"workingAgents":2,"activeClaims":1,"blockedClaims":1,"reviewClaims":0,"pendingCommands":0},
+   "machines":[{"name":"mac-mini-01","online":true,"seenAt":"NOW"},{"name":"linux-vps","online":true,"seenAt":"NOW"}],
+   "agents":[{"id":"ag1","name":"codex-worker","machine":"mac-mini-01","status":"working","model":"gpt-5-codex","effort":"high"}],
+   "cards":{"inProgress":[{"memoId":"memo-101","title":"演示：完成 0.52.0 发布验收","state":"running","stale":false,"agentId":"ag1","agentName":"codex-worker","machine":"mac-mini-01","model":"gpt-5-codex","attempt":1,"note":"正在跑 Gradle 校验","ticket":"t-101","canRetryRelease":false,"memoUrl":"https://flobo.robby.wang/memos/101"}],
+            "blocked":[{"memoId":"memo-102","title":"演示：阻塞测试卡","state":"blocked","stale":true,"agentId":"ag2","agentName":"claude-worker","machine":"linux-vps","model":"claude-4","attempt":2,"note":"租约超时等待人工释放重试","ticket":"t-102","canRetryRelease":true,"memoUrl":"https://flobo.robby.wang/memos/102"}],
+            "recentCompleted":[]}}
+  """.replace("NOW",time));
+ if(path.equals("infra/sentinel"))return new JSONObject("""
+  {"schemaVersion":1,"generatedAt":"NOW","partial":false,
+   "alerts":[{"severity":"warning","area":"wechat","id":"wechat-stale","title":"微信归档超过 2 小时未同步","detail":"预览告警样例"}],
+   "servers":{"status":"healthy","nearestExpiryDays":28,"monthlyQuote":[{"currency":"CNY","amount":128}],
+    "instances":[{"id":"vps-1","name":"Tokyo-Edge","regionLabel":"东京","purpose":"网关反代","state":"running","daysRemaining":28}]},
+   "storage":{"status":"healthy","collectorStale":false,"summary":{"totalStores":4,"up":4,"degraded":0,"down":0,"backupUnverified":0},"highlights":[{"label":"OSS 备份","status":"ok"}]},
+   "domainsAndCerts":{"status":"healthy","certificates":[{"domain":"god.robby.wang","daysRemaining":62,"status":"ok"}]},
+   "modelApis":{"status":"ready","balances":{"kimi":{"currency":"CNY","balance":186.5},"deepseek":{"currency":"CNY","balance":94.2}}},
+   "releaseEvidence":{"status":"healthy"},"wechatDigest":{"status":"stale","ageMinutes":145,"stale":true}}
+  """.replace("NOW",time));
+ if(path.equals("prompts"))return new JSONObject("""
+  {"schemaVersion":1,"generatedAt":"NOW","status":"ready","webUrl":"https://prompts.robby.wang/",
+   "prompts":[{"id":"srv-1","slug":"android-lint-check","title":"Android Lint 严格检查","body":"请检查 {{module}} 在 Java 17 + minSdk 30 下的 Lint 风险。","tags":["工程","Android"],"agents":["codex"],"pinned":true}]}
+  """.replace("NOW",time));
+ if(path.equals("umami/overview"))return new JSONObject("{\"apiVersion\":\"2026-07-01\",\"generatedAt\":\"NOW\",\"sourceStatus\":{\"sites\":{\"available\":true,\"stale\":false}},\"totals\":{\"pageviews\":1280,\"visitors\":430,\"visits\":510},\"sites\":[{\"name\":\"robby.wang\",\"pageviews\":920,\"visitors\":310}]}".replace("NOW",time));
  if(path.equals("deepseek/models"))return deepseek(time);
  if(path.equals("market"))return new JSONObject("""
   {"apiVersion":"2026-07-01","sourceStatus":{},"disclaimer":{"text":"完全合成的界面预览数据"},"aiUpstream":[],

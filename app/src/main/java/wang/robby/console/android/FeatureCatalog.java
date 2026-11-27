@@ -28,7 +28,6 @@ public final class FeatureCatalog {
         f("overview", "工作台", "服务、资产与待办提醒", "工作台", "overview", "god.mobile.read"),
         f("observer", "Visit Observer", "访问聚合与站点健康", "洞察", "analytics/overview", "god.mobile.analytics.read"),
         f("umami", "访问统计", "Umami 站点、路径与来源", "洞察", "umami/overview", "god.mobile.read"),
-        f("posthog", "产品分析", "事件、漏斗与 Web Vitals", "洞察", "posthog/overview", "god.mobile.analytics.read"),
         f("visit-insight-reports", "访问洞察报告", "既有报告归档", "洞察", "visit-insight-reports", "god.mobile.analytics.read"),
         f("market", "市场看板", "关注行情、板块与市场基准", "洞察", "market", "god.mobile.read"),
         f("okx", "OKX 账户", "资产、持仓与风险摘要", "洞察", "okx/overview", "god.mobile.okx.read"),
@@ -38,10 +37,12 @@ public final class FeatureCatalog {
         f("tibo", "28 天挑战", "Tibo 的重置预告、每日进展与提醒", "洞察", "tokens/tibo", "god.mobile.tokens.read"),
         f("wechat-messages", "微信消息", "汇总、日报与看板", "洞察", "wechat/digest", "god.mobile.wechat.read"),
         f("infrastructure", "基础设施", "实例、资源指标与月价", "资产", "overview", "god.mobile.read"),
+        f("infra-sentinel", "基础设施哨兵", "告警、主机、存储、域名与余额状态", "资产", AccountCenter.INFRA_SENTINEL, "god.mobile.read"),
         f("domains", "域名资产", "注册、到期、解析与备案", "资产", "domains/overview", "god.mobile.domains.read"),
         f("status", "运行状态", "站点健康与上游服务", "资产", "overview", "god.mobile.read"),
         f("site-maintenance", "站点维护状态", "站点状态与标记一致性", "资产", "site-maintenance/overview", "god.mobile.sites.health.read"),
         f("engineering", "源码与工程", "仓库索引与迭代日志", "资产", "engineering", "god.mobile.read"),
+        f("agent-dispatch", "AI 调度总控", "宿主机在线、认领队列与阻塞控制", "工具", AccountCenter.DISPATCH_OVERVIEW, "god.mobile.read"),
         f("clipboard", "云剪贴板", "可见性与到期时间", "工具", "clipboard", "god.mobile.clipboard.read"),
         f("travel-ledger", "旅行记账", "多账本、支出与同行人", "工具", "travel-ledger/current/projects", "god.mobile.travel.current.read"),
         f("image-workshop", "图片工坊", "公开派生图片库存", "工具", "image-workshop/overview", "god.mobile.read"),
@@ -49,6 +50,7 @@ public final class FeatureCatalog {
         f("wechat-publishing", "公众号发布", "文章、草稿历史与发布状态", "工具", "wechat/blog-drafts/overview", "god.mobile.wechat.read"),
         f("miniprogram-catalog", "小程序目录", "目录内容与同步状态", "工具", "miniprogram/catalog-sync/status", "god.mobile.wechat.read"),
         f("prompts", "Prompt 配置", "模型、来源与版本", "工具", "prompts/asset-daily-briefing", "god.mobile.prompts.read"),
+        f("prompt-cheatsheet", "提示词速查表", "常用提示词模板、变量填充与一键复制", "工具", AccountCenter.PROMPTS_LIBRARY, "god.mobile.prompts.read"),
         f("deepseek", "DeepSeek 模型", "官方模型列表、上下文、价格与能力", "工具", "deepseek/models", "god.mobile.read"),
         f("mindball", "心力球", "全天录音，DeepSeek 整理关键事项与待办", "工具", "", ""),
         f("uu-remote", "UU 远程", "绑定电脑，一键远控 Windows 与 Mac", "工具", "", ""),
@@ -59,37 +61,31 @@ public final class FeatureCatalog {
     ));
     public static List<Feature> all() { return FEATURES; }
 
-    /**
-     * Features that ship hidden because they do not read yet, with the reason 已隐藏的功能 shows. From the signed
-     * device read check of 2026-10-19: umami/overview answers 503, and every PostHog source reports notConfigured.
-     * The person can show them again; an entry leaves this list once its source works.
-     */
     /** Features that never call God; each is listed here so a missing path cannot slip in unnoticed. */
     public static final java.util.Set<String> LOCAL = java.util.Set.of("mindball", "uu-remote", "mijia-light", "singing-bowl");
-    public static final Map<String, String> DEFAULT_HIDDEN_REASONS = Map.of(
-        "umami", "暂未接通 · 接口暂不可用",
-        "posthog", "暂未接通 · 数据源未配置");
+    public static final Map<String, String> DEFAULT_HIDDEN_REASONS = Map.of();
     public static final java.util.Set<String> DEFAULT_HIDDEN = DEFAULT_HIDDEN_REASONS.keySet();
 
     /** The sections of the 功能 tab, in order; 设置 entries stay in 我 but are still found by search. */
     public static final List<String> SECTIONS = List.of("洞察", "资产", "工具");
     // Only static feature metadata is searched, as on iOS: never account data, credentials or clipboard contents.
     private static final Map<String, String> ALIASES = Map.ofEntries(
-        Map.entry("tokens", "额度 配额 quota balance Codex Claude Cursor Grok TodayAI 重置"),
-        Map.entry("quota-calendar", "日历 重置 额度 calendar reset"),
+        Map.entry("tokens", "额度 配额 quota balance Codex Claude Cursor Grok TodayAI Gemini Antigravity 重置"),
+        Map.entry("quota-calendar", "日历 重置 额度 calendar reset coding"),
         Map.entry("tibo", "Tibo Codex 重置 预告 挑战 提醒 闹钟 reset challenge alarm"),
         Map.entry("wechat-messages", "微信 聊天 消息 日报 看板 wechat"),
         Map.entry("infrastructure", "服务器 云主机 server cloud"),
+        Map.entry("infra-sentinel", "哨兵 告警 存储 证书 余额 sentinel ops server storage"),
         Map.entry("domains", "域名 domain DNS 备案"),
         Map.entry("status", "服务 健康 health uptime"),
         Map.entry("site-maintenance", "站点 网站 维护 health"),
         Map.entry("engineering", "代码 仓库 GitHub repository timeline"),
+        Map.entry("agent-dispatch", "调度 认领 Flobo dispatcher pause resume retry agent"),
         Map.entry("market", "股票 行情 stock market"),
         Map.entry("okx", "欧易 持仓 加密货币 crypto"),
         Map.entry("openai", "API 费用 usage cost"),
         Map.entry("observer", "访问 流量 visit analytics"),
         Map.entry("umami", "访问 流量 统计 analytics"),
-        Map.entry("posthog", "埋点 事件 漏斗 analytics"),
         Map.entry("visit-insight-reports", "报告 访问 report"),
         Map.entry("clipboard", "剪贴板 复制 粘贴 clipboard"),
         Map.entry("travel-ledger", "账本 记账 旅行 ledger expense"),
@@ -98,6 +94,7 @@ public final class FeatureCatalog {
         Map.entry("wechat-publishing", "公众号 文章 草稿 publish"),
         Map.entry("miniprogram-catalog", "小程序 mini program"),
         Map.entry("prompts", "提示词 prompt"),
+        Map.entry("prompt-cheatsheet", "速查 模板 变量 prompt cheatsheet copy"),
         Map.entry("deepseek", "深度求索 模型 价格 上下文 定价 API model pricing context deepseek.robby.wang"),
         Map.entry("mindball", "录音 记录 转写 待办 时间线 备忘 会议 纪要 OPPO 心力球 recorder memo todo timeline"),
         Map.entry("uu-remote", "远程 远控 远程桌面 电脑 Windows Mac 网易 UU远程 画中画 小窗 remote desktop control"),

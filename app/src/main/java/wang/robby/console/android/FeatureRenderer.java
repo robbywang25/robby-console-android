@@ -42,20 +42,21 @@ public final class FeatureRenderer {
         // 28 天挑战 shows its own sync line; the quota pages count a reading older than two minutes as stale.
         // DeepSeek 模型 states when the official list was fetched inside its own summary card.
         // 微信消息 has its own 数据截至 line, including when the digest is more than two hours old.
-        if (!feature.id.equals("overview") && !feature.id.equals("tibo") && !feature.id.equals("deepseek") && !feature.id.equals("wechat-messages")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.path.equals("tokens/quotas") ? 120 : 600);
+        if (!feature.id.equals("overview") && !feature.id.equals("tibo") && !feature.id.equals("deepseek") && !feature.id.equals("wechat-messages") && !feature.id.equals("prompt-cheatsheet")) ui.freshness(payload, feature.id.equals("travel-ledger") ? 30 : feature.path.equals("tokens/quotas") ? 120 : 600);
         switch (feature.id) {
             case "overview": overview(ui, payload); break;
             case "infrastructure": infrastructure(ui, obj(payload, "infrastructure")); break;
             case "status": health(ui, obj(payload, "status")); break;
             case "observer": observer(ui, payload); break;
             case "umami": umami(ui, payload); break;
-            case "posthog": posthog(ui, payload); break;
             case "openai": openai(ui, payload); break;
             case "domains": domains(ui, payload); break;
             case "site-maintenance": maintenance(ui, payload); break;
             case "market": market(ui, payload); break;
             case "okx": okx(ui, payload); break;
-            case "engineering": engineering(ui, payload); break;
+            case "engineering": EngineeringModel.renderPage(context, container, payload); break;
+            case "agent-dispatch": DispatchPage.render(context, container, payload); break;
+            case "infra-sentinel": OpsReadPages.renderSentinel(context, container, payload); break;
             case "clipboard": clipboard(ui, payload); break;
             case "travel-ledger": ledger(ui, payload); break;
             case "wechat-cards": cards(ui, payload); break;
@@ -63,6 +64,7 @@ public final class FeatureRenderer {
             case "miniprogram-catalog": catalog(ui, payload); break;
             case "wechat-login-audit": audit(ui, payload); break;
             case "prompts": prompts(ui, payload); break;
+            case "prompt-cheatsheet": PromptCheatsheetPage.render(context, container, payload); break;
             case "image-workshop": images(ui, payload); break;
             case "visit-insight-reports": reports(ui, payload); break;
             case "secrets": secrets(ui, payload); break;
@@ -164,12 +166,19 @@ public final class FeatureRenderer {
             case "okx": u.big(number(p, "totalEquityUsd"), "总权益 USD · 持仓 " + number(p, "openPositionCount")); break;
             case "clipboard": u.big(String.valueOf(arr(p, "items").length()), "条剪贴内容 · 来源 " + source(obj(p, "sourceStatus"))); break;
             case "tokens": {
-                // One row per connected account, including both TodayAI lines. Accounts not set up stay off the board.
+                // One row per connected account, including catalog visibility/numbering parity.
                 long now = System.currentTimeMillis(); java.text.DecimalFormat whole = new java.text.DecimalFormat("0");
+                Map<String, JSONObject> catalogByID = TokenAccountOrder.catalogEntries(p);
                 List<JSONObject> accounts = tokenAccounts(p); Set<String> hidden = Dashboard.hiddenTokens(context); boolean anyHidden = false; List<String[]> rowsShown = new ArrayList<>();
-                for (JSONObject a : accounts) if (a != null && TokensModel.shownOnPage(a) && hidden.contains(a.optString("id"))) anyHidden = true;
-                List<JSONObject> board = Dashboard.tokenBoardAccounts(accounts, hidden); int shown = 0;
-                for (JSONObject a : board) { String st = a.optString("status"); shown++; rowsShown.add(new String[]{a.optString("id"), s(a, "label")});
+                for (JSONObject a : accounts) if (a != null && TokensModel.shownOnPage(a, catalogByID.get(a.optString("id"))) && hidden.contains(a.optString("id"))) anyHidden = true;
+                List<JSONObject> board = Dashboard.tokenBoardAccounts(accounts, catalogByID, hidden); int shown = 0;
+                for (JSONObject a : board) {
+                    JSONObject cat = catalogByID.get(a.optString("id"));
+                    String priority = TokensModel.widgetPriority(a);
+                    if (priority == null && cat != null) priority = TokensModel.widgetPriority(cat);
+                    if ("hidden".equals(priority) || (priority == null && TokensModel.isUnsubscribed(a, cat))) continue;
+                    String st = a.optString("status"); shown++;
+                    String title = TokensModel.productName(a, cat); rowsShown.add(new String[]{a.optString("id"), title});
                     List<TokensModel.Period> periods = TokensModel.boardWindows(a);
                     Double min = null; for (TokensModel.Period pd : periods) { Double pc = TokensModel.remaining(pd.window); if (pc != null && (min == null || pc < min)) min = pc; }
                     // The countdown is the first window's: Claude's 5 hours, otherwise the tightest window.
@@ -177,7 +186,7 @@ public final class FeatureRenderer {
                     LinearLayout r = new LinearLayout(context); r.setGravity(Gravity.CENTER_VERTICAL); r.setPadding(0, u.dp(shown == 1 ? 8 : 5), 0, 0);
                     boolean fresh = "connected".equals(st); int level = fresh ? TokensModel.level(min) : 0;
                     r.addView(u.theme.dot(level == 1 ? u.theme.success : level == 2 ? u.theme.warning : level == 3 ? u.theme.danger : u.theme.faint, 7));
-                    TextView name = u.text(s(a, "label"), 14, false); name.setTextColor(u.theme.ink); name.setPadding(u.dp(8), 0, 0, 0); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
+                    TextView name = u.text(title, 14, false); name.setTextColor(u.theme.ink); name.setPadding(u.dp(8), 0, 0, 0); name.setSingleLine(true); name.setEllipsize(android.text.TextUtils.TruncateAt.END); r.addView(name, new LinearLayout.LayoutParams(0, -2, 1));
                     // Claude counts its 5-hour and weekly resets down on the small line instead.
                     String cd = fresh && !"claude".equals(a.opt("product")) ? TokensModel.countdown(reset, now) : null; if (cd != null) r.addView(u.text(cd, 11, false));
                     if (min == null) { TextView val = u.text(TokensModel.status(st), 14, true); val.setPadding(u.dp(10), 0, 0, 0); r.addView(val); }
@@ -198,7 +207,7 @@ public final class FeatureRenderer {
                     // The account's email, then Codex Points or Claude's resets, and reset cards, on a small second line aligned with the account name.
                     String extras = TokensModel.boardSubline(TokensModel.boardEmail(a), TokensModel.boardExtras(a, fresh, now, ZoneId.systemDefault()));
                     if (extras != null) { TextView x = u.text(extras, 11, false); x.setTextColor(u.theme.faint); x.setPadding(u.dp(15), u.dp(1), 0, 0); shell.addView(x); } }
-                if (board.isEmpty()) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");
+                if (board.isEmpty() || shown == 0) widgetMessage(context, shell, anyHidden ? "账号都已在编辑看板里隐藏" : "还没有已接入的账号");
                 Dashboard.saveTokenRows(context, rowsShown);
                 break; }
             case "calendar": {
@@ -258,11 +267,12 @@ public final class FeatureRenderer {
                 return "2026-08-01".equals(p.opt("apiVersion")) && p.optJSONObject("summary") != null
                     && p.optJSONObject("status") != null && version(obj(p, "status"), 2);
             case "openai": return "2026-08-01".equals(p.opt("apiVersion")) && version(p, 4) && p.optJSONObject("totals") != null;
-            case "posthog": return "2026-07-01".equals(p.opt("apiVersion")) && version(p, 1) && p.optJSONObject("summary") != null;
             case "observer": return api(p) && p.optJSONObject("metrics") != null && p.optJSONArray("sites") != null;
             case "umami": return api(p) && p.optJSONArray("sites") != null;
             case "market": return api(p) && p.optJSONArray("watchlist") != null;
             case "engineering": return (api(p) || (version(p, 2) && "2026-11-26".equals(p.opt("apiVersion")))) && p.optJSONArray("repositoryIndex") != null && p.optJSONArray("items") != null;
+            case "agent-dispatch": return DispatchPage.isCompatible(p);
+            case "infra-sentinel": return OpsReadPages.isSentinelCompatible(p);
             case "clipboard": return api(p) && p.optJSONArray("items") != null && p.optJSONObject("sourceStatus") != null;
             case "secrets": return api(p) && p.optJSONArray("services") != null;
             case "tokens": case "quota-calendar": return version(p, 1) && p.optJSONArray("accounts") != null;
@@ -277,6 +287,7 @@ public final class FeatureRenderer {
             case "miniprogram-catalog": return (version(p, 1) || version(p, 2)) && p.optJSONArray("tools") != null;
             case "wechat-login-audit": return version(p, 1) && p.optJSONObject("binding") != null && p.optJSONArray("events") != null;
             case "prompts": return (version(p, 1) || version(p, 2)) && p.opt("version") instanceof String && p.opt("model") instanceof String;
+            case "prompt-cheatsheet": return PromptCheatsheetPage.isCompatible(p);
             case "image-workshop": return version(p, 1) && p.optJSONObject("inventory") != null;
             case "visit-insight-reports": return version(p, 1) && p.optJSONArray("reports") != null;
             case "deepseek": return version(p, 1) && p.optJSONArray("models") != null && p.optJSONObject("response") != null;
@@ -441,19 +452,6 @@ public final class FeatureRenderer {
         }
         empty(u, p, "sites", "暂无统计站点");
     }
-    private static void posthog(UI u, JSONObject p) {
-        u.sources(obj(p, "sourceStatus"), "eventTrend", "事件趋势", "funnel", "转化漏斗", "webVitals", "Web Vitals");
-        JSONObject summary = obj(p, "summary"); LinearLayout c = u.card(s(obj(p, "project"), "label"));
-        u.metrics(c, "可见事件", number(summary, "visibleEvents"), "可用板块", number(summary, "availableSections"),
-            "较差体验指标", number(summary, "poorVitalCount"), "漏斗转化", unit(summary, "funnelConversionPercent", "%"));
-        if (arr(obj(p, "eventTrend"), "series").length() > 0) { u.subhead(c, "事件趋势"); for (JSONObject n : rows(obj(p, "eventTrend"), "series")) u.row(c, s(n, "label"), number(n, "visibleTotal")); }
-        JSONObject funnel = obj(p, "funnel");
-        if (funnel.length() > 0) { c = u.card(s(funnel, "label")); for (JSONObject n : rows(funnel, "steps"))
-            u.row(c, s(n, "label"), Boolean.TRUE.equals(n.opt("suppressed")) ? "小样本隐藏" : number(n, "count")); }
-        JSONObject vitals = obj(p, "webVitals");
-        if (vitals.length() > 0) { c = u.card("Web Vitals"); for (JSONObject n : rows(vitals, "metrics"))
-            u.row(c, s(n, "key"), unit(obj(n, "latest"), "value", " " + s(n, "unit")) + " · " + state(obj(n, "latest"), "rating")); }
-    }
     /** Mirrors the OpenAI web page: period figures, the daily token trend, the 7-day insight block, then models. */
     private static void openai(UI u, JSONObject p) {
         JSONObject totals = obj(p, "totals"), cost = obj(obj(p, "costStatus"), "total"), ins = obj(p, "insights");
@@ -553,27 +551,19 @@ public final class FeatureRenderer {
                 "方向", state(n, "side"), "数量", number(n, "quantity"), "开仓均价", number(n, "averageEntryPrice"), "标记价格", number(n, "markPrice"),
                 "未实现盈亏", number(n, "unrealizedPnl"), "杠杆", number(n, "leverage")); }
     }
-    /** Mirrors the 源码与工程 web page: projects, then the iteration log. */
-    private static void engineering(UI u, JSONObject p) {
-        JSONObject coverage = obj(p, "coverage");
-        u.metrics(u.card("工程概览"), "项目", String.valueOf(arr(p, "repositoryIndex").length()), "日志", String.valueOf(arr(p, "items").length()),
-            "覆盖", Boolean.TRUE.equals(coverage.opt("truncated")) ? "已截断" : "完整");
-        if (Boolean.TRUE.equals(coverage.opt("truncated"))) u.note("日志已截断：当前返回 " + number(coverage, "returnedItems") + " 条，并非全部历史。");
-        if (arr(p, "repositoryIndex").length() > 0) { LinearLayout g = u.list("全部项目");
-            for (JSONObject n : rows(p, "repositoryIndex")) u.item(g, s(n, "name"), state(n, "state"), s(n, "description")); }
-        LinearLayout g = u.list("工程迭代日志");
-        for (JSONObject n : rows(p, "items")) u.item(g, s(n, "summary"), "", join(s(n, "repository"), date(n, "timestamp")));
-        empty(u, p, "items", "暂无迭代日志");
-    }
     private static void clipboard(UI u, JSONObject p) {
         int publicCount = 0, total = 0; for (JSONObject n : rows(p, "items")) { total++; if (Boolean.TRUE.equals(n.opt("isPublic"))) publicCount++; }
+        ClipboardActions.addCreateHeaderCard(u.context, u.theme, u.root);
         LinearLayout c = u.card("当前内容"); u.metrics(c, "条数", String.valueOf(total), "公开", String.valueOf(publicCount), "私密", String.valueOf(total - publicCount));
         u.row(c, "来源", source(obj(p, "sourceStatus")));
         LinearLayout g = u.list("剪贴内容"); int i = 0;
         // Each row opens to its masked body; the text is read for that one item only when 显示内容 is tapped.
         for (JSONObject n : rows(p, "items")) { String id = n.optString("id", "");
             u.expand(g, "剪贴内容 " + (++i), flag(n, "isPublic", "公开", "私密"), join("创建 " + date(n, "createdAt"), "到期 " + date(n, "expiresAt")),
-                "clipboard|" + id, body -> ClipboardReveal.fill(u.context, u.theme, body, id)); }
+                "clipboard|" + id, body -> {
+                    ClipboardReveal.fill(u.context, u.theme, body, id);
+                    ClipboardActions.fillItemControls(u.context, u.theme, body, n);
+                }); }
         empty(u, p, "items", "暂无剪贴内容");
         u.explain("列表只含元数据；点开一条再点「显示内容」才读取这一条正文，60 秒后自动隐藏，不保存在手机上。");
     }
@@ -671,19 +661,162 @@ public final class FeatureRenderer {
      * entries the web keeps out), grouped OpenAI / Claude / Grok / Cursor / TodayAI in stable slots. TodayAI arrives in
      * the additive additionalAccounts array beside the original nine accounts.
      */
+    private static int tokensTab = 0;
+
     private static void tokens(UI u, JSONObject p) {
         long now = System.currentTimeMillis(); ZoneId zone = ZoneId.systemDefault();
+        String staleBanner = TokensModel.staleBannerText(p, now, zone);
+        if (staleBanner != null) u.staleBanner(staleBanner);
+
+        LinearLayout toolbar = new LinearLayout(u.context); toolbar.setGravity(Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, -2); tlp.bottomMargin = u.dp(10);
+        LinearLayout segBar = new LinearLayout(u.context); segBar.setBackground(u.theme.shape(u.theme.soft, 99));
+        segBar.setPadding(u.dp(3), u.dp(3), u.dp(3), u.dp(3));
+        toolbar.addView(segBar, new LinearLayout.LayoutParams(0, -2, 1));
+        android.widget.Button devBtn = u.theme.button("设备与运行", () -> {
+            android.content.Intent go = new android.content.Intent(u.context, TokenDeviceActivity.class);
+            if (PreviewMode.isBuild()) go.putExtra("preview", true);
+            u.context.startActivity(go);
+        });
+        LinearLayout.LayoutParams dlp = new LinearLayout.LayoutParams(-2, -2); dlp.leftMargin = u.dp(8);
+        toolbar.addView(devBtn, dlp);
+        u.root.addView(toolbar, tlp);
+
+        LinearLayout tabBody = new LinearLayout(u.context); tabBody.setOrientation(LinearLayout.VERTICAL);
+        u.root.addView(tabBody);
+
+        String[] tabLabels = {"按服务商", "按邮箱", "续费台账"};
+        TextView[] tabViews = new TextView[3];
+        Runnable[] drawRef = new Runnable[1];
+        drawRef[0] = () -> {
+            for (int i = 0; i < 3; i++) {
+                boolean on = tokensTab == i;
+                tabViews[i].setTextColor(on ? u.theme.ink : u.theme.muted);
+                tabViews[i].setTypeface(null, on ? Typeface.BOLD : Typeface.NORMAL);
+                tabViews[i].setBackground(u.theme.ripple(u.theme.shape(on ? u.theme.surface : Color.TRANSPARENT, 99), 99));
+                tabViews[i].setSelected(on);
+            }
+            tabBody.removeAllViews();
+            UI sub = new UI(u.context, tabBody);
+            drawTokensBody(sub, p, now, zone);
+        };
+        for (int i = 0; i < 3; i++) {
+            final int idx = i;
+            TextView tv = u.text(tabLabels[i], 13, tokensTab == i);
+            tv.setGravity(Gravity.CENTER); tv.setMinHeight(u.dp(34)); tv.setPadding(u.dp(6), 0, u.dp(6), 0);
+            tv.setFocusable(true); tv.setClickable(true);
+            tv.setOnClickListener(v -> { if (tokensTab == idx) return; tokensTab = idx; drawRef[0].run(); });
+            tabViews[i] = tv;
+            segBar.addView(tv, new LinearLayout.LayoutParams(0, -2, 1));
+        }
+        drawRef[0].run();
+    }
+
+    private static void drawTokensBody(UI u, JSONObject p, long now, ZoneId zone) {
         List<JSONObject> all = tokenAccounts(p);
+        Map<String, JSONObject> catalogById = TokenAccountOrder.catalogEntries(p);
         JSONObject build = null; for (JSONObject a : all) if ("grok".equals(a.optString("id"))) build = a;
+
+        if (tokensTab == 2) {
+            drawRenewalLedger(u, all, catalogById, build);
+            return;
+        }
+        if (tokensTab == 1) {
+            Map<String, String> displayKey = new LinkedHashMap<>();
+            Map<String, List<JSONObject>> byEmail = new LinkedHashMap<>();
+            List<JSONObject> noEmail = new ArrayList<>();
+            for (JSONObject a : all) {
+                if (!TokensModel.shownOnPage(a, catalogById.get(a.optString("id")))) continue;
+                String email = TokensModel.boardEmail(a);
+                if (email == null) { noEmail.add(a); continue; }
+                String key = email.toLowerCase(Locale.ROOT);
+                displayKey.putIfAbsent(key, email);
+                byEmail.computeIfAbsent(key, k -> new ArrayList<>()).add(a);
+            }
+            int shown = 0;
+            for (Map.Entry<String, List<JSONObject>> e : byEmail.entrySet()) {
+                u.heading(displayKey.get(e.getKey()) + " (" + e.getValue().size() + ")", null);
+                for (JSONObject a : e.getValue()) {
+                    JSONObject cat = catalogById.get(a.optString("id"));
+                    tokenTile(u, a, cat, sharedPlan(a, build), TokensModel.section(a), now, zone, p.optJSONObject("tiboReset"));
+                    shown++;
+                }
+            }
+            if (!noEmail.isEmpty()) {
+                u.heading("未绑定邮箱 (" + noEmail.size() + ")", null);
+                for (JSONObject a : noEmail) {
+                    JSONObject cat = catalogById.get(a.optString("id"));
+                    tokenTile(u, a, cat, sharedPlan(a, build), TokensModel.section(a), now, zone, p.optJSONObject("tiboReset"));
+                    shown++;
+                }
+            }
+            if (shown == 0) u.emptyLine("还没有已接入的账号");
+            return;
+        }
+
         Map<String, List<JSONObject>> sections = new LinkedHashMap<>();
-        for (JSONObject a : all) if (TokensModel.shownOnPage(a)) sections.computeIfAbsent(TokensModel.section(a), key -> new ArrayList<>()).add(a);
+        for (JSONObject a : all) {
+            if (TokensModel.shownOnPage(a, catalogById.get(a.optString("id")))) {
+                sections.computeIfAbsent(TokensModel.section(a), key -> new ArrayList<>()).add(a);
+            }
+        }
         int shown = 0;
         for (Map.Entry<String, List<JSONObject>> e : sections.entrySet()) {
             if (e.getValue().isEmpty()) continue;
             u.heading(e.getKey(), null);
-            for (JSONObject a : e.getValue()) { tokenTile(u, a, sharedPlan(a, build), e.getKey(), now, zone, p.optJSONObject("tiboReset")); shown++; }
+            for (JSONObject a : e.getValue()) {
+                JSONObject cat = catalogById.get(a.optString("id"));
+                tokenTile(u, a, cat, sharedPlan(a, build), e.getKey(), now, zone, p.optJSONObject("tiboReset"));
+                shown++;
+            }
         }
         if (shown == 0) { LinearLayout c = u.theme.card(u.root); TextView t = u.text("还没有已接入的账号", 15, false); t.setTextColor(u.theme.muted); c.addView(t); }
+    }
+
+    private static void drawRenewalLedger(UI u, List<JSONObject> all, Map<String, JSONObject> catalogById, JSONObject build) {
+        long monthlyMinor = 0;
+        int activeCount = 0, trialCount = 0, offCount = 0;
+        List<JSONObject> entries = new ArrayList<>();
+        for (JSONObject a : all) {
+            JSONObject cat = catalogById.get(a.optString("id"));
+            if (!TokensModel.renewalEligible(a, cat)) continue;
+            entries.add(a);
+            JSONObject r = a.optJSONObject("renewal");
+            String st = r == null ? (cat == null ? "" : cat.optString("subscriptionState", "")) : r.optString("status", "");
+            if ("active".equals(st) || "canceled_active".equals(st)) activeCount++;
+            else if ("trial".equals(st)) trialCount++;
+            else if ("free".equals(st) || "expired".equals(st)) offCount++;
+            if (r != null && ("active".equals(st) || "trial".equals(st) || "canceled".equals(st)) && "USD".equals(r.optString("currency", "USD"))) {
+                Object minor = r.opt("amountMinor");
+                if (minor instanceof Number n && n.longValue() > 0) {
+                    long m = n.longValue();
+                    monthlyMinor += "year".equals(r.optString("interval")) ? Math.round(m / 12.0) : m;
+                }
+            }
+        }
+        LinearLayout sum = u.card("订阅与续费台账");
+        u.metrics(sum, "月折合 USD", TokensModel.formatUsdMinor(monthlyMinor), "活跃/试用", (activeCount + trialCount) + " 个", "免费/到期", offCount + " 个");
+        if (entries.isEmpty()) { u.emptyLine("暂无续费台账记录"); return; }
+        LinearLayout g = u.list("各账号订阅");
+        for (JSONObject a : entries) {
+            JSONObject cat = catalogById.get(a.optString("id"));
+            JSONObject r = a.optJSONObject("renewal");
+            String subState = a.has("subscriptionState") ? a.optString("subscriptionState", "") : cat == null ? "" : cat.optString("subscriptionState", "");
+            String stLabel = TokensModel.renewalStatusText(r, subState);
+            String amount = TokensModel.renewalAmountText(a, r);
+            String meta = join(TokensModel.displayName(a), amount, sharedPlan(a, build) != null ? sharedPlan(a, build) : TokensModel.plan(a));
+            List<String> details = new ArrayList<>();
+            details.add("状态"); details.add(stLabel);
+            details.add("费用"); details.add(amount);
+            if (r != null) {
+                if (!r.optString("nextDate", "").isEmpty()) { details.add("下次日期"); details.add(r.optString("nextDate")); }
+                if (r.opt("autoRenew") instanceof Boolean ar) { details.add("自动续费"); details.add(ar ? "已开启" : "已关闭"); }
+                if (!r.optString("channel", "").isEmpty()) { details.add("支付渠道"); details.add(r.optString("channel")); }
+                if (!r.optString("stoppedDate", "").isEmpty()) { details.add("停用日期"); details.add(r.optString("stoppedDate")); }
+                if (!r.optString("sharedWith", "").isEmpty()) { details.add("共享人"); details.add(r.optString("sharedWith")); }
+            }
+            u.item(g, TokensModel.productName(a, cat), stLabel, meta, details.toArray(new String[0]));
+        }
     }
     /** Preserve wire lists, merge additive Gemini entries and sort only the displayed catalog. */
     static List<JSONObject> tokenAccounts(JSONObject p) {
@@ -706,8 +839,8 @@ public final class FeatureRenderer {
             default: return u.theme.ink;
         }
     }
-    /** One account tile: identity and value, price and plan, balances, pace, the hour's curve, resets and 重置卡明细. */
-    private static void tokenTile(UI u, JSONObject a, String sharedPlan, String section, long now, ZoneId zone, JSONObject tibo) {
+    /** One account tile: identity and value, price and plan, balances, pace, ETA, the hour's curve, resets and 重置卡明细. */
+    private static void tokenTile(UI u, JSONObject a, JSONObject catalogEntry, String sharedPlan, String section, long now, ZoneId zone, JSONObject tibo) {
         boolean fresh = "connected".equals(TokensModel.effectiveStatus(a, now)); int tint = fresh ? tokenTint(u, section) : u.theme.muted;
         LinearLayout c = u.theme.card(u.root); c.setPadding(u.dp(16), u.dp(14), u.dp(16), u.dp(14));
         LinearLayout top = new LinearLayout(u.context); top.setGravity(Gravity.CENTER_VERTICAL);
@@ -715,7 +848,15 @@ public final class FeatureRenderer {
         TextView title = u.text(TokensModel.displayName(a), 15, true); title.setTextColor(u.theme.ink); title.setSingleLine(true); title.setEllipsize(android.text.TextUtils.TruncateAt.END); title.setAccessibilityHeading(true); who.addView(title);
         LinearLayout product = new LinearLayout(u.context); product.setGravity(Gravity.CENTER_VERTICAL); product.setPadding(0, u.dp(3), 0, 0);
         product.addView(u.theme.dot(fresh ? tint : u.theme.faint, 7));
-        TextView name = u.text(TokensModel.productName(a), 13, false); name.setTextColor(fresh ? tint : u.theme.muted); name.setPadding(u.dp(6), 0, 0, 0); product.addView(name); who.addView(product);
+        TextView name = u.text(TokensModel.productName(a, catalogEntry), 13, false); name.setTextColor(fresh ? tint : u.theme.muted); name.setPadding(u.dp(6), 0, 0, 0); product.addView(name);
+        String badge = TokensModel.subscriptionBadge(a, catalogEntry);
+        if (badge != null) {
+            TextView bv = u.text(badge, 10, true); bv.setTextColor(TokensModel.isUnsubscribed(a, catalogEntry) ? u.theme.warning : u.theme.muted);
+            bv.setBackground(u.theme.shape(u.theme.soft, 99)); bv.setPadding(u.dp(7), u.dp(2), u.dp(7), u.dp(2));
+            LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(-2, -2); bp.leftMargin = u.dp(6);
+            product.addView(bv, bp);
+        }
+        who.addView(product);
         top.addView(who, new LinearLayout.LayoutParams(0, -2, 1));
         String headline = TokensModel.headline(a, now);
         TextView value = u.text(headline, headline.endsWith("%") ? 24 : 16, true); value.setTextColor(tint); value.setPadding(u.dp(10), 0, 0, 0); top.addView(value); c.addView(top);
@@ -739,6 +880,8 @@ public final class FeatureRenderer {
             TextView count = u.text("", 13, true); count.setTextColor(u.theme.danger); count.setPadding(u.dp(8), 0, 0, 0); row.setGravity(Gravity.CENTER_VERTICAL); row.addView(count);
             if (signal.deadline > 0) TokensPages.tick(count, at -> TiboChallenge.countdown(signal.deadline, at)); else count.setText("已预告，时间未公布"); c.addView(row); }
         else if (pace != null) { LinearLayout row = new LinearLayout(u.context); row.setPadding(0, u.dp(10), 0, 0); u.pill(row, pace, "即将重置".equals(pace) ? u.theme.danger : u.theme.warning); c.addView(row); }
+        String eta = TokenForecast.summaryLine(a, zone, now);
+        if (eta != null) { TextView et = u.text(eta, 12, false); et.setTextColor(eta.contains("早于重置") ? u.theme.warning : u.theme.muted); et.setPadding(0, u.dp(6), 0, 0); c.addView(et); }
         tokenTrend(u, c, a, fresh, tint);
         for (String line : TokensModel.resetLines(a, zone, now)) { TextView t = u.text(line, 12, false); t.setTextColor(u.theme.muted); t.setPadding(0, u.dp(4), 0, 0); c.addView(t); }
         TokensModel.Cards cards = TokensModel.cards(a, zone, now);
@@ -1150,6 +1293,18 @@ public final class FeatureRenderer {
             LinearLayout pill = new LinearLayout(context); pill.setGravity(Gravity.CENTER_VERTICAL); pill.setPadding(dp(10), dp(5), dp(12), dp(5)); pill.setBackground(theme.glass(-1));
             pill.addView(theme.dot(tone, 7)); TextView label = text(f[0].startsWith("快照 ") ? "快照时间 " + f[0].substring(3) : f[0], 12, false); label.setPadding(dp(6), 0, 0, 0); pill.addView(label);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2); lp.bottomMargin = dp(10); lp.leftMargin = dp(2); root.addView(pill, lp);
+        }
+        void staleBanner(String message) {
+            if (message == null || message.isEmpty()) return;
+            LinearLayout banner = new LinearLayout(context); banner.setGravity(Gravity.CENTER_VERTICAL);
+            banner.setPadding(dp(14), dp(10), dp(14), dp(10));
+            GradientDrawable bg = theme.shape((theme.warning & 0x00ffffff) | 0x22000000, 14);
+            bg.setStroke(Math.max(1, dp(1)), (theme.warning & 0x00ffffff) | 0x66000000);
+            banner.setBackground(bg); banner.addView(theme.dot(theme.warning, 7));
+            TextView msg = text(message, 12, false); msg.setTextColor(theme.ink); msg.setPadding(dp(8), 0, 0, 0);
+            banner.addView(msg, new LinearLayout.LayoutParams(0, -2, 1));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = dp(10);
+            root.addView(banner, lp);
         }
     }
 }

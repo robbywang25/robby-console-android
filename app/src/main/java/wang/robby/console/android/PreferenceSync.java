@@ -32,7 +32,7 @@ final class PreferenceSync {
     static final String EDITED = "editedAt";
     /** Keys the account document may carry, in write order. Names avoid signature, avatar, token, secret, password. */
     static final List<String> KEYS = List.of(
-        "board", "clocks", "calendarDays", "hiddenQuotaCards",
+        "board", "clocks", "calendarDays", "quotaCalendarCodingOnly", "hiddenQuotaCards",
         "glassOn", "glassLevel", "statusBar", "islandLeft", "islandRight",
         "hiddenFeatures", "shownFeatures", "recentFeatures",
         "noticeKinds", "dailyLine", "lowLine", "creditsLine", "marketDays", "marketLine", "enhancedNotice", "persistentNotice", "tiboNotice", "bowl");
@@ -194,6 +194,7 @@ final class PreferenceSync {
             copy(raw, "board", ui, "dashboard");
             copy(raw, "clocks", ui, Dashboard.CLOCKS);
             copy(raw, "calendarDays", ui, Dashboard.CALENDAR_DAYS);
+            copy(raw, "quotaCalendarCodingOnly", ui, Dashboard.CALENDAR_CODING_ONLY);
             copy(raw, "hiddenQuotaCards", ui, Dashboard.HIDDEN_TOKENS);
             copy(raw, "glassOn", ui, ConsoleTheme.GLASS_ON);
             copy(raw, "glassLevel", ui, ConsoleTheme.GLASS_LEVEL);
@@ -549,7 +550,7 @@ final class PreferenceSync {
             case "clocks" -> clocks(raw);
             case "calendarDays" -> choice(raw, Dashboard.CALENDAR_RANGES);
             case "hiddenQuotaCards" -> ids(raw, "[a-z0-9-]{1,32}", 64);
-            case "glassOn", "enhancedNotice", "persistentNotice", "tiboNotice" -> flag(raw);
+            case "glassOn", "enhancedNotice", "persistentNotice", "tiboNotice", "quotaCalendarCodingOnly" -> flag(raw);
             case "glassLevel" -> range(raw, 0, 100);
             case "statusBar" -> token(raw, StatusBarStyle.ALL);
             case "islandLeft", "islandRight" -> token(raw, StatusBarStyle.ITEMS);

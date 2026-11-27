@@ -54,10 +54,10 @@ final class TokenAccountOrder {
     static final Comparator<JSONObject> ACCOUNT_ORDER = Comparator.comparingInt(TokenAccountOrder::accountWeight)
         .thenComparing(account -> account.optString("id"));
 
-    /** Merge the unchanged legacy lists and additive extension list. First occurrence of a source ID wins. */
+    /** Merge canonical `catalogAccounts` (when present) and legacy/extension lists. First occurrence of a source ID wins. */
     static List<JSONObject> accounts(JSONObject payload) {
         Map<String, JSONObject> unique = new LinkedHashMap<>();
-        if (payload != null) for (String key : List.of("accounts", "additionalAccounts", "extendedAccounts")) {
+        if (payload != null) for (String key : List.of("catalogAccounts", "accounts", "additionalAccounts", "extendedAccounts")) {
             org.json.JSONArray list = payload.optJSONArray(key);
             if (list == null) continue;
             for (int i = 0; i < list.length() && unique.size() < 1000; i++) {

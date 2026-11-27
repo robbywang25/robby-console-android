@@ -28,7 +28,11 @@ import java.util.*;
  */
 final class MindBallPage {
     private MindBallPage() {}
-    interface Host { void mindBallSwitch(boolean on); void tiboFix(String what); }
+    interface Host {
+        void mindBallSwitch(boolean on);
+        void tiboFix(String what);
+        void mindBallSendToFlobo(String roundId, String content, Runnable onSent, java.util.function.Consumer<String> onError);
+    }
     /** The sub-route of 心力球设置, kept where the ledger keeps its project. */
     static final String SETTINGS = "settings";
     /** The day being read and the view shown; process memory only, back to today's 看板 on a new launch. */
@@ -123,6 +127,9 @@ final class MindBallPage {
             more.setBackground(t.ripple(t.shape(android.graphics.Color.TRANSPARENT, 12), 12)); more.setFocusable(true); more.setClickable(true);
             more.setOnClickListener(v -> { selected = MindBall.today(); board = false; refresh(); }); c.addView(more);
         }
+        String dayId = MindBall.today();
+        String memoContent = formatDayMemoContent(dayId, day);
+        if (memoContent != null) addFloboButton(ctx, t, c, dayId, memoContent);
     }
     private static void openTodos(Context ctx, ConsoleTheme t, LinearLayout parent, MindBallBoard.Week week) {
         LinearLayout c = t.card(parent); TextView h = t.text("未完成的待办" + (week.open.isEmpty() ? "" : " · " + week.open.size()), 15, true); h.setAccessibilityHeading(true); c.addView(h);
@@ -233,9 +240,14 @@ final class MindBallPage {
         if (!meta.isEmpty()) { TextView m = t.text(String.join(" · ", meta), 12, false); m.setTextColor(t.faint); m.setPadding(0, t.dp(4), 0, 0); c.addView(m); }
         if (items == null || items.length() == 0) {
             TextView e = t.text(segs == null || segs.length() == 0 ? "这一天还没有转写好的录音。" : tl == null ? "已有 " + segs.length() + " 段录音，等待整理。" : "这一天没有需要记下的事项。", 14, false);
-            e.setPadding(0, t.dp(12), 0, t.dp(4)); c.addView(e); return;
+            e.setPadding(0, t.dp(12), 0, t.dp(4)); c.addView(e);
+            String memo = formatDayMemoContent(selected, day);
+            if (memo != null) addFloboButton(ctx, t, c, selected, memo);
+            return;
         }
         for (int i = 0; i < items.length(); i++) item(ctx, t, c, items.optJSONObject(i), marks);
+        String memo = formatDayMemoContent(selected, day);
+        if (memo != null) addFloboButton(ctx, t, c, selected, memo);
     }
     private static void figure(ConsoleTheme t, LinearLayout band, String label, String value) {
         LinearLayout f = new LinearLayout(band.getContext()); f.setOrientation(LinearLayout.VERTICAL); f.setPadding(0, 0, t.dp(8), 0);
@@ -278,7 +290,106 @@ final class MindBallPage {
             r.addView(text); r.setStateDescription(open ? "已展开" : "已收起");
             r.setOnClickListener(v -> { if (!OPEN.remove(key)) OPEN.add(key); refresh(); });
             c.addView(r);
+            if (open) {
+                String segRoundId = selected + "_" + s.optLong("start");
+                String segMemo = formatSegmentMemoContent(selected, s);
+                if (segMemo != null) addFloboButton(ctx, t, c, segRoundId, segMemo);
+            }
         }
+    }
+
+    static String roundPrefKey(String roundId) {
+        return "floboSent_" + (roundId == null ? "" : roundId.trim());
+    }
+
+    static boolean isSentToFlobo(Context ctx, String roundId) {
+        if (ctx == null || roundId == null || roundId.trim().isEmpty()) return false;
+        return MindBall.prefs(ctx).getBoolean(roundPrefKey(roundId), false);
+    }
+
+    static JSONObject quickMemoBody(String content) {
+        if (content == null || content.trim().isEmpty()) throw new IllegalArgumentException("内容为空");
+        String trimmed = content.trim();
+        if (trimmed.length() > 5000) trimmed = trimmed.substring(0, 4997) + "…";
+        try {
+            return new JSONObject()
+                .put("schemaVersion", 1)
+                .put("content", trimmed)
+                .put("tags", new JSONArray().put("心力球"));
+        } catch (org.json.JSONException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
+    static String formatDayMemoContent(String dayId, JSONObject day) {
+        if (day == null) return null;
+        JSONObject tl = day.optJSONObject("timeline");
+        JSONArray segs = day.optJSONArray("segments");
+        StringBuilder sb = new StringBuilder();
+        sb.append("【心力球 · ").append(dayId == null ? "" : dayId).append("】\n");
+        String summary = tl == null ? "" : tl.optString("summary", "").trim();
+        if (!summary.isEmpty()) sb.append("\n").append(summary).append("\n");
+        JSONArray items = tl == null ? null : tl.optJSONArray("items");
+        if (items != null && items.length() > 0) {
+            sb.append("\n要点与待办：\n");
+            for (int i = 0; i < items.length() && i < 40; i++) {
+                JSONObject it = items.optJSONObject(i);
+                if (it == null) continue;
+                String kind = "todo".equals(it.optString("kind")) ? "[待办] " : "- ";
+                String time = it.optString("time", "");
+                sb.append(kind).append(time.isEmpty() ? "" : time + " ").append(it.optString("title", "")).append("\n");
+            }
+        } else if (segs != null && segs.length() > 0) {
+            sb.append("\n录音原文摘录：\n");
+            for (int i = 0; i < segs.length() && i < 15; i++) {
+                JSONObject s = segs.optJSONObject(i);
+                if (s == null) continue;
+                String txt = s.optString("text", "").trim();
+                if (!txt.isEmpty()) sb.append("- ").append(MindBall.clock(s.optLong("start"))).append(" ").append(txt).append("\n");
+            }
+        } else {
+            return null;
+        }
+        String res = sb.toString().trim();
+        return res.length() <= 5000 ? res : res.substring(0, 4997) + "…";
+    }
+
+    static String formatSegmentMemoContent(String dayId, JSONObject seg) {
+        if (seg == null) return null;
+        String text = seg.optString("text", "").trim();
+        if (text.isEmpty()) return null;
+        String range = MindBall.clock(seg.optLong("start")) + "–" + MindBall.clock(seg.optLong("end"));
+        String out = "【心力球 · " + (dayId == null ? "" : dayId) + " " + range + "】\n\n" + text;
+        return out.length() <= 5000 ? out : out.substring(0, 4997) + "…";
+    }
+
+    private static void addFloboButton(Context ctx, ConsoleTheme t, LinearLayout card, String roundId, String content) {
+        boolean sent = !PreviewMode.isBuild() && isSentToFlobo(ctx, roundId);
+        Host host = ctx instanceof Host ? (Host) ctx : null;
+        Button btn = t.button(sent ? "已入 Flobo ✓" : "投递 Flobo", null);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = t.dp(10);
+        if (sent) {
+            btn.setEnabled(false);
+            btn.setTextColor(t.success);
+        } else {
+            btn.setOnClickListener(v -> {
+                if (host == null) return;
+                btn.setEnabled(false);
+                btn.setText("正在投递 Flobo…");
+                host.mindBallSendToFlobo(roundId, content,
+                    () -> {
+                        btn.setText("已入 Flobo ✓");
+                        btn.setTextColor(t.success);
+                    },
+                    err -> {
+                        btn.setEnabled(true);
+                        btn.setText("投递 Flobo");
+                        show(t, new AlertDialog.Builder(ctx).setTitle("投递 Flobo 未完成").setMessage(err).setPositiveButton("知道了", null));
+                    });
+            });
+        }
+        card.addView(btn, lp);
     }
 
     private static void settings(Context ctx, ConsoleTheme t, LinearLayout parent, boolean preview) {

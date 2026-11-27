@@ -17,6 +17,11 @@ final class AccountCenter {
     private AccountCenter() {}
     static final String STATUS = "account/status", DEVICES = "account/devices";
     static final String BOOTSTRAP = "bootstrap", TOKENS_CATALOG = "tokens/catalog", ENGINEERING_V2 = "engineering/v2";
+    static final String TOKENS_DEVICES = "tokens/devices";
+    static final String DISPATCH_OVERVIEW = "dispatch/overview", DISPATCH_CONTROL = "dispatch/control";
+    static final String INFRA_SENTINEL = "infra/sentinel", PROMPTS_LIBRARY = "prompts", FLOBO_QUICK_MEMO = "flobo/quick-memo";
+    static final String CLIPBOARD_MUTATION_STATE = "clipboard/mutation-state", CLIPBOARD_CREATE = "clipboard/actions/create";
+    static final String CLIPBOARD_TRASH_STATE = "clipboard/trash-state";
     static final String EMAIL_SEND = "account/email/send", EMAIL_VERIFY = "account/email/verify";
     static final String UNBIND = "account/social/unbind", REVOKE_OTHERS = "account/devices/revoke-others";
     /** The personal signature, saved with the avatar's scope (god.mobile.profile.write). */
@@ -34,8 +39,17 @@ final class AccountCenter {
     /** Devices shown before the rest fold under one row. */
     static final int FOLD = 6;
 
-    static boolean readRoute(String route) { return route.equals(STATUS) || route.equals(DEVICES) || route.equals(PREFERENCES) || route.equals(APP_SECRETS); }
-    static boolean writeRoute(String route) { return route.equals(EMAIL_SEND) || route.equals(EMAIL_VERIFY) || route.equals(UNBIND) || route.equals(REVOKE_OTHERS) || route.equals(SIGNATURE) || route.equals(PREFERENCES) || route.equals(APP_SECRETS); }
+    static boolean readRoute(String route) {
+        return route.equals(STATUS) || route.equals(DEVICES) || route.equals(PREFERENCES) || route.equals(APP_SECRETS)
+            || route.equals(TOKENS_DEVICES) || route.equals(DISPATCH_OVERVIEW) || route.equals(INFRA_SENTINEL)
+            || route.equals(PROMPTS_LIBRARY) || route.equals(CLIPBOARD_MUTATION_STATE) || route.equals(CLIPBOARD_TRASH_STATE);
+    }
+    static boolean writeRoute(String route) {
+        return route.equals(EMAIL_SEND) || route.equals(EMAIL_VERIFY) || route.equals(UNBIND) || route.equals(REVOKE_OTHERS)
+            || route.equals(SIGNATURE) || route.equals(PREFERENCES) || route.equals(APP_SECRETS)
+            || route.equals(DISPATCH_CONTROL) || route.equals(FLOBO_QUICK_MEMO) || route.equals(CLIPBOARD_CREATE)
+            || route.matches("clipboard/[a-f0-9]{32}/actions/(set-visibility|trash)");
+    }
 
     static final class Passkey {
         final String id, name, detail;
@@ -74,7 +88,11 @@ final class AccountCenter {
     private static final String TEXT = "[^\\p{Cc}]{1,100}";
 
     static Status status(JSONObject v) {
+        return status(v, null);
+    }
+    static Status status(JSONObject v, Bootstrap bootstrap) {
         Status s = new Status();
+        if (bootstrap != null && bootstrap.securitySettingsUrl != null) s.settingsUrl = bootstrap.securitySettingsUrl;
         s.displayName = str(v, "displayName", TEXT); s.canWrite = Boolean.TRUE.equals(flag(v, "canWrite")); s.canSaveProfile = Boolean.TRUE.equals(flag(v, "canSaveProfile"));
         JSONObject profile = v.optJSONObject("profile");
         if (profile != null) { s.profileKnown = true; s.signature = profile.isNull("signature") ? null : Signature.clean(profile.optString("signature", "")); }
@@ -83,7 +101,7 @@ final class AccountCenter {
         if (sec != null) {
             s.totp = flag(sec, "totpBound"); s.passkeyBound = flag(sec, "passkeyBound");
             Object url = sec.opt("settingsUrl");
-            if (SETTINGS.equals(url) || LEGACY_SETTINGS.equals(url)) s.settingsUrl = (String) url;
+            if (SETTINGS.equals(url) || LEGACY_SETTINGS.equals(url) || (bootstrap != null && bootstrap.securitySettingsUrl.equals(url))) s.settingsUrl = (String) url;
             JSONArray keys = sec.optJSONArray("passkeys");
             if (keys != null) { s.passkeys = new ArrayList<>(); for (int i = 0; i < keys.length() && i < 50; i++) { Passkey p = passkey(keys.optJSONObject(i)); if (p != null) s.passkeys.add(p); } }
         }

@@ -42,22 +42,28 @@ final class WidgetSnapshot {
         if (quotas == null) return null;
         java.util.Map<String, JSONObject> catalogByID = TokenAccountOrder.catalogEntries(quotas);
         List<JSONObject> rawBoard = new ArrayList<>();
-        for (JSONObject a : Dashboard.tokenBoardAccounts(FeatureRenderer.tokenAccounts(quotas), hidden)) {
+        for (JSONObject a : Dashboard.tokenBoardAccounts(FeatureRenderer.tokenAccounts(quotas), catalogByID, hidden)) {
             JSONObject cat = catalogByID.get(a.optString("id"));
             String priority = TokensModel.widgetPriority(a);
             if (priority == null && cat != null) priority = TokensModel.widgetPriority(cat);
-            boolean unsub = a.has("unsubscribed") ? TokensModel.isUnsubscribed(a) : TokensModel.isUnsubscribed(cat);
-            if ("hidden".equals(priority) || (priority == null && unsub)) continue;
+            boolean unsub = TokensModel.isUnsubscribed(a, cat);
+            boolean eligible = a.has("widgetEligible") ? Boolean.TRUE.equals(a.opt("widgetEligible"))
+                : cat == null || !Boolean.FALSE.equals(cat.opt("widgetEligible"));
+            if (!eligible || "hidden".equals(priority) || (priority == null && unsub)) continue;
             rawBoard.add(a);
         }
         List<JSONObject> board = new ArrayList<>(rawBoard);
         java.util.Map<String, Integer> count = new java.util.HashMap<>(), seen = new java.util.HashMap<>();
-        for (JSONObject a : board) count.merge(TokensModel.productName(a) + "\u0000" + emailPrefix(TokensModel.boardEmail(a)), 1, Integer::sum);
+        for (JSONObject a : board) {
+            JSONObject cat = catalogByID.get(a.optString("id"));
+            count.merge(TokensModel.productName(a, cat) + "\u0000" + emailPrefix(TokensModel.boardEmail(a)), 1, Integer::sum);
+        }
         JSONArray out = new JSONArray();
         for (JSONObject a : board) {
+            JSONObject cat = catalogByID.get(a.optString("id"));
             List<TokensModel.Period> periods = TokensModel.boardWindows(a);
             Double min = null; for (TokensModel.Period p : periods) { Double pc = TokensModel.remaining(p.window); if (pc != null && (min == null || pc < min)) min = pc; }
-            String name = TokensModel.productName(a), who = emailPrefix(TokensModel.boardEmail(a)), key = name + "\u0000" + who; int n = seen.merge(key, 1, Integer::sum);
+            String name = TokensModel.productName(a, cat), who = emailPrefix(TokensModel.boardEmail(a)), key = name + "\u0000" + who; int n = seen.merge(key, 1, Integer::sum);
             JSONObject row = new JSONObject(); boolean fresh = "connected".equals(a.optString("status"));
             put(row, "name", count.get(key) > 1 ? name + " " + n : name);
             if (!who.isEmpty()) put(row, "account", who);
@@ -90,8 +96,11 @@ final class WidgetSnapshot {
     }
     /** 重置日历: the next five scheduled resets of the connected accounts, as the platform, email prefix and window. */
     static JSONObject calendar(JSONObject quotas, ZoneId zone, long now) {
+        return calendar(quotas, zone, now, false);
+    }
+    static JSONObject calendar(JSONObject quotas, ZoneId zone, long now, boolean codingOnly) {
         if (quotas == null) return null;
-        QuotaCalendar.Model m = QuotaCalendar.build(FeatureRenderer.tokenAccounts(quotas), zone, now);
+        QuotaCalendar.Model m = QuotaCalendar.build(quotas, zone, now, codingOnly);
         List<QuotaCalendar.Event> next = new ArrayList<>();
         for (QuotaCalendar.Event e : m.events) if (e.at > now && QuotaCalendar.SCHEDULED.equals(e.status)) next.add(e);
         next.sort(Comparator.comparingLong(e -> e.at));

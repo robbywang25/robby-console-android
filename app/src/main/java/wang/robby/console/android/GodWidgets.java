@@ -50,7 +50,7 @@ final class GodWidgets {
         SharedPreferences.Editor edit = prefs(c).edit(); boolean changed = false;
         if (route.equals("tokens/quotas")) {
             changed |= keep(edit, WidgetSnapshot.TOKENS, WidgetSnapshot.tokens(data, Dashboard.hiddenTokens(c)), now);
-            changed |= keep(edit, WidgetSnapshot.CALENDAR, WidgetSnapshot.calendar(data, ZoneId.systemDefault(), now), now);
+            changed |= keep(edit, WidgetSnapshot.CALENDAR, WidgetSnapshot.calendar(data, ZoneId.systemDefault(), now, Dashboard.calendarCodingOnly(c)), now);
         } else if (route.equals("overview")) changed = keep(edit, WidgetSnapshot.STATUS, WidgetSnapshot.status(data), now);
         else if (route.equals("wechat/digest")) changed = keep(edit, WidgetSnapshot.WECHAT, WidgetSnapshot.wechat(data), now);
         if (!changed) return;

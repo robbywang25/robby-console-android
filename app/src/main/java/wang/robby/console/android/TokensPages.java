@@ -33,25 +33,43 @@ final class TokensPages {
     // ---------------------------------------------------------------- 重置日历
 
     static void calendar(Context ctx, LinearLayout root, JSONObject p) {
-        List<JSONObject> accounts = TokenAccountOrder.accounts(p);
-        QuotaCalendar.Model m = QuotaCalendar.build(accounts, ZoneId.systemDefault(), System.currentTimeMillis());
-        if (day == null || month == null) { day = m.today; month = YearMonth.from(m.today); }
         LinearLayout box = new LinearLayout(ctx); box.setOrientation(LinearLayout.VERTICAL); root.addView(box);
-        drawCalendar(ctx, new ConsoleTheme(ctx), box, m);
+        drawCalendar(ctx, new ConsoleTheme(ctx), box, p);
     }
-    private static void drawCalendar(Context ctx, ConsoleTheme t, LinearLayout box, QuotaCalendar.Model m) {
+    private static void drawCalendar(Context ctx, ConsoleTheme t, LinearLayout box, JSONObject p) {
+        boolean codingOnly = Dashboard.calendarCodingOnly(ctx);
+        long now = System.currentTimeMillis(); ZoneId zoneId = ZoneId.systemDefault();
+        QuotaCalendar.Model m = QuotaCalendar.build(p, zoneId, now, codingOnly);
+        if (day == null || month == null) { day = m.today; month = YearMonth.from(m.today); }
         box.removeAllViews();
+        String staleBanner = TokensModel.staleBannerText(p, now, zoneId);
+        if (staleBanner != null) addStaleBanner(ctx, t, box, staleBanner);
         LinearLayout head = t.card(box); LinearLayout top = new LinearLayout(ctx); top.setGravity(Gravity.CENTER_VERTICAL);
         TextView title = t.text("额度日历", 17, true); title.setAccessibilityHeading(true); top.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
         TextView zone = t.text(TimeZone.getTimeZone(m.zone).getDisplayName(TimeZone.getTimeZone(m.zone).inDaylightTime(new Date()), TimeZone.LONG, Locale.SIMPLIFIED_CHINESE), 12, false); zone.setTextColor(t.faint); top.addView(zone); head.addView(top);
-        TextView summary = t.text(QuotaCalendar.monthSummary(m, month), 13, false); summary.setPadding(0, t.dp(4), 0, 0); head.addView(summary);
+        LinearLayout sub = new LinearLayout(ctx); sub.setGravity(Gravity.CENTER_VERTICAL); sub.setPadding(0, t.dp(6), 0, 0);
+        TextView summary = t.text(QuotaCalendar.monthSummary(m, month), 13, false); sub.addView(summary, new LinearLayout.LayoutParams(0, -2, 1));
+        TextView pill = t.text(codingOnly ? "✓ 只看 Coding" : "只看 Coding", 12, codingOnly);
+        pill.setTextColor(codingOnly ? Color.WHITE : t.ink);
+        pill.setBackground(t.ripple(t.shape(codingOnly ? t.accent : t.soft, 99), 99));
+        pill.setPadding(t.dp(12), t.dp(5), t.dp(12), t.dp(5));
+        pill.setFocusable(true); pill.setClickable(true); pill.setSelected(codingOnly);
+        pill.setContentDescription(codingOnly ? "只看 Coding 已开启，点按显示全部账号" : "只看 Coding 已关闭，点按仅看 Coding 账号");
+        pill.setOnClickListener(v -> {
+            Dashboard.setCalendarCodingOnly(ctx, !codingOnly);
+            PreferenceSyncHub.note(ctx, "quotaCalendarCodingOnly");
+            GodWidget.observe(ctx, "tokens/quotas", p);
+            drawCalendar(ctx, t, box, p);
+        });
+        sub.addView(pill);
+        head.addView(sub);
 
         LinearLayout c = t.card(box); c.setPadding(t.dp(4), t.dp(12), t.dp(4), t.dp(12));
         LinearLayout bar = new LinearLayout(ctx); bar.setGravity(Gravity.CENTER_VERTICAL); bar.setPadding(t.dp(6), 0, 0, t.dp(8));
         TextView label = t.text(month.getYear() + " 年 " + month.getMonthValue() + " 月", 16, true); bar.addView(label, new LinearLayout.LayoutParams(0, -2, 1));
-        bar.addView(link(t, "‹", "上一个月", () -> { month = month.minusMonths(1); day = clamp(day, month); drawCalendar(ctx, t, box, m); }));
-        bar.addView(link(t, "今天", "回到今天", () -> { day = m.today; month = YearMonth.from(m.today); drawCalendar(ctx, t, box, m); }));
-        bar.addView(link(t, "›", "下一个月", () -> { month = month.plusMonths(1); day = clamp(day, month); drawCalendar(ctx, t, box, m); }));
+        bar.addView(link(t, "‹", "上一个月", () -> { month = month.minusMonths(1); day = clamp(day, month); drawCalendar(ctx, t, box, p); }));
+        bar.addView(link(t, "今天", "回到今天", () -> { day = m.today; month = YearMonth.from(m.today); drawCalendar(ctx, t, box, p); }));
+        bar.addView(link(t, "›", "下一个月", () -> { month = month.plusMonths(1); day = clamp(day, month); drawCalendar(ctx, t, box, p); }));
         c.addView(bar);
         LinearLayout names = new LinearLayout(ctx); names.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS);
         for (String w : WEEKDAYS) { TextView n = t.text(w, 11, false); n.setTextColor(t.faint); n.setGravity(Gravity.CENTER); names.addView(n, new LinearLayout.LayoutParams(0, -2, 1)); }
@@ -74,7 +92,7 @@ final class TokensPages {
                 StringBuilder say = new StringBuilder(d.getMonthValue() + "月" + d.getDayOfMonth() + "日" + (today ? "，今天" : "") + "，" + events.size() + " 项额度重置");
                 for (QuotaCalendar.Event e : events) say.append("，").append(time(e.at, m.zone)).append(" ").append(e.platform).append(" ").append(e.account).append(" ").append(e.shortLabel()).append(QuotaCalendar.statusLabel(e) == null ? "" : " " + QuotaCalendar.statusLabel(e));
                 cell.setContentDescription(say); cell.setSelected(selected);
-                cell.setOnClickListener(v -> { day = d; month = YearMonth.from(d); drawCalendar(ctx, t, box, m); });
+                cell.setOnClickListener(v -> { day = d; month = YearMonth.from(d); drawCalendar(ctx, t, box, p); });
                 row.addView(cell, new LinearLayout.LayoutParams(0, -1, 1));
             }
             c.addView(row);
@@ -102,6 +120,17 @@ final class TokensPages {
         String missing = QuotaCalendar.missing(m);
         if (missing != null) { TextView foot = t.text(missing, 12, false); foot.setTextColor(t.faint); foot.setPadding(t.dp(6), t.dp(2), t.dp(6), 0); box.addView(foot); }
         box.addView(t.info(List.of("只展示平台已提供的重置日期，不按周期推算。", "时间按本机时区显示；灰色圆点表示已过期或读数待核实。")));
+    }
+    private static void addStaleBanner(Context ctx, ConsoleTheme t, LinearLayout box, String message) {
+        LinearLayout banner = new LinearLayout(ctx); banner.setGravity(Gravity.CENTER_VERTICAL);
+        banner.setPadding(t.dp(14), t.dp(10), t.dp(14), t.dp(10));
+        GradientDrawable bg = t.shape((t.warning & 0x00ffffff) | 0x22000000, 14);
+        bg.setStroke(Math.max(1, t.dp(1)), (t.warning & 0x00ffffff) | 0x66000000);
+        banner.setBackground(bg); banner.addView(t.dot(t.warning, 7));
+        TextView msg = t.text(message, 12, false); msg.setTextColor(t.ink); msg.setPadding(t.dp(8), 0, 0, 0);
+        banner.addView(msg, new LinearLayout.LayoutParams(0, -2, 1));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.bottomMargin = t.dp(10);
+        box.addView(banner, lp);
     }
     /** One reset inside a day cell: provider-coloured left edge on a light wash; time, platform, account and window. */
     private static View chip(Context ctx, ConsoleTheme t, QuotaCalendar.Event e, ZoneId zone) {

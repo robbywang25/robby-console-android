@@ -23,6 +23,19 @@ final class WechatPages {
         }
         Instant now = Instant.now();
         TextView head = t.text(WechatDigestText.header(d, now), 12, false); head.setTextColor(t.faint); head.setPadding(t.dp(6), t.dp(4), t.dp(6), t.dp(2)); root.addView(head);
+        String bannerText = WechatDigestText.staleBanner(d, now);
+        if (bannerText != null) {
+            LinearLayout banner = new LinearLayout(ctx); banner.setGravity(Gravity.CENTER_VERTICAL);
+            banner.setPadding(t.dp(14), t.dp(10), t.dp(14), t.dp(10));
+            android.graphics.drawable.GradientDrawable bg = t.shape((t.warning & 0x00ffffff) | 0x22000000, 14);
+            bg.setStroke(Math.max(1, t.dp(1)), (t.warning & 0x00ffffff) | 0x66000000);
+            banner.setBackground(bg);
+            banner.addView(t.dot(t.warning, 7));
+            TextView msg = t.text(bannerText, 12, false); msg.setTextColor(t.ink); msg.setPadding(t.dp(8), 0, 0, 0);
+            banner.addView(msg, new LinearLayout.LayoutParams(0, -2, 1));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2); lp.setMargins(0, t.dp(6), 0, t.dp(6));
+            root.addView(banner, lp);
+        }
         heading(t, root, "汇总");
         LinearLayout summary = t.card(root);
         window(ctx, t, summary, "今天", d.today, 0);
@@ -47,7 +60,9 @@ final class WechatPages {
         if (d == null) { TextView m = t.text(WechatDigest.INVALID, 13, false); m.setTextColor(t.faint); m.setPadding(0, t.dp(10), 0, t.dp(2)); shell.addView(m); return; }
         String name = d.conversations.isEmpty() ? null : d.conversations.get(0).name;
         TextView value = t.text(WechatDigestText.count(d.today.messages), 24, true); value.setPadding(0, t.dp(8), 0, 0); shell.addView(value);
-        TextView caption = t.text(WechatDigestText.boardCaption(d.last7d.messages, name), 12, false);
+        boolean stale = WechatDigestText.stale(d.generatedAt, Instant.now());
+        TextView caption = t.text((stale ? "超过 2h 未同步 · " : "") + WechatDigestText.boardCaption(d.last7d.messages, name), 12, false);
+        if (stale) caption.setTextColor(t.warning);
         caption.setPadding(0, t.dp(1), 0, 0); caption.setSingleLine(true); caption.setEllipsize(TextUtils.TruncateAt.END); shell.addView(caption);
     }
 

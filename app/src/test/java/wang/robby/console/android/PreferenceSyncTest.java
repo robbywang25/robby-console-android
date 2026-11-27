@@ -23,6 +23,7 @@ public final class PreferenceSyncTest {
         assertEquals(local.get("board"), back.get("board"));
         assertEquals(local.get("clocks"), back.get("clocks"));
         assertEquals(local.get("calendarDays"), back.get("calendarDays"));
+        assertEquals(local.get("quotaCalendarCodingOnly"), back.get("quotaCalendarCodingOnly"));
         assertEquals(local.get("hiddenQuotaCards"), back.get("hiddenQuotaCards"));
         assertEquals(local.get("glassOn"), back.get("glassOn"));
         assertEquals(local.get("glassLevel"), back.get("glassLevel"));
@@ -556,6 +557,7 @@ public final class PreferenceSyncTest {
         local.put("board", List.of("services", "clocks", "tokens"));
         local.put("clocks", List.of("Tibo|America/Los_Angeles", "北京时间|Asia/Shanghai"));
         local.put("calendarDays", 14);
+        local.put("quotaCalendarCodingOnly", true);
         local.put("hiddenQuotaCards", List.of("codex-1", "today-cn"));
         local.put("glassOn", false);
         local.put("glassLevel", 80);
